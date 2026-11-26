@@ -14,6 +14,7 @@ import {
 import { accessToken, callApi } from './tutoring.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
+import { expectDangerConfirmation, openedMenu } from './dangerActions.ts';
 
 test.use({ locale: 'ru-RU' });
 
@@ -319,7 +320,27 @@ test.describe('account edge cases', () => {
     await openSignOutDialog(page);
 
     await expect(signOutDialog(page).getByRole('button', { name: 'Отмена' })).toBeFocused();
-    await expect(signOutDialog(page)).toContainText('Все сессии, включая эту, будут завершены.');
+    await expect(signOutDialog(page)).toContainText('Все сессии, включая эту, будут завершены;');
+  });
+
+  test('Account actions holds sign out everywhere and account deletion as dangerous items, and sign out everywhere confirms with a filled button', async ({
+    page,
+    deployment,
+  }) => {
+    const account = await seedVerifiedUser(deployment, 'Tutor reading the account menu');
+    await signedInAt(page, account, '/settings/account');
+    await accountActions(page).click();
+    const items = openedMenu(page).locator(':scope > button');
+    await expect(items).toHaveText(['Выйти на всех устройствах', 'Удалить аккаунт']);
+    await expect(items.nth(0)).toHaveClass(/text-danger/);
+    await expect(items.nth(1)).toHaveClass(/text-danger/);
+    await expect(items.locator('svg')).toHaveCount(2);
+    await expect(openedMenu(page).locator(':scope > hr')).toHaveCount(0);
+
+    await items.nth(0).click();
+
+    await expectDangerConfirmation(signOutDialog(page), 'Выйти на всех устройствах', 'Отмена');
+    await expect(signOutDialog(page)).toContainText('Это нельзя отменить');
   });
 
   test('while sign out everywhere runs, its dialog stays open and Account actions is unavailable', async ({

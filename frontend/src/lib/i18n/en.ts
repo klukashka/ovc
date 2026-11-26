@@ -360,7 +360,8 @@ export const en: Resources = {
     password: 'Password',
     signOutEverywhereConfirm: 'Sign out everywhere?',
     signOutEverywhere: 'Sign out everywhere',
-    signOutEverywhereBody: 'Every session, including this one, will end.',
+    signOutEverywhereBody:
+      'Every session, including this one, will end; other tabs and browsers are signed out at their next request. It cannot be undone: sign in again to continue.',
     deleteAccount: 'Delete account',
     deleteAccountConfirm: 'Delete your account?',
     deleteAccountConsequence: {
@@ -534,6 +535,11 @@ export const en: Resources = {
     copyFailed: 'Could not copy. Select the code and copy it yourself.',
     regenerate: 'Regenerate code',
     regenerateHint: 'The current code stops working as soon as you regenerate it.',
+    codeActions: 'Code actions',
+    regenerateTitle: 'Regenerate your tutor code?',
+    regenerateConsequence:
+      'The current code stops working at once for new requests. Requests already sent or held are not affected; to stop someone, decline and block their request. Nobody is notified. It cannot be undone, and the code can be regenerated at most 10 times a day.',
+    cancel: 'Cancel',
     regenerated: 'A new code was created. The old one no longer works.',
     inactive: 'The code starts working once you confirm your email.',
     blocked: 'Blocked students',

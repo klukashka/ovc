@@ -1,6 +1,15 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { TFunction } from 'i18next';
-import { type ReactElement, type ReactNode, type RefObject, type SyntheticEvent, useId, useRef, useState } from 'react';
+import {
+  type ReactElement,
+  type ReactNode,
+  type RefObject,
+  type SyntheticEvent,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useParams } from 'react-router';
 
@@ -16,7 +25,7 @@ import {
   FormAlert,
   SubmitButton,
   TextField,
-  dangerButtonClass,
+  dangerFilledButtonClass,
   fieldMessage,
   linkClass,
   primaryButtonClass,
@@ -67,16 +76,12 @@ type GroupPatch = components['schemas']['GroupPatch'];
 
 type MembershipNotice =
   | { readonly kind: 'added'; readonly count: number }
-  | { readonly kind: 'back'; readonly name: string; readonly count: number }
-  | {
-      readonly kind: 'removed';
-      readonly relationshipId: string;
-      readonly name: string;
-      readonly unconfirmed: boolean;
-      readonly problem: string | null;
-      readonly count: number;
-    }
+  | { readonly kind: 'removed'; readonly relationshipId: string; readonly name: string; readonly count: number }
   | null;
+
+type AddBackState =
+  | { readonly kind: 'removed'; readonly unconfirmed: boolean; readonly problem: string | null }
+  | { readonly kind: 'back' };
 
 function addBackProblem(t: TFunction, state: ActionState): string | null {
   if (state.kind !== 'refused') {
@@ -94,66 +99,289 @@ function addBackProblem(t: TFunction, state: ActionState): string | null {
   return refusalText(t, state.error, state.retryAfter, undefined);
 }
 
-function MembershipNoticeView({
-  notice,
-  busy,
-  onAddBack,
-}: {
-  readonly notice: NonNullable<MembershipNotice>;
-  readonly busy: boolean;
-  readonly onAddBack: (removed: Extract<MembershipNotice, { readonly kind: 'removed' }>) => void;
-}): ReactElement {
-  const { t } = useTranslation();
-  if (notice.kind === 'removed') {
-    return (
-      <RemovedNotice
-        key={notice.count}
-        notice={notice}
-        busy={busy}
-        onAddBack={() => {
-          onAddBack(notice);
-        }}
-      />
-    );
-  }
-  if (notice.kind === 'back') {
-    return (
-      <FocusedNotice
-        key={notice.count}
-        message={
-          <>
-            {t('groups.backInGroup')} <bdi>{notice.name}</bdi>. {t('groups.seesChat')}
-          </>
-        }
-      />
-    );
-  }
-  return <FocusedNotice key={notice.count} message={t('groups.added')} />;
-}
-
 function RemovedNotice({
-  notice,
+  name,
+  state,
   busy,
   onAddBack,
 }: {
-  readonly notice: Extract<MembershipNotice, { readonly kind: 'removed' }>;
+  readonly name: string;
+  readonly state: Extract<AddBackState, { readonly kind: 'removed' }>;
   readonly busy: boolean;
   readonly onAddBack: () => void;
 }): ReactElement {
   const { t } = useTranslation();
   return (
     <ActionNotice
-      action={{ label: t(notice.unconfirmed ? 'groups.retry' : 'groups.addBack'), busy, onActivate: onAddBack }}
-      problem={notice.problem}
+      action={{ label: t(state.unconfirmed ? 'groups.retry' : 'groups.addBack'), busy, onActivate: onAddBack }}
+      problem={state.problem}
     >
-      {notice.unconfirmed ? (
+      {state.unconfirmed ? (
         t('groups.unconfirmed')
       ) : (
         <>
-          {t('groups.removedFrom')} <bdi>{notice.name}</bdi>. {t('groups.unsentNotRestored')}
+          {t('groups.removedFrom')} <bdi>{name}</bdi>. {t('groups.unsentNotRestored')}
         </>
       )}
     </ActionNotice>
+  );
+}
+
+export function AddBackNotice({
+  groupId,
+  relationshipId,
+  name,
+  unavailable,
+  onBusy,
+  onChanged,
+}: {
+  readonly groupId: string;
+  readonly relationshipId: string;
+  readonly name: string;
+  readonly unavailable: boolean;
+  readonly onBusy: (busy: boolean) => void;
+  readonly onChanged: (group: Group) => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const client = useApiClient();
+  const queryClient = useQueryClient();
+  const [state, setState] = useState<AddBackState>({ kind: 'removed', unconfirmed: false, problem: null });
+  const addBack = useAction(() => {
+    onBusy(false);
+  });
+
+  async function freshMembers(): Promise<readonly string[] | null> {
+    try {
+      await queryClient.cancelQueries({ queryKey: groupKey(groupId) });
+      const fresh = await queryClient.query({
+        queryKey: groupKey(groupId),
+        queryFn: () => fetchGroup(client, groupId),
+        staleTime: 0,
+        retry: false,
+      });
+      return fresh.members.map((member) => member.relationship_id);
+    } catch {
+      return null;
+    }
+  }
+
+  function addBackRemoved(removed: Extract<AddBackState, { readonly kind: 'removed' }>): void {
+    if (unavailable || addBack.busy) {
+      return;
+    }
+    const isBack = (members: readonly string[] | null): boolean => members?.includes(relationshipId) === true;
+    const confirmBack = (): ActionState => {
+      setState({ kind: 'back' });
+      return done;
+    };
+    onBusy(true);
+    addBack.run(async (): Promise<ActionState> => {
+      if (removed.unconfirmed && isBack(await freshMembers())) {
+        return confirmBack();
+      }
+      const answer = await settledRequest(() => patchGroup(client, groupId, { add: [relationshipId] }));
+      if (isGroup(answer)) {
+        onChanged(answer);
+        return confirmBack();
+      }
+      if (hasUnknownOutcome(answer)) {
+        if (isBack(await freshMembers())) {
+          return confirmBack();
+        }
+        setState({ kind: 'removed', unconfirmed: true, problem: null });
+        return { kind: 'idle' };
+      }
+      setState({ kind: 'removed', unconfirmed: removed.unconfirmed, problem: addBackProblem(t, answer) });
+      return { kind: 'idle' };
+    });
+  }
+
+  if (state.kind === 'back') {
+    return (
+      <FocusedNotice
+        message={
+          <>
+            {t('groups.backInGroup')} <bdi>{name}</bdi>. {t('groups.seesChat')}
+          </>
+        }
+      />
+    );
+  }
+  return (
+    <RemovedNotice
+      name={name}
+      state={state}
+      busy={addBack.busy}
+      onAddBack={() => {
+        addBackRemoved(state);
+      }}
+    />
+  );
+}
+
+export function RemovalForm({
+  groupId,
+  groupName,
+  member,
+  headingId,
+  consequenceId,
+  cancelRef,
+  unavailable,
+  onBusy,
+  onRemoved,
+  onChangedElsewhere,
+  onUnknownOutcome,
+  onCancel,
+}: {
+  readonly groupId: string;
+  readonly groupName: string;
+  readonly member: GroupMember;
+  readonly headingId: string;
+  readonly consequenceId: string;
+  readonly cancelRef: RefObject<HTMLButtonElement | null>;
+  readonly unavailable: boolean;
+  readonly onBusy: (busy: boolean) => void;
+  readonly onRemoved: (group: Group) => void;
+  readonly onChangedElsewhere: () => void;
+  readonly onUnknownOutcome: () => void;
+  readonly onCancel: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const client = useApiClient();
+  const action = useAction(() => {
+    onBusy(false);
+  });
+
+  function remove(): void {
+    if (unavailable || action.busy) {
+      return;
+    }
+    onBusy(true);
+    action.run(async (): Promise<ActionState> => {
+      const answer = await settledRequest(() => patchGroup(client, groupId, { remove: [member.relationship_id] }));
+      if (isGroup(answer)) {
+        onRemoved(answer);
+        return done;
+      }
+      if (showsStaleData(answer)) {
+        onChangedElsewhere();
+      } else if (hasUnknownOutcome(answer)) {
+        onUnknownOutcome();
+      }
+      return answer;
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h2 id={headingId} className="text-heading">
+        {t('groups.removeTitle', { name: member.display_name, group: groupName })}
+      </h2>
+      <p id={consequenceId}>{t('groups.removeConsequence')}</p>
+      <Refusal state={action.state} />
+      <FormActions>
+        <ActionButton busy={action.busy} unavailable={unavailable} onClick={remove} className={dangerFilledButtonClass}>
+          {t('groups.removeFromGroup')}
+        </ActionButton>
+        <ActionButton
+          ref={cancelRef}
+          busy={false}
+          unavailable={action.busy}
+          onClick={onCancel}
+          className={quietButtonClass}
+        >
+          {t('groups.cancel')}
+        </ActionButton>
+      </FormActions>
+    </div>
+  );
+}
+
+function archiveConsequence(t: TFunction, cancelling: boolean, futureLessons: number): string {
+  if (!cancelling) {
+    return t('groups.archiveQuietConsequence');
+  }
+  return futureLessons === 0
+    ? t('groups.archiveSeriesConsequence')
+    : t('groups.archiveConsequence', { count: futureLessons });
+}
+
+export function ArchiveForm({
+  group,
+  cancelling,
+  headingId,
+  consequenceId,
+  cancelRef,
+  onBusy,
+  onArchived,
+  onChangedElsewhere,
+  onUnknownOutcome,
+  onCancel,
+}: {
+  readonly group: Pick<GroupDetail, 'id' | 'name' | 'future_lesson_count'>;
+  readonly cancelling: boolean;
+  readonly headingId: string;
+  readonly consequenceId: string;
+  readonly cancelRef: RefObject<HTMLButtonElement | null>;
+  readonly onBusy: (busy: boolean) => void;
+  readonly onArchived: (group: Group) => void;
+  readonly onChangedElsewhere: () => void;
+  readonly onUnknownOutcome: () => void;
+  readonly onCancel: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const client = useApiClient();
+  const action = useAction(() => {
+    onBusy(false);
+  });
+
+  function archive(): void {
+    if (action.busy) {
+      return;
+    }
+    onBusy(true);
+    action.run(async (): Promise<ActionState> => {
+      const answer = await settledRequest(async (): Promise<Group | ActionState> => {
+        const { data, error, response } = await client.POST('/api/v1/groups/{id}/archive', {
+          params: { path: { id: group.id } },
+        });
+        return data ?? refusedBy(response, error);
+      });
+      if (isGroup(answer)) {
+        onArchived(answer);
+        return done;
+      }
+      if (showsStaleData(answer)) {
+        onChangedElsewhere();
+      } else if (hasUnknownOutcome(answer)) {
+        onUnknownOutcome();
+      }
+      return answer;
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h2 id={headingId} className="text-heading">
+        {t('groups.archiveTitle', { name: group.name })}
+      </h2>
+      <p id={consequenceId}>{archiveConsequence(t, cancelling, group.future_lesson_count)}</p>
+      <Refusal state={action.state} />
+      <FormActions>
+        <ActionButton busy={action.busy} onClick={archive} className={dangerFilledButtonClass}>
+          {t('groups.archiveSubmit')}
+        </ActionButton>
+        <ActionButton
+          ref={cancelRef}
+          busy={false}
+          unavailable={action.busy}
+          onClick={onCancel}
+          className={quietButtonClass}
+        >
+          {t('groups.cancel')}
+        </ActionButton>
+      </FormActions>
+    </div>
   );
 }
 
@@ -390,15 +618,18 @@ function Members({
   readonly handlers: GroupHandlers;
 }): ReactElement {
   const { t } = useTranslation();
-  const client = useApiClient();
   const headingId = useId();
   const opener = useRef<HTMLButtonElement>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [notice, setNotice] = useState<MembershipNotice>(null);
-  const [removing, setRemoving] = useState<string | null>(null);
-  const action = useAction();
-  const addBack = useAction();
-  const queryClient = useQueryClient();
+  const [confirming, setConfirming] = useState<GroupMember | null>(null);
+  const [removing, setRemoving] = useState(false);
+  const [addingBack, setAddingBack] = useState(false);
+  const memberMenus = useId();
+  const removeHeadingId = useId();
+  const removeConsequenceId = useId();
+  const memberMenuButton = useRef<HTMLElement | null>(null);
+  const keepMember = useRef<HTMLButtonElement>(null);
   const archived = group.archived_at !== null;
   const listRef = useRef<HTMLUListElement>(null);
   const heading = useRef<HTMLHeadingElement>(null);
@@ -407,81 +638,36 @@ function Members({
     group.members.map((member) => member.relationship_id),
     'a',
     heading,
-    action.busy || notice !== null,
+    removing || notice !== null,
   );
 
-  function remove(member: GroupMember): void {
-    if (action.busy || addBack.busy) {
-      return;
+  const confirmingGone =
+    confirming !== null && !group.members.some((member) => member.relationship_id === confirming.relationship_id);
+  const [goneMeanwhile, setGoneMeanwhile] = useState(0);
+  if (confirmingGone && !removing) {
+    setConfirming(null);
+    setGoneMeanwhile((count) => count + 1);
+  }
+  const reportedGone = useRef(0);
+
+  useEffect(() => {
+    if (goneMeanwhile !== reportedGone.current) {
+      reportedGone.current = goneMeanwhile;
+      handlers.onChangedElsewhere();
     }
-    setNotice(null);
-    setRemoving(member.relationship_id);
-    action.run(async (): Promise<ActionState> => {
-      const answer = await settledRequest(() => patchGroup(client, group.id, { remove: [member.relationship_id] }));
-      if (!isGroup(answer)) {
-        if (showsStaleData(answer)) {
-          handlers.onChangedElsewhere();
-        } else if (hasUnknownOutcome(answer)) {
-          handlers.onUnknownOutcome();
-        }
-        return answer;
-      }
-      handlers.onChanged(answer);
-      setNotice((previous) => ({
-        kind: 'removed',
-        relationshipId: member.relationship_id,
-        name: member.display_name,
-        unconfirmed: false,
-        problem: null,
-        count: (previous?.count ?? 0) + 1,
-      }));
-      return done;
-    });
+  }, [goneMeanwhile, handlers]);
+
+  function memberMenuId(member: GroupMember): string {
+    return `${memberMenus}-${member.relationship_id}`;
   }
 
-  async function freshMembers(): Promise<readonly string[] | null> {
-    try {
-      await queryClient.cancelQueries({ queryKey: groupKey(group.id) });
-      const fresh = await queryClient.query({
-        queryKey: groupKey(group.id),
-        queryFn: () => fetchGroup(client, group.id),
-        staleTime: 0,
-        retry: false,
-      });
-      return fresh.members.map((member) => member.relationship_id);
-    } catch {
-      return null;
-    }
+  function confirmRemoval(member: GroupMember): void {
+    memberMenuButton.current = document.getElementById(memberMenuId(member));
+    setConfirming(member);
   }
 
-  function addBackRemoved(removed: Extract<MembershipNotice, { readonly kind: 'removed' }>): void {
-    if (action.busy) {
-      return;
-    }
-    const isBack = (members: readonly string[] | null): boolean => members?.includes(removed.relationshipId) === true;
-    const confirmBack = (): ActionState => {
-      setNotice((previous) => ({ kind: 'back', name: removed.name, count: (previous?.count ?? 0) + 1 }));
-      return done;
-    };
-    addBack.run(async (): Promise<ActionState> => {
-      if (removed.unconfirmed && isBack(await freshMembers())) {
-        return confirmBack();
-      }
-      const answer = await settledRequest(() => patchGroup(client, group.id, { add: [removed.relationshipId] }));
-      if (isGroup(answer)) {
-        handlers.onChanged(answer);
-        return confirmBack();
-      }
-      if (hasUnknownOutcome(answer)) {
-        if (isBack(await freshMembers())) {
-          return confirmBack();
-        }
-        setNotice({ ...removed, unconfirmed: true, problem: null });
-        return { kind: 'idle' };
-      }
-      setNotice({ ...removed, problem: addBackProblem(t, answer) });
-      return { kind: 'idle' };
-    });
+  function closeRemoval(): void {
+    setConfirming(null);
   }
 
   return (
@@ -507,8 +693,57 @@ function Members({
       <p className="text-small text-text-muted">
         {t('groups.memberCountOf', { count: group.members.length, limit: groupMemberLimit })}
       </p>
-      <Refusal state={action.state} />
-      {notice === null ? null : <MembershipNoticeView notice={notice} busy={addBack.busy} onAddBack={addBackRemoved} />}
+      <ModalDialog
+        open={confirming !== null}
+        busy={removing}
+        labelledBy={removeHeadingId}
+        describedBy={removeConsequenceId}
+        returnFocus={memberMenuButton}
+        initialFocus={keepMember}
+        onClose={closeRemoval}
+      >
+        {confirming === null ? null : (
+          <RemovalForm
+            groupId={group.id}
+            groupName={group.name}
+            member={confirming}
+            headingId={removeHeadingId}
+            consequenceId={removeConsequenceId}
+            cancelRef={keepMember}
+            unavailable={addingBack}
+            onBusy={setRemoving}
+            onRemoved={(answer) => {
+              setConfirming(null);
+              handlers.onChanged(answer);
+              setNotice((previous) => ({
+                kind: 'removed',
+                relationshipId: confirming.relationship_id,
+                name: confirming.display_name,
+                count: (previous?.count ?? 0) + 1,
+              }));
+            }}
+            onChangedElsewhere={() => {
+              setConfirming(null);
+              handlers.onChangedElsewhere();
+            }}
+            onUnknownOutcome={handlers.onUnknownOutcome}
+            onCancel={closeRemoval}
+          />
+        )}
+      </ModalDialog>
+      {notice === null ? null : notice.kind === 'removed' ? (
+        <AddBackNotice
+          key={notice.count}
+          groupId={group.id}
+          relationshipId={notice.relationshipId}
+          name={notice.name}
+          unavailable={removing}
+          onBusy={setAddingBack}
+          onChanged={handlers.onChanged}
+        />
+      ) : (
+        <FocusedNotice key={notice.count} message={t('groups.added')} />
+      )}
       {group.members.length === 0 ? (
         <EmptyState
           level={3}
@@ -533,17 +768,22 @@ function Members({
                 </Link>
                 <span className="truncate text-small text-text-muted">{member.name}</span>
               </span>
-              <ActionButton
-                busy={action.busy && removing === member.relationship_id}
-                unavailable={action.busy || addBack.busy}
-                label={t('groups.removeNamed', { name: member.display_name })}
-                onClick={() => {
-                  remove(member);
-                }}
-                className={quietButtonClass}
+              <ActionMenu
+                label={t('groups.memberActions', { name: member.display_name })}
+                unavailable={removing || addingBack}
+                buttonId={memberMenuId(member)}
+                items={[
+                  {
+                    label: t('groups.removeFromGroup'),
+                    danger: true,
+                    onChoose: (): void => {
+                      confirmRemoval(member);
+                    },
+                  },
+                ]}
               >
-                {t('groups.removeFromGroup')}
-              </ActionButton>
+                <MoreIcon />
+              </ActionMenu>
             </li>
           ))}
         </ul>
@@ -573,11 +813,11 @@ function Members({
   );
 }
 
-function needsArchiveConfirmation(group: GroupDetail): boolean {
-  return group.archived_at === null && (group.future_lesson_count > 0 || group.has_open_series);
+function cancelsLessons(group: GroupDetail): boolean {
+  return group.future_lesson_count > 0 || group.has_open_series;
 }
 
-type GroupDialog = 'details' | 'archive' | null;
+type GroupDialog = 'details' | { readonly kind: 'archive'; readonly cancelling: boolean } | null;
 
 function GroupActions({
   group,
@@ -597,41 +837,51 @@ function GroupActions({
   const menuButton = useRef<HTMLButtonElement>(null);
   const dismissButton = useRef<HTMLButtonElement>(null);
   const [dialog, setDialog] = useState<GroupDialog>(null);
+  const [archiving, setArchiving] = useState(false);
   const action = useAction();
   const archived = group.archived_at !== null;
-  const confirming = dialog === 'archive';
+  const archiveDialog = dialog !== null && dialog !== 'details' ? dialog : null;
+  const [archiveChanged, setArchiveChanged] = useState(0);
+  if (archiveDialog !== null && !archiving && (archived || cancelsLessons(group) !== archiveDialog.cancelling)) {
+    setDialog(null);
+    setArchiveChanged((count) => count + 1);
+  }
+  const confirming = archiveDialog !== null;
+  const reportedArchiveChange = useRef(0);
+
+  useEffect(() => {
+    if (archiveChanged !== reportedArchiveChange.current) {
+      reportedArchiveChange.current = archiveChanged;
+      handlers.onChangedElsewhere();
+    }
+  }, [archiveChanged, handlers]);
 
   function close(): void {
     setDialog(null);
   }
 
-  function toggle(viaDialog: boolean): void {
+  function unarchive(): void {
     onOutcome(null);
     action.run(async (): Promise<ActionState> => {
-      const params = { params: { path: { id: group.id } } };
       const answer = await settledRequest(async (): Promise<Group | ActionState> => {
-        const { data, error, response } = archived
-          ? await client.POST('/api/v1/groups/{id}/unarchive', params)
-          : await client.POST('/api/v1/groups/{id}/archive', params);
+        const { data, error, response } = await client.POST('/api/v1/groups/{id}/unarchive', {
+          params: { path: { id: group.id } },
+        });
         return data ?? refusedBy(response, error);
       });
       if (!isGroup(answer)) {
         if (showsStaleData(answer)) {
-          setDialog(null);
           handlers.onChangedElsewhere();
           return answer;
         }
         if (hasUnknownOutcome(answer)) {
           handlers.onUnknownOutcome();
         }
-        if (!viaDialog) {
-          onOutcome({ kind: 'refused', state: answer });
-        }
+        onOutcome({ kind: 'refused', state: answer });
         return answer;
       }
-      setDialog(null);
       handlers.onChanged(answer);
-      onOutcome(archived ? { kind: 'unarchived' } : { kind: 'archived', undoable: !viaDialog });
+      onOutcome({ kind: 'unarchived' });
       return done;
     });
   }
@@ -646,14 +896,14 @@ function GroupActions({
     },
     {
       label: t(archived ? 'groups.unarchiveSubmit' : 'groups.archiveSubmit'),
+      danger: !archived,
       onChoose: (): void => {
-        if (needsArchiveConfirmation(group)) {
-          onOutcome(null);
-          action.reset();
-          setDialog('archive');
+        if (archived) {
+          unarchive();
           return;
         }
-        toggle(false);
+        onOutcome(null);
+        setDialog({ kind: 'archive', cancelling: cancelsLessons(group) });
       },
     },
   ];
@@ -662,8 +912,8 @@ function GroupActions({
     <>
       <ActionMenu
         label={t('groups.actions')}
-        busy={action.busy && !confirming}
-        unavailable={action.busy}
+        busy={action.busy}
+        unavailable={action.busy || archiving}
         items={items}
         buttonRef={menuButton}
       >
@@ -683,40 +933,34 @@ function GroupActions({
       />
       <ModalDialog
         open={confirming}
-        busy={action.busy}
+        busy={archiving}
         labelledBy={dialogHeadingId}
         describedBy={consequenceId}
         returnFocus={menuButton}
         initialFocus={dismissButton}
         onClose={close}
       >
-        <div className="flex flex-col gap-4">
-          <h2 id={dialogHeadingId} className="text-heading">
-            {t('groups.archiveTitle')}
-          </h2>
-          <p id={consequenceId}>{t('groups.archiveConsequence', { count: group.future_lesson_count })}</p>
-          <Refusal state={action.state} />
-          <FormActions>
-            <ActionButton
-              busy={action.busy}
-              onClick={() => {
-                toggle(true);
-              }}
-              className={dangerButtonClass}
-            >
-              {t('groups.archiveSubmit')}
-            </ActionButton>
-            <ActionButton
-              ref={dismissButton}
-              busy={false}
-              unavailable={action.busy}
-              onClick={close}
-              className={quietButtonClass}
-            >
-              {t('groups.cancel')}
-            </ActionButton>
-          </FormActions>
-        </div>
+        {archiveDialog === null ? null : (
+          <ArchiveForm
+            group={group}
+            cancelling={archiveDialog.cancelling}
+            headingId={dialogHeadingId}
+            consequenceId={consequenceId}
+            cancelRef={dismissButton}
+            onBusy={setArchiving}
+            onArchived={(answer) => {
+              setDialog(null);
+              handlers.onChanged(answer);
+              onOutcome({ kind: 'archived', undoable: !archiveDialog.cancelling });
+            }}
+            onChangedElsewhere={() => {
+              setDialog(null);
+              handlers.onChangedElsewhere();
+            }}
+            onUnknownOutcome={handlers.onUnknownOutcome}
+            onCancel={close}
+          />
+        )}
       </ModalDialog>
     </>
   );

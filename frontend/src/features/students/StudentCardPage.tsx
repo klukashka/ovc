@@ -25,7 +25,6 @@ import {
   TextField,
   fieldClass,
   fieldMessage,
-  dangerButtonClass,
   dangerFilledButtonClass,
   linkClass,
   quietButtonClass,
@@ -395,7 +394,7 @@ function WithdrawInvitation({
         <p id={consequenceId}>{t('studentCard.withdrawConsequence')}</p>
         <Refusal state={action.state} />
         <FormActions>
-          <ActionButton busy={action.busy} onClick={withdraw} className={dangerButtonClass}>
+          <ActionButton busy={action.busy} onClick={withdraw} className={dangerFilledButtonClass}>
             {t('studentCard.withdrawSubmit')}
           </ActionButton>
           <ActionButton
@@ -415,7 +414,6 @@ function WithdrawInvitation({
 
 function EndWorkingTogether({
   consequence,
-  discards,
   handlers,
   open,
   returnFocus,
@@ -423,7 +421,6 @@ function EndWorkingTogether({
   end,
 }: {
   readonly consequence: string;
-  readonly discards: boolean;
   readonly handlers: CardHandlers;
   readonly open: boolean;
   readonly returnFocus: RefObject<HTMLElement | null>;
@@ -458,7 +455,7 @@ function EndWorkingTogether({
             onClick={() => {
               action.run(end);
             }}
-            className={discards ? dangerFilledButtonClass : dangerButtonClass}
+            className={dangerFilledButtonClass}
           >
             {t('studentCard.removeSubmit')}
           </ActionButton>
@@ -499,7 +496,6 @@ function RemoveStudent({
       consequence={t(
         state === 'provisional' ? 'studentCard.removeConsequence' : 'studentCard.removeReclaimConsequence',
       )}
-      discards
       handlers={handlers}
       open={open}
       returnFocus={returnFocus}
@@ -538,7 +534,6 @@ function EndRelationship({
   return (
     <EndWorkingTogether
       consequence={t('studentCard.endConsequence')}
-      discards={false}
       handlers={handlers}
       open={open}
       returnFocus={returnFocus}
@@ -662,6 +657,7 @@ function CardInvitation({
   readonly card: StudentCard;
   readonly handlers: CardHandlers;
 }): ReactElement | null {
+  const { t } = useTranslation();
   const [invitedAgain, setInvitedAgain] = useState<string | null>(null);
   const linkState = card.state === 'invited' || card.state === 'ended';
   if (card.state === 'invited' && card.email_erased) {
@@ -680,6 +676,14 @@ function CardInvitation({
         onSent={handlers.onSent}
         onStale={handlers.onStale}
         onErased={handlers.onChangedElsewhere}
+        newLinkTexts={{
+          menu: t('studentCard.invitationActions'),
+          title: t('studentCard.regenerateTitle'),
+          consequence: t('studentCard.regenerateConsequence'),
+          cancel: t('studentCard.cancel'),
+        }}
+        onDialog={handlers.onDialog}
+        onChangedMeanwhile={handlers.onChangedElsewhere}
       />
     );
   }
@@ -801,6 +805,7 @@ export function CardActions({
       : [
           {
             label: dangerous,
+            danger: true,
             onChoose: (): void => {
               open('danger');
             },

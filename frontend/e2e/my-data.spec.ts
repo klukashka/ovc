@@ -6,6 +6,7 @@ import { type TestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { type TestControl, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { accessToken, callApi, seedActiveStudent } from './tutoring.ts';
+import { expectDangerConfirmation, expectLastDangerItem, openedMenu } from './dangerActions.ts';
 
 const zipSignature = 'PK\u0003\u0004';
 const exportReadyTimeout = 30_000;
@@ -39,6 +40,16 @@ async function exportState(deployment: Deployment, token: string): Promise<unkno
   const body = answer.body;
   const current = typeof body === 'object' && body !== null && 'export' in body ? body.export : null;
   return typeof current === 'object' && current !== null && 'state' in current ? current.state : null;
+}
+
+function deletionDialog(page: Page): Locator {
+  return page.getByRole('dialog', { name: 'Delete the export?' });
+}
+
+async function openDeletion(page: Page): Promise<Locator> {
+  await exportSection(page).getByRole('button', { name: 'Export actions', exact: true }).click();
+  await openedMenu(page).getByRole('button', { name: 'Delete export', exact: true }).click();
+  return deletionDialog(page);
 }
 
 async function seedReadyExport(deployment: Deployment, control: TestControl, account: TestAccount): Promise<void> {
@@ -194,7 +205,8 @@ test.describe('My data in English on a computer', () => {
     await openMyData(page, control, tutor);
     await expect(exportSection(page).getByText('Your export is ready.')).toBeVisible();
 
-    await exportSection(page).getByRole('button', { name: 'Delete export' }).click();
+    const dialog = await openDeletion(page);
+    await dialog.getByRole('button', { name: 'Delete export', exact: true }).click();
 
     await expect(exportSection(page).getByText('The export was deleted.')).toBeFocused();
     await expect(exportSection(page).getByText('You have no export yet.')).toBeVisible();
@@ -202,6 +214,99 @@ test.describe('My data in English on a computer', () => {
     await expect(request).toHaveAttribute('aria-disabled', 'true');
     await expect(request).toHaveAccessibleDescription(/^You can request a new export after .+\.$/);
     await expect(exportSection(page).getByText(/^You can request a new export after .+\.$/)).toBeVisible();
+  });
+
+  test('Delete export is the dangerous item of Export actions and asks first, opening on Cancel', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await seedReadyExport(deployment, control, tutor);
+    await openMyData(page, control, tutor);
+    await expect(exportSection(page).getByText('Your export is ready.')).toBeVisible();
+    await expect(exportSection(page).getByRole('button', { name: 'Delete export', exact: true })).toHaveCount(0);
+    await exportSection(page).getByRole('button', { name: 'Export actions', exact: true }).click();
+    await expectLastDangerItem(page, 'Delete export', false);
+
+    await openedMenu(page).getByRole('button', { name: 'Delete export', exact: true }).click();
+
+    const dialog = deletionDialog(page);
+    await expectDangerConfirmation(dialog, 'Delete export', 'Cancel');
+    await expect(dialog).toContainText('a download link created in the last 5 minutes keeps working until it expires');
+    expect(await exportState(deployment, await accessToken(deployment, tutor))).toBe('ready');
+  });
+
+  test('Cancel and Escape close the deletion dialog onto Export actions and keep the export', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await seedReadyExport(deployment, control, tutor);
+    await openMyData(page, control, tutor);
+    const menu = exportSection(page).getByRole('button', { name: 'Export actions', exact: true });
+
+    const cancelled = await openDeletion(page);
+    await cancelled.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(cancelled).toBeHidden();
+    await expect(menu).toBeFocused();
+    const escaped = await openDeletion(page);
+    await page.keyboard.press('Escape');
+
+    await expect(escaped).toBeHidden();
+    await expect(menu).toBeFocused();
+    expect(await exportState(deployment, await accessToken(deployment, tutor))).toBe('ready');
+  });
+
+  test('an export replaced elsewhere while the deletion dialog is open is not deleted', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await seedReadyExport(deployment, control, tutor);
+    await control.advance(24 * 60 * 60 + 60);
+    await openMyData(page, control, tutor);
+    const dialog = await openDeletion(page);
+    const token = await accessToken(deployment, tutor);
+    expect((await callApi(deployment, token, 'POST', '/exports', { password: tutor.password })).status).toBe(202);
+
+    await dialog.getByRole('button', { name: 'Delete export', exact: true }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(
+      exportSection(page).getByText('Your export changed in the meantime. The page shows its current state.'),
+    ).toBeFocused();
+    expect(await exportState(deployment, token)).not.toBeNull();
+  });
+
+  test('every session signed out while the deletion dialog is open leaves through sign-in and deletes nothing', async ({
+    page,
+    deployment,
+    control,
+    diagnostics,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await seedReadyExport(deployment, control, tutor);
+    await openMyData(page, control, tutor);
+    let deletions = 0;
+    page.on('request', (request) => {
+      if (request.method() === 'DELETE' && new URL(request.url()).pathname === '/api/v1/exports/current') {
+        deletions += 1;
+      }
+    });
+    const dialog = await openDeletion(page);
+    await expect(dialog).toBeVisible();
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/auth/refresh', status: 401 });
+
+    const signedOut = await callApi(deployment, await accessToken(deployment, tutor), 'POST', '/auth/logout-all');
+
+    expect(signedOut.status).toBe(204);
+    await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    expect(deletions).toBe(0);
+    expect(await exportState(deployment, await accessToken(deployment, tutor))).toBe('ready');
   });
 
   test('Cancel in the request dialog returns focus to Request an export', async ({ page, deployment, control }) => {

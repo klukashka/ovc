@@ -10,7 +10,6 @@ import {
   SelectChevron,
   SubmitButton,
   TextField,
-  dangerButtonClass,
   dangerFilledButtonClass,
   errorMessage,
   fieldClass,
@@ -394,7 +393,7 @@ function SignOutEverywhereDialog({
                 setOutcome(failed(thrown));
               });
             }}
-            className={dangerButtonClass}
+            className={dangerFilledButtonClass}
           >
             {t('settings.signOutEverywhere')}
           </ActionButton>
@@ -526,12 +525,14 @@ export function AccountSettingsPage(): ReactElement {
           items={[
             {
               label: t('settings.signOutEverywhere'),
+              danger: true,
               onChoose: (): void => {
                 setDialog('signOutEverywhere');
               },
             },
             {
               label: t('settings.deleteAccount'),
+              danger: true,
               onChoose: (): void => {
                 setDialog('delete');
               },

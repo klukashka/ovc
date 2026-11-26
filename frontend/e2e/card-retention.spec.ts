@@ -24,7 +24,7 @@ test('student card › a card whose email was erased refuses Create a new link a
     )
     .count();
   const erasedControls = await main
-    .getByRole('button', { name: /^(Copy link|Send by email|Create a new link)$/ })
+    .getByRole('button', { name: /^(Copy link|Send by email|Create a new link|Invitation actions)$/ })
     .count();
   const erasedLinks = await main.getByText(/\/invite\//).count();
 
@@ -39,6 +39,29 @@ test('student card › a card whose email was erased refuses Create a new link a
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('status').filter({ hasText: 'Saved.' })).toBeFocused();
   await expect(main.getByRole('button', { name: 'Send by email' })).toBeVisible();
-  await expect(main.getByRole('button', { name: 'Create a new link' })).toBeVisible();
+  await expect(main.getByRole('button', { name: 'Invitation actions' })).toBeVisible();
   await expect(main.getByText(/\/invite\//)).not.toHaveText(card.link);
+});
+
+test('student card › an expired link keeps Create a new link as a visible button that creates the link without asking', async ({
+  page,
+  deployment,
+  control,
+}) => {
+  const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+  const card = await createCard(deployment, pavel, 'Boris', newTestAccount('Boris', 'student').email);
+  await control.advance(15 * 24 * 60 * 60);
+  await signInThroughTheApi(page, pavel);
+  await page.goto(`/students/${card.id}`);
+  const main = page.getByRole('main');
+  await expect(main.getByText('Invitation expired')).toBeVisible();
+  await expect(main.getByRole('button', { name: 'Invitation actions' })).toHaveCount(0);
+
+  await main.getByRole('button', { name: 'Create a new link' }).click();
+
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(
+    page.getByRole('status').filter({ hasText: 'A new link was created. The old one no longer works.' }),
+  ).toBeFocused();
+  await expect(main.getByText(/\/invite\//)).toBeVisible();
 });

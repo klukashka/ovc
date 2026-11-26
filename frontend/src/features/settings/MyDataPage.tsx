@@ -14,17 +14,20 @@ import { useTranslation } from 'react-i18next';
 
 import { useScheduler } from '../../app/clock.ts';
 import { useVisibility } from '../../app/visibility.ts';
+import { ActionMenu } from '../../components/ui/ActionMenu.tsx';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
+import { ModalDialog } from '../../components/ui/Dialog.tsx';
 import {
   ActionButton,
   FormActions,
   FormAlert,
-  dangerButtonClass,
+  dangerFilledButtonClass,
   errorMessage,
   primaryButtonClass,
   quietButtonClass,
   retryAfterSeconds,
 } from '../../components/ui/Form.tsx';
+import { MoreIcon } from '../../components/ui/icons.tsx';
 import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed, RefetchFailed, focusHeadingIfLost } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
@@ -47,7 +50,7 @@ import { SettingsNav } from './SettingsNav.tsx';
 import { SettingsSection } from './SettingsRow.tsx';
 import { formatStorage } from './storageAmount.ts';
 
-type ExportAction = 'cancel' | 'delete' | 'download';
+type ExportAction = 'cancel' | 'download';
 
 type ActionOutcome =
   | { readonly kind: 'idle' }
@@ -55,6 +58,8 @@ type ActionOutcome =
   | { readonly kind: 'refused'; readonly message: string; readonly shown: string | null };
 
 type ActionResult = { readonly kind: 'idle' } | { readonly kind: 'refused'; readonly message: string };
+
+type DeleteState = { readonly kind: 'idle' | 'busy' } | { readonly kind: 'refused'; readonly message: string };
 
 interface Notice {
   readonly id: number;
@@ -170,16 +175,20 @@ function ExportState({
   current,
   outcome,
   requestButton,
+  exportMenu,
   onRequest,
-  onRemove,
+  onCancel,
+  onDelete,
   onDownload,
 }: {
   readonly me: Me;
   readonly current: CurrentExport;
   readonly outcome: ActionOutcome;
   readonly requestButton: RefObject<HTMLButtonElement | null>;
+  readonly exportMenu: RefObject<HTMLButtonElement | null>;
   readonly onRequest: () => void;
-  readonly onRemove: (action: 'cancel' | 'delete') => void;
+  readonly onCancel: () => void;
+  readonly onDelete: (exportId: string) => void;
   readonly onDownload: () => void;
 }): ReactElement {
   const { t } = useTranslation();
@@ -217,14 +226,7 @@ function ExportState({
               </p>
             </div>
           )}
-          <ActionButton
-            busy={busyWith('cancel')}
-            unavailable={busy}
-            onClick={() => {
-              onRemove('cancel');
-            }}
-            className={quietButtonClass}
-          >
+          <ActionButton busy={busyWith('cancel')} unavailable={busy} onClick={onCancel} className={quietButtonClass}>
             {t('myData.cancelExport')}
           </ActionButton>
         </>
@@ -248,16 +250,22 @@ function ExportState({
             >
               {t('myData.download')}
             </ActionButton>
-            <ActionButton
-              busy={busyWith('delete')}
+            <ActionMenu
+              label={t('myData.exportActions')}
               unavailable={busy}
-              onClick={() => {
-                onRemove('delete');
-              }}
-              className={dangerButtonClass}
+              buttonRef={exportMenu}
+              items={[
+                {
+                  label: t('myData.deleteExport'),
+                  danger: true,
+                  onChoose: (): void => {
+                    onDelete(shown.id);
+                  },
+                },
+              ]}
             >
-              {t('myData.deleteExport')}
-            </ActionButton>
+              <MoreIcon />
+            </ActionMenu>
           </FormActions>
         </>
       );
@@ -282,12 +290,128 @@ function refusalMessage(t: TFunction, error: ApiError, retryAfter: number | null
   return error.code === 'service_unavailable' ? t('myData.busy') : errorMessage(t, error, retryAfter);
 }
 
+export function DeleteExportForm({
+  me,
+  exportId,
+  nextAllowedAt,
+  headingId,
+  consequenceId,
+  cancelRef,
+  onBusy,
+  onDeleted,
+  onChangedMeanwhile,
+  onCancel,
+}: {
+  readonly me: Me;
+  readonly exportId: string;
+  readonly nextAllowedAt: string | null;
+  readonly headingId: string;
+  readonly consequenceId: string;
+  readonly cancelRef: RefObject<HTMLButtonElement | null>;
+  readonly onBusy: (busy: boolean) => void;
+  readonly onDeleted: () => void;
+  readonly onChangedMeanwhile: () => void;
+  readonly onCancel: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const client = useApiClient();
+  const queryClient = useQueryClient();
+  const [state, setState] = useState<DeleteState>(idle);
+  const mounted = useRef(true);
+
+  useEffect(() => {
+    mounted.current = true;
+    return (): void => {
+      mounted.current = false;
+    };
+  }, []);
+
+  async function currentExportId(): Promise<string | null> {
+    await queryClient.cancelQueries({ queryKey: currentExportKey });
+    const fresh = await queryClient.query({
+      queryKey: currentExportKey,
+      queryFn: () => fetchCurrentExport(client),
+      staleTime: 0,
+      retry: false,
+    });
+    return fresh.export?.id ?? null;
+  }
+
+  async function deleteBound(): Promise<DeleteState> {
+    if ((await currentExportId()) !== exportId) {
+      onChangedMeanwhile();
+      return idle;
+    }
+    const { error, response } = await client.DELETE('/api/v1/exports/current');
+    if (!response.ok) {
+      return {
+        kind: 'refused',
+        message: refusalMessage(t, apiErrorFrom(response.status, error), retryAfterSeconds(response)),
+      };
+    }
+    onDeleted();
+    return idle;
+  }
+
+  function confirm(): void {
+    if (state.kind === 'busy') {
+      return;
+    }
+    setState({ kind: 'busy' });
+    onBusy(true);
+    const settle = (settled: DeleteState): void => {
+      onBusy(false);
+      if (mounted.current) {
+        setState(settled);
+      }
+    };
+    deleteBound().then(settle, (thrown: unknown) => {
+      console.error('export_delete_failed', thrown instanceof Error ? thrown.name : typeof thrown);
+      settle({ kind: 'refused', message: refusalMessage(t, asApiError(thrown), null) });
+    });
+  }
+
+  return (
+    <div className="flex flex-col gap-4">
+      <h2 id={headingId} className="text-heading">
+        {t('myData.deleteTitle')}
+      </h2>
+      <p id={consequenceId}>
+        {nextAllowedAt === null
+          ? t('myData.deleteConsequenceNow')
+          : t('myData.deleteConsequence', { time: formatDateTime(nextAllowedAt, me.language, me.timezone) })}
+      </p>
+      {state.kind === 'refused' ? <FormAlert>{state.message}</FormAlert> : null}
+      <FormActions>
+        <ActionButton busy={state.kind === 'busy'} onClick={confirm} className={dangerFilledButtonClass}>
+          {t('myData.deleteExport')}
+        </ActionButton>
+        <ActionButton
+          ref={cancelRef}
+          busy={false}
+          unavailable={state.kind === 'busy'}
+          onClick={onCancel}
+          className={quietButtonClass}
+        >
+          {t('myData.keepExport')}
+        </ActionButton>
+      </FormActions>
+    </div>
+  );
+}
+
 function ExportSection({ me }: { readonly me: Me }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const queryClient = useQueryClient();
   const requestButton = useRef<HTMLButtonElement>(null);
+  const exportMenu = useRef<HTMLButtonElement>(null);
+  const keepExport = useRef<HTMLButtonElement>(null);
+  const deleteHeadingId = useId();
+  const deleteConsequenceId = useId();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [deletingBusy, setDeletingBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionOutcome>(idle);
   const [notice, setNotice] = useState<Notice | null>(null);
   const query = useQuery({
@@ -302,6 +426,11 @@ function ExportSection({ me }: { readonly me: Me }): ReactElement {
   const shown = shownStateOf(query.data);
   const mounted = useRef(true);
   useFocusOnShownStateChange(shown);
+  const deletingChanged = deleting !== null && deleting !== (query.data?.export?.id ?? null);
+  if (deletingChanged && !deletingBusy) {
+    setDeleting(null);
+    setNotice((previous) => ({ id: (previous?.id ?? 0) + 1, message: t('myData.changedMeanwhile') }));
+  }
 
   function stillMounted(): boolean {
     return mounted.current;
@@ -354,8 +483,8 @@ function ExportSection({ me }: { readonly me: Me }): ReactElement {
     }
   }
 
-  function remove(action: 'cancel' | 'delete'): void {
-    act(action, async () => {
+  function cancelExport(): void {
+    act('cancel', async () => {
       const { error, response } = await client.DELETE('/api/v1/exports/current');
       if (!response.ok) {
         return {
@@ -363,9 +492,13 @@ function ExportSection({ me }: { readonly me: Me }): ReactElement {
           message: refusalMessage(t, apiErrorFrom(response.status, error), retryAfterSeconds(response)),
         };
       }
-      await readAgainAndAnnounce(t(action === 'cancel' ? 'myData.cancelled' : 'myData.deleted'));
+      await readAgainAndAnnounce(t('myData.cancelled'));
       return idle;
     });
+  }
+
+  function closeDeletion(): void {
+    setDeleting(null);
   }
 
   function download(): void {
@@ -410,7 +543,13 @@ function ExportSection({ me }: { readonly me: Me }): ReactElement {
             setOutcome(idle);
             setDialogOpen(true);
           }}
-          onRemove={remove}
+          exportMenu={exportMenu}
+          onCancel={cancelExport}
+          onDelete={(exportId) => {
+            setNotice(null);
+            setOutcome(idle);
+            setDeleting(exportId);
+          }}
           onDownload={download}
         />
       </>
@@ -422,6 +561,36 @@ function ExportSection({ me }: { readonly me: Me }): ReactElement {
       <SettingsSection heading={t('myData.heading')} description={t('myData.explanation')}>
         {content()}
       </SettingsSection>
+      <ModalDialog
+        open={deleting !== null}
+        busy={deletingBusy}
+        labelledBy={deleteHeadingId}
+        describedBy={deleteConsequenceId}
+        returnFocus={exportMenu}
+        initialFocus={keepExport}
+        onClose={closeDeletion}
+      >
+        {deleting === null ? null : (
+          <DeleteExportForm
+            me={me}
+            exportId={deleting}
+            nextAllowedAt={query.data?.next_allowed_at ?? null}
+            headingId={deleteHeadingId}
+            consequenceId={deleteConsequenceId}
+            cancelRef={keepExport}
+            onBusy={setDeletingBusy}
+            onDeleted={() => {
+              closeDeletion();
+              void readAgainAndAnnounce(t('myData.deleted'));
+            }}
+            onChangedMeanwhile={() => {
+              closeDeletion();
+              announce(t('myData.changedMeanwhile'));
+            }}
+            onCancel={closeDeletion}
+          />
+        )}
+      </ModalDialog>
       <RequestExportDialog
         open={dialogOpen}
         returnFocus={requestButton}

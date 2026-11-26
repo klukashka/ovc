@@ -1,8 +1,9 @@
 import { useInfiniteQuery, useQuery, useQueryClient } from '@tanstack/react-query';
-import { type ReactElement, useState } from 'react';
+import { type ReactElement, useId, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { type ActionState, done, refusedBy, showsStaleData, useAction } from '../../components/ui/action.ts';
+import { ActionMenu } from '../../components/ui/ActionMenu.tsx';
 import { Avatar } from '../../components/ui/Avatar.tsx';
 import {
   DataTable,
@@ -14,7 +15,16 @@ import {
   tableRowClass,
 } from '../../components/ui/DataTable.tsx';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
-import { ActionButton, FormAlert, FormNotice, quietButtonClass } from '../../components/ui/Form.tsx';
+import { ModalDialog } from '../../components/ui/Dialog.tsx';
+import {
+  ActionButton,
+  FormActions,
+  FormAlert,
+  FormNotice,
+  dangerFilledButtonClass,
+  quietButtonClass,
+} from '../../components/ui/Form.tsx';
+import { MoreIcon } from '../../components/ui/icons.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { loadNextPage, useFocusOnFirstNewRow } from '../../components/ui/moreRows.ts';
 import { Page } from '../../components/ui/Page.tsx';
@@ -65,11 +75,25 @@ function TutorCodeSection(): ReactElement {
   const queryClient = useQueryClient();
   const action = useAction();
   const [notice, setNotice] = useState<CodeNotice>('none');
+  const [confirmingCode, setConfirmingCode] = useState<string | null>(null);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const keepCode = useRef<HTMLButtonElement>(null);
+  const dialogHeadingId = useId();
+  const consequenceId = useId();
   const query = useQuery({
     queryKey: tutorCodeKey,
     queryFn: () => fetchTutorCode(client),
     retry: false,
   });
+  const shownCode = query.data?.active === true ? query.data.code : null;
+  if (confirmingCode !== null && confirmingCode !== shownCode && !action.busy) {
+    setConfirmingCode(null);
+  }
+
+  function closeConfirmation(): void {
+    action.reset();
+    setConfirmingCode(null);
+  }
 
   function regenerate(): void {
     setNotice('none');
@@ -78,6 +102,7 @@ function TutorCodeSection(): ReactElement {
       if (data === undefined) {
         return refusedBy(response, error);
       }
+      setConfirmingCode(null);
       queryClient.setQueryData(tutorCodeKey, data);
       setNotice('regenerated');
       return done;
@@ -115,7 +140,40 @@ function TutorCodeSection(): ReactElement {
       <>
         <p className="font-mono text-title tracking-wider">{code.code}</p>
         <p className="text-small text-text-muted">{t('teaching.codeHint')}</p>
-        <Refusal state={action.state} dailyLimit="code" confirmation="regenerateCode" />
+        {confirmingCode === null ? (
+          <Refusal state={action.state} dailyLimit="code" confirmation="regenerateCode" />
+        ) : null}
+        <ModalDialog
+          open={confirmingCode !== null}
+          busy={action.busy}
+          labelledBy={dialogHeadingId}
+          describedBy={consequenceId}
+          returnFocus={menuButton}
+          initialFocus={keepCode}
+          onClose={closeConfirmation}
+        >
+          <div className="flex flex-col gap-4">
+            <h2 id={dialogHeadingId} className="text-heading">
+              {t('teaching.regenerateTitle')}
+            </h2>
+            <p id={consequenceId}>{t('teaching.regenerateConsequence')}</p>
+            <Refusal state={action.state} dailyLimit="code" confirmation="regenerateCode" />
+            <FormActions>
+              <ActionButton busy={action.busy} onClick={regenerate} className={dangerFilledButtonClass}>
+                {t('teaching.regenerate')}
+              </ActionButton>
+              <ActionButton
+                ref={keepCode}
+                busy={false}
+                unavailable={action.busy}
+                onClick={closeConfirmation}
+                className={quietButtonClass}
+              >
+                {t('teaching.cancel')}
+              </ActionButton>
+            </FormActions>
+          </div>
+        </ModalDialog>
         <CodeNoticeMessage notice={notice} />
         <div className="flex flex-wrap gap-3">
           <button
@@ -128,9 +186,25 @@ function TutorCodeSection(): ReactElement {
             {t('teaching.copy')}
           </button>
           {code.active ? (
-            <ActionButton busy={action.busy} onClick={regenerate} className={quietButtonClass}>
-              {t('teaching.regenerate')}
-            </ActionButton>
+            <ActionMenu
+              label={t('teaching.codeActions')}
+              busy={action.busy && confirmingCode === null}
+              unavailable={action.busy}
+              buttonRef={menuButton}
+              items={[
+                {
+                  label: t('teaching.regenerate'),
+                  danger: true,
+                  onChoose: (): void => {
+                    setNotice('none');
+                    action.reset();
+                    setConfirmingCode(code.code);
+                  },
+                },
+              ]}
+            >
+              <MoreIcon />
+            </ActionMenu>
           ) : null}
         </div>
         {code.active ? (

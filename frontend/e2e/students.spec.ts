@@ -20,6 +20,7 @@ import {
   recordHeadingsAtPopstate,
 } from './observers.ts';
 import { createPastSimpleTemplate } from './assignment.ts';
+import { expectDangerConfirmation, expectLastDangerItem, openedMenu } from './dangerActions.ts';
 import { issueThroughTheApi } from './homework.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { addDays, cancelThisLesson, localDate, scheduleLessons, scheduleLessonsWithIds } from './schedule.ts';
@@ -143,6 +144,26 @@ async function secondPageCursor(deployment: Deployment, tutor: TestAccount, card
 
 function invitationLinks(links: readonly string[]): string[] {
   return links.filter((link) => new URL(link).pathname.startsWith('/invite/'));
+}
+
+function countRequests(page: Page, method: string, path: string): () => number {
+  let count = 0;
+  page.on('request', (request) => {
+    if (request.method() === method && new URL(request.url()).pathname === path) {
+      count += 1;
+    }
+  });
+  return () => count;
+}
+
+function invitationDialog(page: Page): Locator {
+  return page.getByRole('dialog', { name: 'Create a new invitation link?' });
+}
+
+async function openNewLinkDialog(page: Page): Promise<Locator> {
+  await page.getByRole('button', { name: 'Invitation actions', exact: true }).click();
+  await openedMenu(page).getByRole('button', { name: 'Create a new link', exact: true }).click();
+  return invitationDialog(page);
 }
 
 async function shownLink(region: Locator): Promise<string> {
@@ -298,6 +319,7 @@ test.describe('in Russian', () => {
     await expect(page.getByText('Код начнёт работать, когда вы подтвердите email.')).toBeVisible();
     await expect(page.getByText('Подтвердите email, чтобы код заработал и его можно было обновить.')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Обновить код' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Действия с кодом' })).toHaveCount(0);
     await expect(
       page
         .getByRole('region', { name: 'Заблокированные ученики' })
@@ -415,6 +437,108 @@ test.describe('in English with the dark theme', () => {
     expect(addresses.filter((address) => address.includes('/invite/'))).toEqual([]);
   });
 
+  test('students › Withdraw invitation is the last item of Card actions after a separator and confirms with a filled button', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const card = await createCard(deployment, pavel, 'Boris', newTestAccount('Boris', 'student').email);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${card.id}`);
+    await pageMenuButton(page, 'Card actions').click();
+    await expectLastDangerItem(page, 'Withdraw invitation', true);
+
+    await openedMenu(page).getByRole('button', { name: 'Withdraw invitation', exact: true }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'Withdraw the invitation?' });
+    await expectDangerConfirmation(dialog, 'Withdraw invitation', 'Cancel');
+    await expect(dialog).toContainText('erased for good');
+  });
+
+  test('students › End working together is the last item of Card actions after a separator and confirms with a filled button', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${anna.cardId}`);
+    await pageMenuButton(page, 'Card actions').click();
+    await expectLastDangerItem(page, 'End working together', true);
+
+    await openedMenu(page).getByRole('button', { name: 'End working together', exact: true }).click();
+
+    const dialog = page.getByRole('dialog', { name: 'End working together?' });
+    await expectDangerConfirmation(dialog, 'End', 'Cancel');
+    await expect(dialog).toContainText('your data export and the student’s, if any, are withdrawn');
+  });
+
+  test('students › Create a new link for an open link is the dangerous item of Invitation actions and asks first', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const card = await createCard(deployment, pavel, 'Boris', newTestAccount('Boris', 'student').email);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${card.id}`);
+    expect(await shownLink(page.getByRole('main'))).toBe(card.link);
+    await expect(page.getByRole('main').getByRole('button', { name: 'Create a new link', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Invitation actions', exact: true }).click();
+    await expectLastDangerItem(page, 'Create a new link', false);
+
+    await openedMenu(page).getByRole('button', { name: 'Create a new link', exact: true }).click();
+
+    const dialog = invitationDialog(page);
+    await expectDangerConfirmation(dialog, 'Create a new link', 'Cancel');
+    await expect(dialog).toContainText('including a link already sent by email');
+    expect(await invitationIsUsable(deployment, card.link)).toBe(true);
+  });
+
+  test('students › Cancel and Escape close the new link dialog onto Invitation actions and keep the link', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const card = await createCard(deployment, pavel, 'Boris', newTestAccount('Boris', 'student').email);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${card.id}`);
+    expect(await shownLink(page.getByRole('main'))).toBe(card.link);
+    const menu = page.getByRole('button', { name: 'Invitation actions', exact: true });
+
+    const cancelled = await openNewLinkDialog(page);
+    await cancelled.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(cancelled).toBeHidden();
+    await expect(menu).toBeFocused();
+    const escaped = await openNewLinkDialog(page);
+    await page.keyboard.press('Escape');
+
+    await expect(escaped).toBeHidden();
+    await expect(menu).toBeFocused();
+    expect(await shownLink(page.getByRole('main'))).toBe(card.link);
+    expect(await invitationIsUsable(deployment, card.link)).toBe(true);
+  });
+
+  test('students › a card accepted elsewhere while the new link dialog is open closes it without a new link', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const boris = newTestAccount('Boris', 'student');
+    const card = await createCard(deployment, pavel, 'Boris', boris.email);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/students/${card.id}`);
+    expect(await shownLink(page.getByRole('main'))).toBe(card.link);
+    const newLinks = countRequests(page, 'POST', `/api/v1/students/${card.id}/invitation`);
+    const dialog = await openNewLinkDialog(page);
+    await expect(dialog).toBeVisible();
+
+    await signUpOnInvitation(deployment, card.link, boris, 'en');
+
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText('This card changed in the meantime. Its current state is shown below.')).toBeFocused();
+    expect(newLinks()).toBe(0);
+  });
+
   test('students › after Send by email, Create a new link replaces the emailed link and only the new one works', async ({
     page,
     deployment,
@@ -434,7 +558,8 @@ test.describe('in English with the dark theme', () => {
     await expect(mainColumn.getByRole('status')).toBeFocused();
     await control.tick();
 
-    await page.getByRole('button', { name: 'Create a new link' }).click();
+    const dialog = await openNewLinkDialog(page);
+    await dialog.getByRole('button', { name: 'Create a new link', exact: true }).click();
 
     await expect(mainColumn.getByRole('status')).toHaveText('A new link was created. The old one no longer works.');
     await expect(mainColumn.getByRole('status')).toBeFocused();
@@ -460,7 +585,9 @@ test.describe('in English with the dark theme', () => {
     const opener = pageMenuButton(page, 'Card actions');
     await chooseFromPageMenu(page, 'Card actions', 'Withdraw invitation');
     const confirm = page.getByRole('dialog', { name: 'Withdraw the invitation?' });
-    await expect(confirm).toContainText('The link stops working and this card is removed.');
+    await expect(confirm).toContainText(
+      'The link stops working, and this card with its name, email and notes is erased for good.',
+    );
     await page.keyboard.press('Escape');
     await expect(opener).toBeFocused();
     await chooseFromPageMenu(page, 'Card actions', 'Withdraw invitation');

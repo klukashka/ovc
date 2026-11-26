@@ -7,9 +7,13 @@ export const groupsTexts = {
     nextLesson: 'Next lesson',
     state: 'State',
   },
-  archiveTitle: 'Archive the group?',
+  archiveTitle: 'Archive {name}?',
   archiveConsequence:
-    '{count, plural, one {# future lesson will be cancelled.} other {# future lessons will be cancelled.}} Unarchiving the group restores neither lessons nor series.',
+    '{count, plural, one {# future lesson will be cancelled,} other {# future lessons will be cancelled,}} and any series of the group that has not ended ends. Its chat becomes read-only and it takes no new homework or students; its students stay your students. The students on the cancelled lessons are notified once, by email unless they turned lesson changes off. Unarchiving the group restores neither lessons nor series.',
+  archiveSeriesConsequence:
+    'The group’s series that has not ended ends; no lesson is cancelled, so nobody is notified. Its chat becomes read-only and it takes no new homework or students; its students stay your students. Unarchiving the group does not restore the series.',
+  archiveQuietConsequence:
+    'The group’s chat becomes read-only and it takes no new homework or students; its students stay your students. Nobody is notified. Unarchiving the group, or Undo right after, restores homework and the chat.',
   list: 'Groups',
   new: 'New group',
   newTitle: 'New group',
@@ -42,7 +46,10 @@ export const groupsTexts = {
   addSubmit: 'Add',
   added: 'The students were added to the group.',
   removeFromGroup: 'Remove from group',
-  removeNamed: 'Remove from the group: {name}',
+  memberActions: 'Actions for {name}',
+  removeTitle: 'Remove {name} from {group}?',
+  removeConsequence:
+    'They leave the group’s future lessons and its chat, lose the chat’s history and can no longer join a live group lesson. Their unsent files in the group chat are deleted. They keep the work already issued to them. Your data export and theirs, if any, are withdrawn. They are not notified. Add back restores the membership, not the deleted files or the exports.',
   archivedNoNewMembers: 'An archived group takes no new students. Unarchive it to add some.',
   archive: 'Archive',
   archiveHint:

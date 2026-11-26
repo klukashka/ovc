@@ -22,6 +22,14 @@ export const myDataTexts = {
   download: 'Download',
   deleteExport: 'Delete export',
   deleted: 'The export was deleted.',
+  exportActions: 'Export actions',
+  deleteTitle: 'Delete the export?',
+  deleteConsequence:
+    'The file is deleted; a download link created in the last 5 minutes keeps working until it expires. A new export can be requested after the 24-hour limit, at {time}. Nobody is notified. It cannot be undone.',
+  deleteConsequenceNow:
+    'The file is deleted; a download link created in the last 5 minutes keeps working until it expires. Nobody is notified. It cannot be undone.',
+  keepExport: 'Cancel',
+  changedMeanwhile: 'Your export changed in the meantime. The page shows its current state.',
   failed: {
     withdrawn: 'The export was withdrawn because some data in it is no longer available to you. Request a new one.',
     too_long: 'Preparing the export took too long.',

@@ -12,6 +12,7 @@ import { createI18n } from '../../lib/i18n/i18n.ts';
 import { studentCardTexts } from './cardTexts.ru.ts';
 import { type StudentCard, studentCardKey } from './api.ts';
 import { StudentCardPage, StudentCardView } from './StudentCardPage.tsx';
+import { NewLinkForm } from './InvitationLink.tsx';
 
 const origin = 'https://ovc.example';
 const link = 'https://ovc.example/invite/an-open-invitation-token';
@@ -241,7 +242,7 @@ describe('the student card', () => {
     expect(screen.getByText('Приглашение отправлено')).toBeDefined();
     expect(screen.getByText(link)).toBeDefined();
     expect(screen.getByText('Действует до 7 нояб., 18:00')).toBeDefined();
-    expect(names).toEqual(['Действия с карточкой', 'Скопировать ссылку', 'Отправить по email', 'Создать новую ссылку']);
+    expect(names).toEqual(['Действия с карточкой', 'Действия со ссылкой', 'Скопировать ссылку', 'Отправить по email']);
     expect(actions).toEqual(['Имя и email…', 'Отозвать приглашение']);
   });
 
@@ -353,7 +354,7 @@ describe('the student card', () => {
     const actions = cardActionNames();
 
     expect(screen.getByText(link)).toBeDefined();
-    expect(names).toEqual(['Действия с карточкой', 'Скопировать ссылку', 'Отправить по email', 'Создать новую ссылку']);
+    expect(names).toEqual(['Действия с карточкой', 'Действия со ссылкой', 'Скопировать ссылку', 'Отправить по email']);
     expect(actions).toEqual(['Имя и email…']);
   });
 });
@@ -399,19 +400,53 @@ describe('the student card page', () => {
     expect(screen.queryByText(card.invitation?.url ?? '')).toBeNull();
   });
 
-  test('a new link refused because the email was erased meanwhile reloads the card under the focused changed notice', async () => {
-    const shown = await showLoadedCard();
-    shown.server.eraseCardEmail(shown.card.id);
+  test('a new link refused because the email was erased meanwhile reports the erasure and creates no link', async () => {
+    const server = new FakeAuthServer();
+    const session = await signedInTutor(server);
+    const card = await createCard(session, 'Борис');
+    server.eraseCardEmail(card.id);
+    const reported: string[] = [];
+    const i18n = await createI18n('ru');
+    i18n.addResourceBundle('ru', 'translation', { studentCard: studentCardTexts }, true, true);
+    render(
+      <SessionContext value={session}>
+        <ApiClientContext value={createApiClient(origin, session.authorizedFetch)}>
+          <I18nextProvider i18n={i18n}>
+            <NewLinkForm
+              cardId={card.id}
+              texts={{
+                menu: 'Действия со ссылкой',
+                title: 'Создать новую ссылку-приглашение?',
+                consequence: '',
+                cancel: 'Отмена',
+              }}
+              headingId="new-link-heading"
+              consequenceId="new-link-consequence"
+              cancelRef={{ current: null }}
+              onBusy={() => undefined}
+              onCreated={() => {
+                reported.push('created');
+              }}
+              onStale={() => {
+                reported.push('stale');
+              }}
+              onErased={() => {
+                reported.push('erased');
+              }}
+              onCancel={() => {
+                reported.push('cancel');
+              }}
+            />
+          </I18nextProvider>
+        </ApiClientContext>
+      </SessionContext>,
+    );
 
-    await act(async () => {
-      screen.getByRole('button', { name: 'Создать новую ссылку' }).click();
-      await Promise.resolve();
+    fireEvent.click(screen.getByRole('button', { name: 'Создать новую ссылку' }));
+
+    await waitFor(() => {
+      expect(reported).toEqual(['erased']);
     });
-    const notice = await screen.findByText('Карточка тем временем изменилась. Ниже — её текущее состояние.');
-    await screen.findByRole('button', { name: 'Указать почту' });
-
-    expect(document.activeElement).toBe(notice);
-    expect(screen.queryByRole('button', { name: 'Создать новую ссылку' })).toBeNull();
   });
 
   test('keeps unsaved typing and the loaded card when a background refetch fails, with a polite notice', async () => {

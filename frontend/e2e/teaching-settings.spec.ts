@@ -1,6 +1,9 @@
+import type { Page } from '@playwright/test';
+
 import { signInThroughTheApi } from './accounts.ts';
 import type { TestAccount } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
+import { expectDangerConfirmation, expectLastDangerItem, openedMenu } from './dangerActions.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { busyControls, recordBusyControls } from './observers.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
@@ -10,6 +13,20 @@ const codePattern = /^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/;
 const dailyRegenerations = 10;
 const pageSize = 30;
 const blockedQueryPaths = ['/api/v1/tutor/blocked-requesters'];
+const codeDialogName = 'Обновить код репетитора?';
+
+async function openCodeDialog(page: Page): Promise<void> {
+  await page.getByRole('button', { name: 'Действия с кодом', exact: true }).click();
+  await openedMenu(page).getByRole('button', { name: 'Обновить код', exact: true }).click();
+}
+
+async function regenerateThroughTheDialog(page: Page): Promise<void> {
+  await openCodeDialog(page);
+  await page
+    .getByRole('dialog', { name: codeDialogName })
+    .getByRole('button', { name: 'Обновить код', exact: true })
+    .click();
+}
 
 async function unblockThroughTheApi(deployment: Deployment, tutor: TestAccount, name: string): Promise<string> {
   const token = await accessToken(deployment, tutor);
@@ -50,7 +67,7 @@ test('teaching settings › after the code is copied, regenerating it shows a ne
     expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(before);
   }
 
-  await section.getByRole('button', { name: 'Обновить код' }).click();
+  await regenerateThroughTheDialog(page);
 
   await expect(section.getByRole('status')).toHaveText('Создан новый код. Старый больше не работает.');
   await expect(section.getByRole('status')).toBeFocused();
@@ -70,7 +87,7 @@ test('teaching settings › the daily regeneration limit is explained', async ({
   await page.goto('/settings/teaching');
   const section = page.getByRole('region', { name: 'Код репетитора' });
 
-  await section.getByRole('button', { name: 'Обновить код' }).click();
+  await regenerateThroughTheDialog(page);
 
   await expect(section.getByRole('alert')).toHaveText(
     'На сегодня достигнут предел обновлений кода. Попробуйте завтра.',
@@ -189,4 +206,49 @@ test('teaching settings › show more moves focus to the first new blocked stude
   await expect(unblockButtons).toHaveCount(pageSize + 1);
   await expect(unblockButtons.nth(pageSize)).toBeFocused();
   await expect(section.getByRole('button', { name: 'Показать ещё' })).toHaveCount(0);
+});
+
+test('teaching settings › Regenerate code is the dangerous item of Code actions and asks first, opening on Cancel', async ({
+  page,
+  deployment,
+}) => {
+  const maria = await seedVerifiedUser(deployment, 'Мария');
+  const before = await tutorCode(deployment, maria);
+  await signInThroughTheApi(page, maria);
+  await page.goto('/settings/teaching');
+  const section = page.getByRole('region', { name: 'Код репетитора' });
+  await expect(section.getByText(codePattern)).toHaveText(before);
+  await expect(section.getByRole('button', { name: 'Обновить код', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Действия с кодом', exact: true }).click();
+  await expectLastDangerItem(page, 'Обновить код', false);
+
+  await openedMenu(page).getByRole('button', { name: 'Обновить код', exact: true }).click();
+
+  const dialog = page.getByRole('dialog', { name: codeDialogName });
+  await expectDangerConfirmation(dialog, 'Обновить код', 'Отмена');
+  await expect(dialog).toContainText('Уже отправленные и ожидающие заявки это не затронет');
+  expect(await tutorCode(deployment, maria)).toBe(before);
+});
+
+test('teaching settings › Cancel and Escape close the code dialog onto Code actions and keep the code', async ({
+  page,
+  deployment,
+}) => {
+  const maria = await seedVerifiedUser(deployment, 'Мария');
+  const before = await tutorCode(deployment, maria);
+  await signInThroughTheApi(page, maria);
+  await page.goto('/settings/teaching');
+  const menu = page.getByRole('button', { name: 'Действия с кодом', exact: true });
+  const dialog = page.getByRole('dialog', { name: codeDialogName });
+
+  await openCodeDialog(page);
+  await dialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(menu).toBeFocused();
+  await openCodeDialog(page);
+  await page.keyboard.press('Escape');
+
+  await expect(dialog).toBeHidden();
+  await expect(menu).toBeFocused();
+  expect(await tutorCode(deployment, maria)).toBe(before);
 });

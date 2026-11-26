@@ -1,30 +1,47 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { I18nextProvider } from 'react-i18next';
-import { RouterProvider, createMemoryRouter } from 'react-router';
 import { afterEach, describe, expect, test } from 'vitest';
 
-import { SchedulerContext } from '../../app/clock.ts';
-import { ApiClientContext, createApiClient } from '../../lib/api/client.ts';
+import { type ApiClient, ApiClientContext, createApiClient } from '../../lib/api/client.ts';
 import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fakeTransport.ts';
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
-import { GroupPage } from './GroupPage.tsx';
+import { type GroupDetail, type GroupMember, fetchGroup } from './api.ts';
+import { AddBackNotice, ArchiveForm, RemovalForm } from './GroupPage.tsx';
 import { groupsTexts } from './texts.en.ts';
 
 const origin = 'https://ovc.example';
 const tutorEmail = 'pavel@example.org';
 const password = 'a long password';
 
-interface ShownGroup {
+interface SeededGroup {
   readonly server: FakeAuthServer;
-  readonly groupId: string;
+  readonly session: Session;
+  readonly client: ApiClient;
+  readonly group: GroupDetail;
 }
 
-async function showGroup(seed: { readonly members: readonly string[] }): Promise<ShownGroup> {
+interface Calls {
+  readonly names: string[];
+  readonly record: (name: string) => () => void;
+}
+
+function calls(): Calls {
+  const names: string[] = [];
+  return {
+    names,
+    record: (name) => () => {
+      names.push(name);
+    },
+  };
+}
+
+async function seededGroup(members: readonly string[]): Promise<SeededGroup> {
   const server = new FakeAuthServer();
   server.addAccount({ id: 'tutor-1', name: 'Pavel', email: tutorEmail, password });
-  const { groupId } = server.seedGroup(tutorEmail, { name: 'Evening algebra', members: seed.members });
+  const { groupId } = server.seedGroup(tutorEmail, { name: 'Evening algebra', members });
   const session = new Session({
     origin,
     transport: server.transport(),
@@ -32,33 +49,53 @@ async function showGroup(seed: { readonly members: readonly string[] }): Promise
     scheduler: manualScheduler(),
   });
   await session.signIn(tutorEmail, password);
+  const client = createApiClient(origin, session.authorizedFetch);
+  return { server, session, client, group: await fetchGroup(client, groupId) };
+}
+
+async function show(seeded: SeededGroup, element: ReactElement): Promise<void> {
   const i18n = await createI18n('en');
   i18n.addResourceBundle('en', 'translation', { groups: groupsTexts }, true, true);
-  const router = createMemoryRouter([{ path: '/groups/:groupId', element: <GroupPage /> }], {
-    initialEntries: [`/groups/${groupId}`],
-  });
   await act(async () => {
     render(
-      <SessionContext value={session}>
-        <ApiClientContext value={createApiClient(origin, session.authorizedFetch)}>
+      <SessionContext value={seeded.session}>
+        <ApiClientContext value={seeded.client}>
           <QueryClientProvider client={new QueryClient()}>
-            <SchedulerContext value={manualScheduler()}>
-              <I18nextProvider i18n={i18n}>
-                <RouterProvider router={router} />
-              </I18nextProvider>
-            </SchedulerContext>
+            <I18nextProvider i18n={i18n}>{element}</I18nextProvider>
           </QueryClientProvider>
         </ApiClientContext>
       </SessionContext>,
     );
     await Promise.resolve();
   });
-  await screen.findByRole('heading', { level: 1, name: 'Evening algebra' });
-  return { server, groupId };
 }
 
-async function removeBoris(): Promise<void> {
-  fireEvent.click(await screen.findByRole('button', { name: 'Remove from the group: Boris' }));
+function memberNamed(group: GroupDetail, name: string): GroupMember {
+  const member = group.members.find((candidate) => candidate.display_name === name);
+  if (member === undefined) {
+    throw new Error(`no member named ${name}`);
+  }
+  return member;
+}
+
+async function showRemoval(seeded: SeededGroup, recorded: Calls): Promise<void> {
+  await show(
+    seeded,
+    <RemovalForm
+      groupId={seeded.group.id}
+      groupName={seeded.group.name}
+      member={memberNamed(seeded.group, 'Boris')}
+      headingId="removal-heading"
+      consequenceId="removal-consequence"
+      cancelRef={{ current: null }}
+      unavailable={false}
+      onBusy={() => undefined}
+      onRemoved={recorded.record('removed')}
+      onChangedElsewhere={recorded.record('changedElsewhere')}
+      onUnknownOutcome={recorded.record('unknownOutcome')}
+      onCancel={recorded.record('cancel')}
+    />,
+  );
 }
 
 afterEach(() => {
@@ -66,52 +103,86 @@ afterEach(() => {
 });
 
 describe('the reversal of a group change whose answer is unknown', () => {
-  test('a removal whose answer is lost offers no Add back', async () => {
-    const { server, groupId } = await showGroup({ members: ['Anna', 'Boris'] });
-    server.loseNextGroupWrite();
+  test('a removal whose answer is lost reports an unknown outcome, so the page offers no Add back', async () => {
+    const seeded = await seededGroup(['Anna', 'Boris']);
+    const recorded = calls();
+    await showRemoval(seeded, recorded);
+    seeded.server.loseNextGroupWrite();
 
-    await removeBoris();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from group' }));
 
     await waitFor(() => {
-      expect(screen.queryByRole('link', { name: 'Boris' })).toBeNull();
+      expect(recorded.names).toEqual(['unknownOutcome']);
     });
-    expect(screen.queryByRole('button', { name: 'Add back' })).toBeNull();
-    expect(server.groupMemberIds(groupId)).toHaveLength(1);
+    expect(await screen.findByRole('alert')).toBeTruthy();
+    expect(seeded.server.groupMemberIds(seeded.group.id)).toHaveLength(1);
   });
 
-  test('a removal refused with 503 offers no Add back', async () => {
-    const { server, groupId } = await showGroup({ members: ['Anna', 'Boris'] });
-    server.failNextGroupWrite();
+  test('a removal refused with 503 reports an unknown outcome and no removal, so the page offers no Add back', async () => {
+    const seeded = await seededGroup(['Anna', 'Boris']);
+    const recorded = calls();
+    await showRemoval(seeded, recorded);
+    seeded.server.failNextGroupWrite();
 
-    await removeBoris();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove from group' }));
 
     await screen.findByRole('alert');
-    expect(screen.queryByRole('button', { name: 'Add back' })).toBeNull();
-    expect(screen.getByRole('link', { name: 'Boris' })).toBeTruthy();
-    expect(server.groupMemberIds(groupId)).toHaveLength(2);
+    expect(recorded.names).toEqual(['unknownOutcome']);
+    expect(seeded.server.groupMemberIds(seeded.group.id)).toHaveLength(2);
   });
 
-  test('an archive whose answer is lost offers no Undo', async () => {
-    const { server } = await showGroup({ members: ['Anna'] });
-    server.loseNextGroupWrite();
+  test('an archive whose answer is lost reports an unknown outcome, so the page offers no Undo', async () => {
+    const seeded = await seededGroup(['Anna']);
+    const recorded = calls();
+    await show(
+      seeded,
+      <ArchiveForm
+        group={seeded.group}
+        cancelling={false}
+        headingId="archive-heading"
+        consequenceId="archive-consequence"
+        cancelRef={{ current: null }}
+        onBusy={() => undefined}
+        onArchived={recorded.record('archived')}
+        onChangedElsewhere={recorded.record('changedElsewhere')}
+        onUnknownOutcome={recorded.record('unknownOutcome')}
+        onCancel={recorded.record('cancel')}
+      />,
+    );
+    seeded.server.loseNextGroupWrite();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Group actions' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'Archive group' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Archive group' }));
 
-    await screen.findByText('Archived', { exact: true });
-    expect(screen.queryByRole('button', { name: 'Undo' })).toBeNull();
+    await waitFor(() => {
+      expect(recorded.names).toEqual(['unknownOutcome']);
+    });
+    expect(await screen.findByRole('alert')).toBeTruthy();
   });
 
   test('an Add back whose answer is lost confirms after the refetch', async () => {
-    const { server, groupId } = await showGroup({ members: ['Anna', 'Boris'] });
-    await removeBoris();
-    const addBack = await screen.findByRole('button', { name: 'Add back' });
-    server.loseNextGroupWrite();
+    const seeded = await seededGroup(['Anna', 'Boris']);
+    const boris = memberNamed(seeded.group, 'Boris');
+    await seeded.client.PATCH('/api/v1/groups/{id}', {
+      params: { path: { id: seeded.group.id } },
+      body: { remove: [boris.relationship_id] },
+    });
+    await show(
+      seeded,
+      <AddBackNotice
+        groupId={seeded.group.id}
+        relationshipId={boris.relationship_id}
+        name="Boris"
+        unavailable={false}
+        onBusy={() => undefined}
+        onChanged={() => undefined}
+      />,
+    );
+    seeded.server.loseNextGroupWrite();
 
-    fireEvent.click(addBack);
+    fireEvent.click(screen.getByRole('button', { name: 'Add back' }));
 
     await screen.findByText(/^Back in the group:/);
     expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
-    expect(server.groupMemberIds(groupId)).toHaveLength(2);
+    expect(seeded.server.groupMemberIds(seeded.group.id)).toHaveLength(2);
   });
 });

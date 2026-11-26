@@ -13,6 +13,7 @@ import {
   tableRows,
 } from './fixtures.ts';
 import { busyControls, recordBusyControls } from './observers.ts';
+import { expectDangerConfirmation, expectLastDangerItem, openedMenu } from './dangerActions.ts';
 import { channelOf } from './messages.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import {
@@ -124,6 +125,44 @@ async function groupPageWithLessons(
 
 function members(page: Page, name: string): Locator {
   return page.getByRole('list', { name, exact: true }).getByRole('listitem');
+}
+
+function memberMenu(page: Page, name: string): Locator {
+  return page.getByRole('button', { name: `Actions for ${name}`, exact: true });
+}
+
+function removalDialog(page: Page, name: string, group: string): Locator {
+  return page.getByRole('dialog', { name: `Remove ${name} from ${group}?` });
+}
+
+async function openRemoval(page: Page, name: string, group: string): Promise<Locator> {
+  await memberMenu(page, name).click();
+  await openedMenu(page).getByRole('button', { name: 'Remove from group', exact: true }).click();
+  return removalDialog(page, name, group);
+}
+
+async function removeMember(page: Page, name: string, group: string): Promise<void> {
+  const dialog = await openRemoval(page, name, group);
+  await dialog.getByRole('button', { name: 'Remove from group', exact: true }).click();
+}
+
+function archiveDialog(page: Page, group: string): Locator {
+  return page.getByRole('dialog', { name: `Archive ${group}?` });
+}
+
+async function archiveThroughTheDialog(page: Page, group: string): Promise<void> {
+  await chooseFromPageMenu(page, 'Group actions', 'Archive group');
+  await archiveDialog(page, group).getByRole('button', { name: 'Archive group', exact: true }).click();
+}
+
+function countRequests(page: Page, method: string, path: string): () => number {
+  let count = 0;
+  page.on('request', (request) => {
+    if (request.method() === method && new URL(request.url()).pathname === path) {
+      count += 1;
+    }
+  });
+  return () => count;
 }
 
 test.describe('Maria in Russian', () => {
@@ -319,15 +358,216 @@ test.describe('in English', () => {
     const groupMembers = members(page, 'Students');
     await expectRowsNamed(groupMembers, ['Anna', 'Boris']);
 
-    await page.getByRole('button', { name: 'Remove from the group: Boris' }).click();
+    await removeMember(page, 'Boris', 'Evening algebra');
 
     await expect(page.getByRole('button', { name: 'Add back' })).toBeFocused();
     await expect(page.getByRole('status').filter({ hasText: 'Removed from the group: Boris.' })).toContainText(
       'Their unsent files in the group chat are not restored.',
     );
     await expect(groupMembers).toHaveText([/Anna/]);
-    expect(await busyControls(page)).toEqual([['Remove from the group: Boris']]);
+    expect(await busyControls(page)).toEqual([['Remove from group']]);
     expect(await cardState(deployment, pavel, boris.cardId)).toEqual({ state: 'active', groups: [] });
+  });
+
+  test('groups › Remove from group is the only item of the member’s menu, styled as dangerous', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await expectRowsNamed(members(page, 'Students'), ['Anna']);
+
+    await memberMenu(page, 'Anna').click();
+
+    await expectLastDangerItem(page, 'Remove from group', false);
+    await expect(page.getByRole('button', { name: 'Remove from the group: Anna' })).toHaveCount(0);
+  });
+
+  test('groups › the removal dialog names the member and the group, says what changes and opens on Cancel', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await expectRowsNamed(members(page, 'Students'), ['Anna']);
+
+    const dialog = await openRemoval(page, 'Anna', 'Evening algebra');
+
+    await expectDangerConfirmation(dialog, 'Remove from group', 'Cancel');
+    await expect(dialog).toContainText('Your data export and theirs, if any, are withdrawn. They are not notified.');
+  });
+
+  test('groups › Cancel and Escape close the removal dialog onto the member’s menu and remove nobody', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await expectRowsNamed(members(page, 'Students'), ['Anna']);
+
+    const cancelled = await openRemoval(page, 'Anna', 'Evening algebra');
+    await cancelled.getByRole('button', { name: 'Cancel' }).click();
+    await expect(cancelled).toBeHidden();
+    await expect(memberMenu(page, 'Anna')).toBeFocused();
+    const escaped = await openRemoval(page, 'Anna', 'Evening algebra');
+    await page.keyboard.press('Escape');
+
+    await expect(escaped).toBeHidden();
+    await expect(memberMenu(page, 'Anna')).toBeFocused();
+    expect(await groupMemberNames(deployment, pavel, groupId)).toEqual(['Anna']);
+  });
+
+  test('groups › a member whose relationship ends elsewhere while the removal dialog is open closes it without a request', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const boris = await seedActiveStudent(deployment, pavel, 'Boris');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId, boris.cardId]);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await expectRowsNamed(members(page, 'Students'), ['Anna', 'Boris']);
+    const patches = countRequests(page, 'PATCH', `/api/v1/groups/${groupId}`);
+    const dialog = await openRemoval(page, 'Boris', 'Evening algebra');
+
+    await endRelationship(deployment, pavel, boris.cardId);
+
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText('This group changed in the meantime. Its current state is shown below.')).toBeFocused();
+    await expectRowsNamed(members(page, 'Students'), ['Anna']);
+    expect(patches()).toBe(0);
+  });
+
+  test('groups › archiving is the last item of Group actions after a separator and always asks first', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await expectRowsNamed(members(page, 'Students'), ['Anna']);
+    await pageMenuButton(page, 'Group actions').click();
+    await expectLastDangerItem(page, 'Archive group', true);
+
+    await openedMenu(page).getByRole('button', { name: 'Archive group', exact: true }).click();
+
+    const dialog = archiveDialog(page, 'Evening algebra');
+    await expectDangerConfirmation(dialog, 'Archive group', 'Cancel');
+    await expect(dialog).toContainText('Nobody is notified.');
+    expect(await cardState(deployment, pavel, anna.cardId)).toEqual({ state: 'active', groups: ['Evening algebra'] });
+  });
+
+  test('groups › a group archived elsewhere while the archive dialog is open closes it without a request', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, groupId } = await groupWithTwoFutureLessons(deployment, control.now);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await expect(pageMenuButton(page, 'Group actions')).toBeVisible();
+    const archives = countRequests(page, 'POST', `/api/v1/groups/${groupId}/archive`);
+    await chooseFromPageMenu(page, 'Group actions', 'Archive group');
+    const dialog = archiveDialog(page, 'Evening algebra');
+    await expect(dialog).toBeVisible();
+
+    await archiveGroup(deployment, pavel, groupId);
+
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText('This group changed in the meantime. Its current state is shown below.')).toBeFocused();
+    await expect(page.getByRole('main').getByText('Archived', { exact: true })).toBeVisible();
+    expect(archives()).toBe(0);
+  });
+
+  test('groups › a lesson scheduled elsewhere while the archive dialog says nothing is cancelled closes it without a request', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await expectRowsNamed(members(page, 'Students'), ['Anna']);
+    const archives = countRequests(page, 'POST', `/api/v1/groups/${groupId}/archive`);
+    await chooseFromPageMenu(page, 'Group actions', 'Archive group');
+    const dialog = archiveDialog(page, 'Evening algebra');
+    await expect(dialog).toContainText('Nobody is notified.');
+    const tomorrow = addDays(localDate(await control.now(), 'Europe/Moscow'), 1);
+
+    await scheduleLessons(deployment, pavel, {
+      group_id: groupId,
+      title: 'Lesson Evening algebra',
+      date: tomorrow,
+      start: '18:00',
+      duration_minutes: 60,
+      weekdays: [isoWeekday(tomorrow)],
+      count: 1,
+    });
+
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText('This group changed in the meantime. Its current state is shown below.')).toBeFocused();
+    expect(archives()).toBe(0);
+    expect(await cardState(deployment, pavel, anna.cardId)).toEqual({ state: 'active', groups: ['Evening algebra'] });
+  });
+
+  test('groups › an archive dialog closed because the group was archived elsewhere does not come back after Unarchive', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { pavel, groupId } = await groupWithTwoFutureLessons(deployment, control.now);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await chooseFromPageMenu(page, 'Group actions', 'Archive group');
+    const dialog = archiveDialog(page, 'Evening algebra');
+    await expect(dialog).toBeVisible();
+    await archiveGroup(deployment, pavel, groupId);
+    await expect(dialog).toBeHidden();
+
+    await chooseFromPageMenu(page, 'Group actions', 'Unarchive group');
+
+    await expect(page.getByRole('status').filter({ hasText: 'The group is active again.' })).toBeFocused();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+  });
+
+  test('groups › a removal dialog closed because the member left elsewhere does not come back when the member returns', async ({
+    page,
+    deployment,
+  }) => {
+    const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const anna = await seedActiveStudent(deployment, pavel, 'Anna');
+    const boris = await seedActiveStudent(deployment, pavel, 'Boris');
+    const cleo = await seedActiveStudent(deployment, pavel, 'Cleo');
+    const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId, boris.cardId, cleo.cardId]);
+    const token = await accessToken(deployment, pavel);
+    await signInThroughTheApi(page, pavel);
+    await page.goto(`/groups/${groupId}`);
+    await expectRowsNamed(members(page, 'Students'), ['Anna', 'Boris', 'Cleo']);
+    const dialog = await openRemoval(page, 'Boris', 'Evening algebra');
+    await callApi(deployment, token, 'PATCH', `/groups/${groupId}`, { remove: [boris.cardId] });
+    await endRelationship(deployment, pavel, anna.cardId);
+    await expect(dialog).toBeHidden();
+    await expectRowsNamed(members(page, 'Students'), ['Cleo']);
+    await callApi(deployment, token, 'PATCH', `/groups/${groupId}`, { add: [boris.cardId] });
+
+    await endRelationship(deployment, pavel, cleo.cardId);
+
+    await expectRowsNamed(members(page, 'Students'), ['Boris']);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
   });
 
   test('groups › Add back after removing a member restores the membership and moves focus to the result', async ({
@@ -343,7 +583,7 @@ test.describe('in English', () => {
     await page.goto(`/groups/${groupId}`);
     const groupMembers = members(page, 'Students');
     await expectRowsNamed(groupMembers, ['Anna', 'Boris']);
-    await page.getByRole('button', { name: 'Remove from the group: Boris' }).click();
+    await removeMember(page, 'Boris', 'Evening algebra');
     await expect(page.getByRole('button', { name: 'Add back' })).toBeFocused();
     const chatWhileRemoved = await callApi(
       deployment,
@@ -379,7 +619,7 @@ test.describe('in English', () => {
     await signInThroughTheApi(page, pavel);
     diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/groups/${groupId}`, status: 409 });
     await page.goto(`/groups/${groupId}`);
-    await page.getByRole('button', { name: 'Remove from the group: Boris' }).click();
+    await removeMember(page, 'Boris', 'Evening algebra');
     const addBack = page.getByRole('button', { name: 'Add back' });
     await expect(addBack).toBeFocused();
     await endRelationship(deployment, pavel, boris.cardId);
@@ -403,7 +643,7 @@ test.describe('in English', () => {
     await signInThroughTheApi(page, pavel);
     diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/groups/${groupId}`, status: 409 });
     await page.goto(`/groups/${groupId}`);
-    await page.getByRole('button', { name: 'Remove from the group: Boris' }).click();
+    await removeMember(page, 'Boris', 'Evening algebra');
     const addBack = page.getByRole('button', { name: 'Add back' });
     await expect(addBack).toBeFocused();
     await archiveGroup(deployment, pavel, groupId);
@@ -426,7 +666,7 @@ test.describe('in English', () => {
     await page.goto(`/groups/${groupId}`);
     await expectRowsNamed(members(page, 'Students'), ['Anna']);
 
-    await chooseFromPageMenu(page, 'Group actions', 'Archive group');
+    await archiveThroughTheDialog(page, 'Evening algebra');
 
     await expect(page.getByRole('status').filter({ hasText: 'The group is archived.' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Undo' })).toBeFocused();
@@ -445,7 +685,7 @@ test.describe('in English', () => {
     const groupId = await createGroup(deployment, pavel, 'Evening algebra', [anna.cardId]);
     await signInThroughTheApi(page, pavel);
     await page.goto(`/groups/${groupId}`);
-    await chooseFromPageMenu(page, 'Group actions', 'Archive group');
+    await archiveThroughTheDialog(page, 'Evening algebra');
     const undo = page.getByRole('button', { name: 'Undo' });
     await expect(undo).toBeFocused();
 
@@ -473,11 +713,12 @@ test.describe('in English', () => {
 
     await chooseFromPageMenu(page, 'Group actions', 'Archive group');
 
-    const dialog = page.getByRole('dialog', { name: 'Archive the group?' });
+    const dialog = archiveDialog(page, 'Evening algebra');
     await expect(dialog.getByRole('button', { name: 'Cancel' })).toBeFocused();
     await expect(dialog).toContainText(
-      '2 future lessons will be cancelled. Unarchiving the group restores neither lessons nor series.',
+      '2 future lessons will be cancelled, and any series of the group that has not ended ends.',
     );
+    await expect(dialog).toContainText('Unarchiving the group restores neither lessons nor series.');
   });
 
   test('groups › dismissing the archive confirmation returns focus to the Group actions menu and archives nothing', async ({
@@ -490,7 +731,7 @@ test.describe('in English', () => {
     await page.goto(`/groups/${groupId}`);
     const archive = pageMenuButton(page, 'Group actions');
     await chooseFromPageMenu(page, 'Group actions', 'Archive group');
-    const dialog = page.getByRole('dialog', { name: 'Archive the group?' });
+    const dialog = archiveDialog(page, 'Evening algebra');
 
     await dialog.getByRole('button', { name: 'Cancel' }).click();
 
@@ -508,7 +749,7 @@ test.describe('in English', () => {
     await signInThroughTheApi(page, pavel);
     await page.goto(`/groups/${groupId}`);
     await chooseFromPageMenu(page, 'Group actions', 'Archive group');
-    const dialog = page.getByRole('dialog', { name: 'Archive the group?' });
+    const dialog = archiveDialog(page, 'Evening algebra');
 
     await dialog.getByRole('button', { name: 'Archive group' }).click();
 

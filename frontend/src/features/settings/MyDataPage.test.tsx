@@ -26,7 +26,7 @@ import { formatDateTime } from '../../lib/format/dates.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import { FakeGateway } from '../../lib/realtime/fakeGateway.ts';
 import { type CurrentExport, type Export, type ExportFailure, currentExportKey } from './exportApi.ts';
-import { MyDataPage } from './MyDataPage.tsx';
+import { DeleteExportForm, MyDataPage } from './MyDataPage.tsx';
 import { myDataTexts as englishTexts } from './myDataTexts.en.ts';
 import { myDataTexts as russianTexts } from './myDataTexts.ru.ts';
 import { RequestExportForm } from './RequestExportDialog.tsx';
@@ -171,6 +171,63 @@ async function shownExport(
 
 function button(name: string): HTMLElement {
   return screen.getByRole('button', { name });
+}
+
+interface DeletionForm {
+  readonly server: FakeAuthServer;
+  readonly session: Session;
+  readonly reported: string[];
+}
+
+async function showDeletionForm(current: (server: FakeAuthServer) => Export): Promise<DeletionForm> {
+  const server = fakeServer();
+  const shownExport = current(server);
+  server.seedExport(email, shownExport, null);
+  const session = signedOutSession(server);
+  await session.signIn(email, password);
+  const signedIn = session.snapshot();
+  if (signedIn.kind !== 'signedIn') {
+    throw new Error('the session is not signed in');
+  }
+  const reported: string[] = [];
+  const i18n = await english();
+  await act(async () => {
+    render(
+      providers(
+        session,
+        new QueryClient(),
+        pageClock(server),
+        controlledVisibility(),
+        i18n,
+        <DeleteExportForm
+          me={signedIn.me}
+          exportId={shownExport.id}
+          nextAllowedAt={null}
+          headingId="deletion-heading"
+          consequenceId="deletion-consequence"
+          cancelRef={{ current: null }}
+          onBusy={() => undefined}
+          onDeleted={() => {
+            reported.push('deleted');
+          }}
+          onChangedMeanwhile={() => {
+            reported.push('changedMeanwhile');
+          }}
+          onCancel={() => {
+            reported.push('cancel');
+          }}
+        />,
+      ),
+    );
+    await Promise.resolve();
+  });
+  return { server, session, reported };
+}
+
+async function heldExportId(session: Session): Promise<string | null> {
+  const answer = await session.authorizedFetch(`${origin}/api/v1/exports/current`);
+  const body = (await answer.json()) as CurrentExport;
+  return body.export?.id ?? null;
 }
 
 function mintRequests(server: FakeAuthServer): number {
@@ -326,7 +383,8 @@ describe('My data states', () => {
       screen.getByText(`Available until ${formatDateTime(ready.expires_at ?? '', 'ru', 'Europe/Moscow')}.`),
     ).toBeDefined();
     expect(button('Download')).toBeDefined();
-    expect(button('Delete export')).toBeDefined();
+    expect(button('Export actions')).toBeDefined();
+    expect(screen.queryByRole('button', { name: 'Delete export' })).toBeNull();
   });
 
   test.each<[ExportFailure, string]>([
@@ -392,19 +450,49 @@ describe('My data actions', () => {
     expect(button('Request an export').getAttribute('aria-disabled')).toBeNull();
   });
 
-  test('Delete export removes a ready export, keeps the 24-hour limit and the notice takes focus', async () => {
-    const server = fakeServer();
-    const nextAllowedAt = instantAfter(server, 24 * hourMilliseconds);
-    await shownExport(server, readyExport(server), nextAllowedAt);
+  test('the deletion form deletes the export it was opened for and reports the deletion', async () => {
+    const form = await showDeletionForm(readyExport);
 
     await act(async () => {
       fireEvent.click(button('Delete export'));
       await Promise.resolve();
     });
 
-    const notice = await screen.findByText('The export was deleted.');
-    expect(document.activeElement).toBe(notice);
-    expect(button('Request an export').getAttribute('aria-disabled')).toBe('true');
+    await eventually(() => {
+      expect(form.reported).toEqual(['deleted']);
+    });
+    expect(await heldExportId(form.session)).toBeNull();
+  });
+
+  test('the deletion form sends no deletion when another export replaced the one it was opened for', async () => {
+    const form = await showDeletionForm(readyExport);
+    const replacement = anExport(form.server, { id: '00000000-0000-4000-a000-0000000001aa', state: 'queued' });
+    form.server.seedExport(email, replacement);
+
+    await act(async () => {
+      fireEvent.click(button('Delete export'));
+      await Promise.resolve();
+    });
+
+    await eventually(() => {
+      expect(form.reported).toEqual(['changedMeanwhile']);
+    });
+    expect(await heldExportId(form.session)).toBe(replacement.id);
+  });
+
+  test('fault: the deletion form whose fresh read answers 503 sends no deletion and says exports are busy', async () => {
+    const form = await showDeletionForm(readyExport);
+    form.server.failNextExportRead();
+
+    await act(async () => {
+      fireEvent.click(button('Delete export'));
+      await Promise.resolve();
+    });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('Exports are busy right now. Try again in a minute.');
+    expect(form.reported).toEqual([]);
+    expect(await heldExportId(form.session)).toBe('00000000-0000-4000-a000-0000000000ff');
   });
 
   test('Download starts the download from a temporary link without a download attribute and keeps no address', async () => {

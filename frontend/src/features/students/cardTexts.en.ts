@@ -18,7 +18,8 @@ export const studentCardTexts = {
   notesHint: 'Only you see this.',
   withdraw: 'Withdraw invitation',
   withdrawTitle: 'Withdraw the invitation?',
-  withdrawConsequence: 'The link stops working and this card is removed. You can add the student again later.',
+  withdrawConsequence:
+    'The link stops working, and this card with its name, email and notes is erased for good. Your data export, if any, is withdrawn. The student is not notified. It cannot be undone; you can add the student again as a new card.',
   withdrawSubmit: 'Withdraw invitation',
   cancel: 'Cancel',
   end: 'End working together',
@@ -28,11 +29,15 @@ export const studentCardTexts = {
   removeReclaimConsequence:
     'The owner of this email has not chosen yet whether to keep studying with you. Ending removes the link without telling the owner. A new card with a fresh link replaces this one and keeps its name, email and notes.',
   removeSubmit: 'End',
+  invitationActions: 'Invitation actions',
+  regenerateTitle: 'Create a new invitation link?',
+  regenerateConsequence:
+    'The current link stops working at once, including a link already sent by email. The student is not notified, so send them the new link. It cannot be undone.',
   changedElsewhere: 'This card changed in the meantime. Its current state is shown below.',
   removed: 'The link was removed. This new card has a fresh invitation link.',
   waitingForOwner: 'The owner of this email is deciding whether to keep studying with you.',
   endConsequence:
-    'The student leaves your groups, future lessons are cancelled, the chat becomes read-only, and the student gets an email. The card keeps its history under Ended, and you can invite the student again.',
+    'The student leaves your groups, future lessons are cancelled, the chat becomes read-only, the student’s unsubmitted work is closed, and your data export and the student’s, if any, are withdrawn. The student gets an email listing the cancelled lessons. It cannot be undone: the card keeps its history under Ended, and you can invite the student again.',
   ended: 'You no longer work with this student.',
   inviteAgainTitle: 'Work together again',
   inviteAgainHint: 'A new link brings the student back to this card and its history, but not back into your groups.',
