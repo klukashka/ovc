@@ -64,20 +64,20 @@ func (s *Service) writeArchive(ctx context.Context, claim Claim, started time.Ti
 	if err != nil {
 		return builtArchive{}, upload, err
 	}
-	var student *studentBuild
+	build, err := s.roleBuild(reader, claim, prepared)
+	if err != nil {
+		return builtArchive{}, upload, err
+	}
 	bound := s.deps.Timing.TableAllowance
-	if prepared.role == domain.RoleStudent {
-		if student, err = s.newStudentBuild(reader, claim, prepared); err != nil {
+	if build != nil {
+		if err := build.takeInventory(ctx); err != nil {
 			return builtArchive{}, upload, err
 		}
-		if err := student.takeInventory(ctx); err != nil {
-			return builtArchive{}, upload, err
-		}
-		bound += student.fileBytes()
+		bound += build.fileBytes()
 	}
 	archive := exportformat.NewArchive(sink, bound, claim.Started)
-	if student != nil {
-		err = student.write(ctx, archive)
+	if build != nil {
+		err = build.write(ctx, archive)
 	} else {
 		err = s.writeOwnAccount(archive, sink, claim, prepared)
 	}
@@ -91,10 +91,29 @@ func (s *Service) writeArchive(ctx context.Context, claim Claim, started time.Ti
 		return builtArchive{}, upload, err
 	}
 	built := builtArchive{size: archive.Written(), purgeDue: reader.recorder.earliest}
-	if student != nil {
-		built.sheets, built.files, built.unreadable = student.sheetCounts(), student.files, student.unreadable
+	if build != nil {
+		built.sheets, built.files, built.unreadable = build.sheetCounts(), build.storedCount(), build.unreadableCount()
 	}
 	return built, upload, nil
+}
+
+type roleBuild interface {
+	takeInventory(ctx context.Context) error
+	fileBytes() int64
+	write(ctx context.Context, archive *exportformat.Archive) error
+	sheetCounts() []sheetCount
+	storedCount() int
+	unreadableCount() int
+}
+
+func (s *Service) roleBuild(reader pageReader, claim Claim, prepared preparedContent) (roleBuild, error) {
+	switch prepared.role {
+	case domain.RoleStudent:
+		return s.newStudentBuild(reader, claim, prepared)
+	case domain.RoleTutor:
+		return s.newTutorBuild(reader, claim, prepared)
+	}
+	return nil, nil
 }
 
 func (p *partSink) Write(data []byte) (int, error) {

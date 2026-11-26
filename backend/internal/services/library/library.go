@@ -85,6 +85,22 @@ func New(dependencies Dependencies) *Service {
 	return &Service{deps: dependencies}
 }
 
+type noAddresses struct{}
+
+func (noAddresses) MaterialAddress(domain.AttachmentID, domain.MaterialID, domain.Disposition, time.Time) (string, time.Time) {
+	return "", time.Time{}
+}
+
+func (noAddresses) TemplateAddress(domain.AttachmentID, domain.TemplateID, domain.Disposition, time.Time) (string, time.Time) {
+	return "", time.Time{}
+}
+
+func (s *Service) withoutAddresses() *Service {
+	free := *s
+	free.deps.Addresses = noAddresses{}
+	return &free
+}
+
 func (s *Service) lockTutor(ctx context.Context, repos repositories.Repositories, actor domain.TutorActor) (time.Time, error) {
 	account, err := repos.Users.LockCredentials(ctx, actor.UserID)
 	if errors.Is(err, repositories.ErrNotFound) {

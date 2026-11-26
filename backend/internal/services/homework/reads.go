@@ -26,34 +26,54 @@ func (s *Service) Issues(ctx context.Context, tutor domain.UserID, query IssueLi
 	if err != nil {
 		return IssuePage{}, err
 	}
-	page := IssuePage{Items: []IssueItem{}}
+	var page IssuePage
 	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
-		if err := requireFilters(ctx, repos, tutor, query); err != nil {
-			return err
-		}
-		rows, err := repos.Homework.Issues(ctx, repositories.IssueListQuery{
-			Tutor: tutor, Status: query.Status, Group: query.Group, Relationship: query.Student, NeedsChecking: query.NeedsChecking,
-			DeadlineBefore: query.DeadlineBefore, Now: now, AfterInstant: after, AfterID: afterID, PageSize: query.Limit + 1,
-		})
-		if err != nil {
-			return err
-		}
-		if len(rows) > int(query.Limit) {
-			rows = rows[:query.Limit]
-			last := rows[len(rows)-1]
-			instant := last.IssuedAt
-			if query.DeadlineBefore != nil && last.DeadlineAt != nil {
-				instant = *last.DeadlineAt
-			}
-			next := encodeCursor(instant, last.ID)
-			page.NextCursor = &next
-		}
-		for _, row := range rows {
-			page.Items = append(page.Items, itemOfRow(row))
-		}
-		return s.complete(ctx, repos, tutor, page.Items, query.Student)
+		var err error
+		page, err = s.issues(ctx, repos, tutor, query, after, afterID, now)
+		return err
 	})
 	return page, err
+}
+
+func (s *Service) IssuesIn(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, query IssueListQuery, now time.Time) (IssuePage, error) {
+	after, afterID, err := parseCursor[domain.IssueID](query.Cursor)
+	if err != nil {
+		return IssuePage{}, err
+	}
+	return s.issues(ctx, repos, tutor, query, after, afterID, now)
+}
+
+func (s *Service) issues(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, query IssueListQuery, after *time.Time, afterID domain.IssueID, now time.Time,
+) (IssuePage, error) {
+	page := IssuePage{Items: []IssueItem{}}
+	if err := requireFilters(ctx, repos, tutor, query); err != nil {
+		return IssuePage{}, err
+	}
+	rows, err := repos.Homework.Issues(ctx, repositories.IssueListQuery{
+		Tutor: tutor, Status: query.Status, Group: query.Group, Relationship: query.Student, NeedsChecking: query.NeedsChecking,
+		DeadlineBefore: query.DeadlineBefore, Now: now, AfterInstant: after, AfterID: afterID, PageSize: query.Limit + 1,
+	})
+	if err != nil {
+		return IssuePage{}, err
+	}
+	if len(rows) > int(query.Limit) {
+		rows = rows[:query.Limit]
+		last := rows[len(rows)-1]
+		instant := last.IssuedAt
+		if query.DeadlineBefore != nil && last.DeadlineAt != nil {
+			instant = *last.DeadlineAt
+		}
+		next := encodeCursor(instant, last.ID)
+		page.NextCursor = &next
+	}
+	for _, row := range rows {
+		page.Items = append(page.Items, itemOfRow(row))
+	}
+	if err := s.complete(ctx, repos, tutor, page.Items, query.Student); err != nil {
+		return IssuePage{}, err
+	}
+	return page, nil
 }
 
 func requireFilters(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, query IssueListQuery) error {
@@ -167,25 +187,48 @@ func (s *Service) Issue(ctx context.Context, tutor domain.UserID, id domain.Issu
 	}
 	var issue Issue
 	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
-		row, err := repos.Homework.Issue(ctx, tutor, id)
-		if errors.Is(err, repositories.ErrNotFound) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		items := []IssueItem{itemOfIssue(row)}
-		if err := s.complete(ctx, repos, tutor, items, nil); err != nil {
-			return err
-		}
-		issue.IssueItem = items[0]
-		if issue.Blocks, err = s.describeBlocks(ctx, repos, row.ID, row.Snapshot, now); err != nil {
-			return err
-		}
-		issue.Submissions, err = s.issueSubmissions(ctx, repos, tutor, row)
+		issue, err = s.issueDetail(ctx, repos, tutor, id, now)
 		return err
 	})
 	return issue, err
+}
+
+func (s *Service) IssueIn(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.IssueID, now time.Time) (Issue, []domain.UserID, error) {
+	issue, err := s.withoutAddresses().issueDetail(ctx, repos, tutor, id, now)
+	if err != nil {
+		return Issue{}, nil, err
+	}
+	states, err := repos.Homework.SubmissionStates(ctx, issue.ID)
+	if err != nil {
+		return Issue{}, nil, err
+	}
+	referenced := make([]domain.UserID, 0, len(states))
+	for _, state := range states {
+		referenced = append(referenced, state.StudentID)
+	}
+	return issue, referenced, nil
+}
+
+func (s *Service) issueDetail(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.IssueID, now time.Time) (Issue, error) {
+	row, err := repos.Homework.Issue(ctx, tutor, id)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return Issue{}, ErrNotFound
+	}
+	if err != nil {
+		return Issue{}, err
+	}
+	items := []IssueItem{itemOfIssue(row)}
+	if err := s.complete(ctx, repos, tutor, items, nil); err != nil {
+		return Issue{}, err
+	}
+	issue := Issue{IssueItem: items[0]}
+	if issue.Blocks, err = s.describeBlocks(ctx, repos, row.ID, row.Snapshot, now); err != nil {
+		return Issue{}, err
+	}
+	if issue.Submissions, err = s.issueSubmissions(ctx, repos, tutor, row); err != nil {
+		return Issue{}, err
+	}
+	return issue, nil
 }
 
 func (s *Service) issueSubmissions(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, row repositories.TutorIssue) ([]IssueSubmission, error) {

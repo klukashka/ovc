@@ -588,43 +588,79 @@ func TestADeletedTutorsLessonsBeforeThePurgeBoundTheExport(t *testing.T) {
 
 func TestTheExportRecordsADeletedAccountFromEverySource(t *testing.T) {
 	t.Parallel()
-	sources := map[string]func(*testing.T, *authHarness, exportWorld){
-		"tutor": func(t *testing.T, h *authHarness, world exportWorld) {
+	deleteSecond := func(t *testing.T, h *authHarness, world exportWorld) exportAccount {
+		h.mustAnswer(t, h.deleteMe(t, world.second.token, world.second.password), http.StatusNoContent)
+		return world.second
+	}
+	studentOwns := func(world exportWorld) exportAccount { return world.first }
+	tutorOwns := func(world exportWorld) exportAccount { return world.tutor }
+	sources := map[string]struct {
+		owner func(exportWorld) exportAccount
+		seed  func(*testing.T, *authHarness, exportWorld) exportAccount
+	}{
+		"tutor": {studentOwns, func(t *testing.T, h *authHarness, world exportWorld) exportAccount {
 			h.mustAnswer(t, h.deleteMe(t, world.tutor.token, world.tutor.password), http.StatusNoContent)
-		},
-		"message sender": func(t *testing.T, h *authHarness, world exportWorld) {
+			return world.tutor
+		}},
+		"message sender": {studentOwns, func(t *testing.T, h *authHarness, world exportWorld) exportAccount {
 			h.sent(t, world.second.token, h.groupChannel(t, world.group.ID).ID, "A sender's message")
-			h.mustAnswer(t, h.deleteMe(t, world.second.token, world.second.password), http.StatusNoContent)
-		},
-		"reaction member": func(t *testing.T, h *authHarness, world exportWorld) {
+			return deleteSecond(t, h, world)
+		}},
+		"reaction member": {studentOwns, func(t *testing.T, h *authHarness, world exportWorld) exportAccount {
 			reacted := h.sent(t, world.first.token, h.groupChannel(t, world.group.ID).ID, "A message a mate reacts to")
 			h.mustAnswer(t, h.react(t, world.second.token, reacted.ID, string(domain.ReactionHeart)), http.StatusNoContent)
-			h.mustAnswer(t, h.deleteMe(t, world.second.token, world.second.password), http.StatusNoContent)
-		},
-		"issuing tutor": func(t *testing.T, h *authHarness, world exportWorld) {
+			return deleteSecond(t, h, world)
+		}},
+		"issuing tutor": {studentOwns, func(t *testing.T, h *authHarness, world exportWorld) exportAccount {
 			template := h.workTemplate(t, world.tutor.token, "Issued work", instructionBlock(blockID(81, 1), "Read"))
 			h.issueTemplate(t, world.tutor.token, template, toCard(world.firstCard.ID), studentExportPolicy, nil)
 			h.mustAnswer(t, h.deleteMe(t, world.tutor.token, world.tutor.password), http.StatusNoContent)
-		},
-		"quoted sender": func(t *testing.T, h *authHarness, world exportWorld) {
+			return world.tutor
+		}},
+		"quoted sender": {studentOwns, func(t *testing.T, h *authHarness, world exportWorld) exportAccount {
 			group := h.groupChannel(t, world.group.ID).ID
 			quoted := h.sent(t, world.second.token, group, "A quoted message")
 			h.mustAnswer(t, h.reply(t, world.first.token, group, "A reply", quoted.ID, ""), http.StatusCreated)
-			h.mustAnswer(t, h.deleteMe(t, world.second.token, world.second.password), http.StatusNoContent)
-		},
+			return deleteSecond(t, h, world)
+		}},
+		"tutor's card account": {tutorOwns, deleteSecond},
+		"tutor's lesson audience": {tutorOwns, func(t *testing.T, h *authHarness, world exportWorld) exportAccount {
+			h.scheduled(t, world.tutor.token, oneOffFor(world.secondCard.ID, "2030-03-12", "10:00"))
+			return deleteSecond(t, h, world)
+		}},
+		"tutor's lesson roster": {tutorOwns, func(t *testing.T, h *authHarness, world exportWorld) exportAccount {
+			lesson := h.scheduled(t, world.tutor.token, groupLessonFor(world.group.ID, "2030-03-13", "11:00")).Lessons[0].ID
+			h.cancelWithRoster(t, lesson, world.second.id)
+			return deleteSecond(t, h, world)
+		}},
+		"tutor's submission student": {tutorOwns, func(t *testing.T, h *authHarness, world exportWorld) exportAccount {
+			template := h.workTemplate(t, world.tutor.token, "Deleted student's work", instructionBlock(blockID(91, 1), "Read"))
+			h.issueTemplate(t, world.tutor.token, template, toCard(world.secondCard.ID), studentExportPolicy, nil)
+			return deleteSecond(t, h, world)
+		}},
+		"tutor's message sender": {tutorOwns, func(t *testing.T, h *authHarness, world exportWorld) exportAccount {
+			h.sent(t, world.second.token, h.groupChannel(t, world.group.ID).ID, "A sender's message")
+			return deleteSecond(t, h, world)
+		}},
+		"tutor's reaction member": {tutorOwns, func(t *testing.T, h *authHarness, world exportWorld) exportAccount {
+			message := h.sent(t, world.tutor.token, h.groupChannel(t, world.group.ID).ID, "A message to react to")
+			h.mustAnswer(t, h.react(t, world.second.token, message.ID, string(domain.ReactionHeart)), http.StatusNoContent)
+			return deleteSecond(t, h, world)
+		}},
 	}
-	for name, seed := range sources {
+	for name, source := range sources {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			h := newAuthHarness(t)
 			world := h.exportWorld(t)
-			seed(t, h, world)
-			due := authStart.Add(domain.DeletedAccountRetention)
+			deleted := source.seed(t, h, world)
+			owner := source.owner(world)
+			due := h.deletedAtOf(t, deleted.id).Add(domain.DeletedAccountRetention)
 			h.at(t, due.Add(-time.Hour))
 
-			row := h.readyExportOf(t, h.signedInAgain(t, world.first))
+			row := h.readyExportOf(t, h.signedInAgain(t, owner))
 			h.at(t, due)
-			late, _ := h.mintExport(t, h.signedInAgain(t, world.first).token)
+			late, _ := h.mintExport(t, h.signedInAgain(t, owner).token)
 
 			if row.ExpiresAt == nil || !row.ExpiresAt.Equal(due) || late.status != http.StatusNotFound {
 				t.Fatalf("the export expires at %v and a mint at the due time answered %d", row.ExpiresAt, late.status)
@@ -811,13 +847,7 @@ func digestOf(data []byte) string {
 	return hex.EncodeToString(digest[:])
 }
 
-func TestEveryArchivedFileIsDownloadableThroughItsRoute(t *testing.T) {
-	t.Parallel()
-	h := newUploadHarness(t)
-	world := h.richStudentWorld(t)
-
-	_, archive := h.studentArchiveOf(t, world.first)
-
+func listedAndStoredFiles(archive studentArchive) ([]string, []string) {
 	var listed, entries []string
 	for _, entry := range archive.data.Files {
 		listed = append(listed, entry.Path)
@@ -828,12 +858,12 @@ func TestEveryArchivedFileIsDownloadableThroughItsRoute(t *testing.T) {
 		}
 	}
 	slices.Sort(listed)
-	if !slices.Equal(listed, entries) {
-		t.Errorf("the archive's file entries %v differ from the listed files %v", entries, listed)
-	}
-	if len(archive.data.Files) < 4 {
-		t.Fatalf("the rich world exported %d files, want the prompt image, the worksheet, the answer, the corrected file and the chat file", len(archive.data.Files))
-	}
+	return listed, entries
+}
+
+func (h *authHarness) undownloadableFiles(t *testing.T, token string, archive studentArchive) []string {
+	t.Helper()
+	var refused []string
 	for _, entry := range archive.data.Files {
 		attachment := attachmentOfEntry(entry.Path)
 		for _, reference := range entry.References {
@@ -841,13 +871,42 @@ func TestEveryArchivedFileIsDownloadableThroughItsRoute(t *testing.T) {
 			if strings.HasPrefix(reference, string(domain.ReferenceMessage)+":") {
 				query = ""
 			}
-			minted, address := h.addressOf(t, world.first.token, attachment, query)
+			minted, address := h.addressOf(t, token, attachment, query)
 			served := h.fetch(t, address.URL, nil)
 			if minted.status != http.StatusOK || served.status != http.StatusOK || digestOf([]byte(served.body)) != entry.SHA256 ||
 				!bytes.Equal(archive.entries[entry.Path], []byte(served.body)) {
-				t.Errorf("the archived file %s through %s answered %d and %d", entry.Path, reference, minted.status, served.status)
+				refused = append(refused, fmt.Sprintf("%s through %s answered %d and %d", entry.Path, reference, minted.status, served.status))
 			}
 		}
+	}
+	return refused
+}
+
+func TestEveryArchivedFileIsDownloadableThroughItsRoute(t *testing.T) {
+	t.Parallel()
+	h := newUploadHarness(t)
+	world := h.richStudentWorld(t)
+	h.attachToLesson(t, world.tutor.token, world.lesson, world.material)
+	tutor := h.signedInAgain(t, world.tutor)
+
+	_, archive := h.studentArchiveOf(t, world.first)
+	_, tutorExport := h.tutorArchiveOf(t, tutor)
+
+	if listed, entries := listedAndStoredFiles(archive); !slices.Equal(listed, entries) {
+		t.Errorf("the archive's file entries %v differ from the listed files %v", entries, listed)
+	}
+	if len(archive.data.Files) < 4 {
+		t.Fatalf("the rich world exported %d files, want the prompt image, the worksheet, the answer, the corrected file and the chat file", len(archive.data.Files))
+	}
+	if len(tutorExport.tutor.Files) < 5 {
+		t.Fatalf("the rich world exported %d files to the tutor, want the prompt image, the worksheet, the answer, the corrected file and the chat file",
+			len(tutorExport.tutor.Files))
+	}
+	if refused := h.undownloadableFiles(t, world.first.token, archive); len(refused) != 0 {
+		t.Errorf("the student's archived files are not served through their routes: %v", refused)
+	}
+	if refused := h.undownloadableFiles(t, tutor.token, tutorExport.studentArchive); len(refused) != 0 {
+		t.Errorf("the tutor's archived files are not served through their routes: %v", refused)
 	}
 }
 
@@ -862,11 +921,34 @@ func TestARefusedFileIsLeftOutOfTheExport(t *testing.T) {
 	h.published(t, world.tutor.token, world.submission, domain.ReviewCheck, 2)
 	h.mustAnswer(t, h.groupCall(t, world.tutor.token, http.MethodPatch, world.group.ID, "", fmt.Sprintf(`{"remove":[%q]}`, world.firstCard.ID)), http.StatusOK)
 	first := h.signedInAgain(t, world.first)
+	third := h.exportAccountAs(t, domain.RoleStudent, 4, thirdExportEmail)
+	thirdCard := h.linkedSignedIn(t, world.tutor.token, third.token, "Third student", thirdExportEmail)
+	reclaimSubmission, reclaimAnswer := h.answeredFileWork(t, world.tutor.token, h.signedInAgain(t, world.second), world.secondCard.ID,
+		"Reclaimed work", "reclaimed-answer.pdf")
+	discardedSubmission, discardedAnswer := h.answeredFileWork(t, world.tutor.token, third, thirdCard.ID, "Discarded work", "discarded-answer.pdf")
+	h.setRelationshipState(t, world.secondCard.ID, domain.RelationshipReclaimPending)
+	h.setRelationshipState(t, thirdCard.ID, domain.RelationshipDiscarded)
+	tutor := h.signedInAgain(t, world.tutor)
 
 	_, archive := h.studentArchiveOf(t, first)
+	_, tutorExport := h.tutorArchiveOf(t, tutor)
 	staleMint, _ := h.addressOf(t, first.token, world.corrected, "?ref=review_item:"+firstRevision)
 	chatMint, _ := h.addressOf(t, first.token, world.chatFile, "")
+	reclaimMint, _ := h.addressOf(t, tutor.token, reclaimAnswer, "?ref=answer:"+reclaimSubmission)
+	discardedMint, _ := h.addressOf(t, tutor.token, discardedAnswer, "?ref=answer:"+discardedSubmission)
 
+	tutorArchived := tutorExport.archivedAttachments()
+	if slices.Contains(tutorArchived, reclaimAnswer) || reclaimMint.status != http.StatusNotFound {
+		t.Errorf("an answer file of a reclaim-pending link is archived %v for the tutor and its mint answered %d", slices.Contains(tutorArchived, reclaimAnswer),
+			reclaimMint.status)
+	}
+	if slices.Contains(tutorArchived, discardedAnswer) || discardedMint.status != http.StatusNotFound {
+		t.Errorf("an answer file of a discarded link is archived %v for the tutor and its mint answered %d", slices.Contains(tutorArchived, discardedAnswer),
+			discardedMint.status)
+	}
+	if slices.Contains(tutorArchived, world.corrected) || !slices.Contains(tutorArchived, later) {
+		t.Error("the tutor's export does not hold exactly the corrected files of the latest published revision")
+	}
 	archived := archive.archivedAttachments()
 	if slices.Contains(archived, world.corrected) || staleMint.status != http.StatusNotFound {
 		t.Errorf("the corrected file of an earlier revision is archived %v and its mint answered %d", slices.Contains(archived, world.corrected), staleMint.status)
@@ -1099,10 +1181,13 @@ func TestExportRecordsCarryNoContentKeyOrAddress(t *testing.T) {
 	held.resume()
 	awaitTick(t, building)
 	h.tick(t)
+	h.tutorArchiveOf(t, h.signedInAgain(t, world.tutor))
 
 	sentinels := []string{
 		"A mate's message", "My own message", "Export work", "Worksheet", "notes.txt", "answer.pdf", "corrected.pdf", "prompt.png", "Overall good",
-		h.storageKeyOf(t, world.answerFile), chatKey, *row.StorageKey, upload, "X-Amz", "uploadId",
+		"First student", "Second student", exportGroupName, lessonTitle, "The tutor's message", "A direct message",
+		h.storageKeyOf(t, world.answerFile), chatKey, h.storageKeyOf(t, world.tutorFile), h.storageKeyOf(t, world.corrected),
+		*row.StorageKey, upload, "X-Amz", "uploadId",
 	}
 	unreadable := 0
 	for _, line := range strings.Split(h.logs.String(), "\n") {
@@ -1118,7 +1203,7 @@ func TestExportRecordsCarryNoContentKeyOrAddress(t *testing.T) {
 			}
 		}
 	}
-	if unreadable != 1 {
-		t.Errorf("the scan saw %d export.file.unreadable records, want 1", unreadable)
+	if unreadable != 2 {
+		t.Errorf("the scan saw %d export.file.unreadable records, want one for the student's export and one for the tutor's", unreadable)
 	}
 }

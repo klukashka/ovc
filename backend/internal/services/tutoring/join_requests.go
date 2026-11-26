@@ -615,7 +615,7 @@ func (s *Service) AcceptRequest(ctx context.Context, actor domain.TutorActor, id
 		default:
 			return decisionRefusal(request)
 		}
-		card, err = s.fullCard(ctx, repos, tutor, linked, now)
+		card, err = s.fullCard(ctx, repos, tutor, linked, now, true)
 		return err
 	})
 	if err != nil {

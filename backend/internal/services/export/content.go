@@ -10,6 +10,7 @@ import (
 	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/files"
 	"ovc/backend/internal/services/homework"
+	"ovc/backend/internal/services/library"
 	"ovc/backend/internal/services/schedule"
 	"ovc/backend/internal/services/tutoring"
 )
@@ -42,6 +43,35 @@ type ChatReader interface {
 	) (chat.History, []domain.UserID, error)
 }
 
+type CardReader interface {
+	CardsIn(
+		ctx context.Context, repos repositories.Repositories, tutor domain.UserID, query tutoring.CardQuery, now time.Time,
+	) (tutoring.CardPage, []domain.UserID, error)
+	GroupsIn(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) ([]tutoring.Group, []domain.UserID, error)
+}
+
+type TutorLessonReader interface {
+	TutorLessonPageIn(
+		ctx context.Context, repos repositories.Repositories, tutor domain.UserID, after schedule.LessonCursor, limit int32,
+	) (schedule.ExportLessonPage, error)
+}
+
+type IssueReader interface {
+	IssuesIn(
+		ctx context.Context, repos repositories.Repositories, tutor domain.UserID, query homework.IssueListQuery, now time.Time,
+	) (homework.IssuePage, error)
+	IssueIn(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.IssueID, now time.Time) (homework.Issue, []domain.UserID, error)
+	TutorSubmissionIn(
+		ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.SubmissionID, now time.Time,
+	) (homework.TutorWork, []domain.UserID, error)
+}
+
+type LibraryReader interface {
+	FoldersIn(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) ([]library.Folder, error)
+	ListingIn(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, query library.ListingQuery, now time.Time) (library.Listing, error)
+	TemplateIn(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.TemplateID, now time.Time) (library.Template, error)
+}
+
 type FileAuthorizer interface {
 	ExportableFile(
 		ctx context.Context, repos repositories.Repositories, viewer domain.UserID, id domain.AttachmentID, reference files.DownloadReference, now time.Time,
@@ -54,8 +84,21 @@ type Content struct {
 	Homework HomeworkReader
 	Chat     ChatReader
 	Files    FileAuthorizer
+
+	Cards        CardReader
+	TutorLessons TutorLessonReader
+	Issues       IssueReader
+	Library      LibraryReader
+}
+
+func (c Content) completeForStudents() bool {
+	return c.Tutors != nil && c.Lessons != nil && c.Homework != nil && c.Chat != nil && c.Files != nil
+}
+
+func (c Content) completeForTutors() bool {
+	return c.Cards != nil && c.TutorLessons != nil && c.Issues != nil && c.Library != nil && c.Chat != nil && c.Files != nil
 }
 
 func (c Content) complete() bool {
-	return c.Tutors != nil && c.Lessons != nil && c.Homework != nil && c.Chat != nil && c.Files != nil
+	return c.completeForStudents() && c.completeForTutors()
 }

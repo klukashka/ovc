@@ -291,7 +291,7 @@ func (s *Service) RemoveStudent(ctx context.Context, actor domain.TutorActor, id
 			return err
 		}
 		removed, lessons = locked, effects
-		card, err = s.fullCard(ctx, repos, tutor, fresh, now)
+		card, err = s.fullCard(ctx, repos, tutor, fresh, now, true)
 		return err
 	})
 	if err != nil {

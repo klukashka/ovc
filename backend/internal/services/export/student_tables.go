@@ -2,11 +2,9 @@ package export
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"ovc/backend/internal/core"
 	"ovc/backend/internal/domain"
@@ -22,42 +20,7 @@ type sheetCount struct {
 }
 
 func (b *studentBuild) headers(sheet core.ExportSheet) []string {
-	columns := core.StudentExportColumns(sheet)
-	headers := append([]string{}, b.text.Sheets[sheet].Headers...)
-	for index, column := range columns {
-		if column.Date && index < len(headers) {
-			headers[index] = fmt.Sprintf(headers[index], b.location.String())
-		}
-	}
-	return headers
-}
-
-func (b *studentBuild) date(instant *time.Time) exportformat.Cell {
-	if instant == nil {
-		return exportformat.Empty()
-	}
-	return exportformat.Date(instant.In(b.location))
-}
-
-func (b *studentBuild) flag(value bool) exportformat.Cell {
-	if value {
-		return exportformat.Text(b.text.Yes)
-	}
-	return exportformat.Text(b.text.No)
-}
-
-func optional(text *string) string {
-	if text == nil {
-		return ""
-	}
-	return *text
-}
-
-func (b *studentBuild) fileCell(name string, path *string) string {
-	if path == nil {
-		return name + " (" + b.text.NotAvailable + ")"
-	}
-	return name + " (" + *path + ")"
+	return b.headersOf(b.text.Sheets[sheet], core.StudentExportColumns(sheet))
 }
 
 func (b *studentBuild) writeTables(ctx context.Context, archive *exportformat.Archive) error {
@@ -84,11 +47,6 @@ func (b *studentBuild) writeTables(ctx context.Context, archive *exportformat.Ar
 		}
 	}
 	return workbook.Close()
-}
-
-func (b *studentBuild) row(sheet *exportformat.Sheet, name core.ExportSheet, cells ...exportformat.Cell) error {
-	b.counts[name]++
-	return sheet.WriteRow(cells...)
 }
 
 func (b *studentBuild) writeTutors(ctx context.Context, sheet *exportformat.Sheet) error {
@@ -253,7 +211,7 @@ func (b *studentBuild) writeFeedback(ctx context.Context, sheet *exportformat.Sh
 	})
 }
 
-func (b *studentBuild) channelLabel(channel schemas.ChannelItem) string {
+func (b *contentBuild) channelLabel(channel schemas.ChannelItem) string {
 	if label := b.labelOf(channel.Label, channel.LabelKind); label != "" {
 		return label
 	}
@@ -263,21 +221,21 @@ func (b *studentBuild) channelLabel(channel schemas.ChannelItem) string {
 	return ""
 }
 
-func (b *studentBuild) senderOf(own bool, label *string, kind *domain.LabelKind) string {
+func (b *contentBuild) senderOf(own bool, label *string, kind *domain.LabelKind) string {
 	if own {
 		return b.text.You
 	}
 	return b.labelOf(label, kind)
 }
 
-func (b *studentBuild) bodyOf(message schemas.StudentExportMessage) string {
+func (b *contentBuild) bodyOf(message schemas.StudentExportMessage) string {
 	if message.Deleted || message.Erased {
 		return b.text.MessageRemoved
 	}
 	return optional(message.Body)
 }
 
-func (b *studentBuild) quoteOf(quote *schemas.MessageQuote) string {
+func (b *contentBuild) quoteOf(quote *schemas.MessageQuote) string {
 	if quote == nil {
 		return ""
 	}
@@ -287,23 +245,35 @@ func (b *studentBuild) quoteOf(quote *schemas.MessageQuote) string {
 	return optional(quote.Preview)
 }
 
-func reactionsOf(message schemas.StudentExportMessage) string {
+func (b *contentBuild) reactionsOf(message schemas.StudentExportMessage) string {
 	parts := make([]string, 0, len(message.Reactions))
 	for _, reaction := range message.Reactions {
-		parts = append(parts, string(reaction.Reaction)+" "+strconv.FormatInt(reaction.Count, 10))
+		part := string(reaction.Reaction) + " " + strconv.FormatInt(reaction.Count, 10)
+		if reaction.Members != nil {
+			labels := make([]string, 0, len(*reaction.Members))
+			for _, member := range *reaction.Members {
+				labels = append(labels, b.labelOf(member.Label, member.LabelKind))
+			}
+			part += " (" + strings.Join(labels, ", ") + ")"
+		}
+		parts = append(parts, part)
 	}
 	return strings.Join(parts, ", ")
 }
 
 func (b *studentBuild) writeMessages(ctx context.Context, sheet *exportformat.Sheet) error {
-	channels, err := b.source.channels(ctx)
+	return b.writeChatSheet(ctx, sheet, b.source)
+}
+
+func (b *contentBuild) writeChatSheet(ctx context.Context, sheet *exportformat.Sheet, source studentSource) error {
+	channels, err := source.channels(ctx)
 	if err != nil {
 		return err
 	}
 	for _, found := range channels {
 		channel := channelBody(found)
 		label := b.channelLabel(channel)
-		err := b.source.messages(ctx, found.ID, nil, func(messages []chat.Message) error {
+		err := source.messages(ctx, found.ID, nil, func(messages []chat.Message) error {
 			for _, viewed := range messages {
 				message := messageBody(viewed, b.inventory.path)
 				attached := make([]string, 0, len(message.Attachments))
@@ -313,7 +283,7 @@ func (b *studentBuild) writeMessages(ctx context.Context, sheet *exportformat.Sh
 				if err := b.row(sheet, core.ExportSheetMessages, exportformat.Text(label), b.date(&message.CreatedAt),
 					exportformat.Text(b.senderOf(message.Own, message.SenderLabel, message.SenderLabelKind)), exportformat.Text(b.bodyOf(message)),
 					b.date(message.EditedAt), exportformat.Text(b.quoteOf(message.ReplyTo)), exportformat.Text(strings.Join(attached, "\n")),
-					exportformat.Text(reactionsOf(message))); err != nil {
+					exportformat.Text(b.reactionsOf(message))); err != nil {
 					return err
 				}
 			}
@@ -328,10 +298,7 @@ func (b *studentBuild) writeMessages(ctx context.Context, sheet *exportformat.Sh
 
 func (b *studentBuild) fileEntries() []schemas.StudentExportFileEntry {
 	var entries []schemas.StudentExportFileEntry
-	for _, file := range b.inventory.ordered() {
-		if !file.stored {
-			continue
-		}
+	for _, file := range b.storedFiles() {
 		entries = append(entries, schemas.StudentExportFileEntry{
 			Path: file.entry, Filename: file.filename, MediaType: file.mediaType, SizeBytes: file.size, SHA256: file.digest,
 			References: append([]string{}, file.references...),
@@ -340,10 +307,10 @@ func (b *studentBuild) fileEntries() []schemas.StudentExportFileEntry {
 	return entries
 }
 
-func (b *studentBuild) writeFilesSheet(_ context.Context, sheet *exportformat.Sheet) error {
-	for _, entry := range b.fileEntries() {
-		if err := b.row(sheet, core.ExportSheetFiles, exportformat.Text(entry.Path), exportformat.Text(entry.Filename), exportformat.Text(entry.MediaType),
-			exportformat.Integer(entry.SizeBytes), exportformat.Text(entry.SHA256), exportformat.Text(strings.Join(entry.References, "\n"))); err != nil {
+func (b *contentBuild) writeFilesSheet(_ context.Context, sheet *exportformat.Sheet) error {
+	for _, file := range b.storedFiles() {
+		if err := b.row(sheet, core.ExportSheetFiles, exportformat.Text(file.entry), exportformat.Text(file.filename), exportformat.Text(file.mediaType),
+			exportformat.Integer(file.size), exportformat.Text(file.digest), exportformat.Text(strings.Join(file.references, "\n"))); err != nil {
 			return err
 		}
 	}

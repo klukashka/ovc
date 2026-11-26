@@ -87,26 +87,49 @@ type membershipChange struct {
 func (s *Service) ListGroups(ctx context.Context, tutor domain.UserID) ([]GroupSummary, error) {
 	var summaries []GroupSummary
 	err := s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
-		groups, err := repos.Groups.OfTutor(ctx, tutor)
-		if err != nil {
-			return err
-		}
-		ids := make([]domain.GroupID, 0, len(groups))
-		for _, group := range groups {
-			ids = append(ids, group.ID)
-		}
-		first, err := repos.Groups.FirstMembers(ctx, tutor, ids, domain.GroupPreviewMembers)
-		if err != nil {
-			return err
-		}
-		avatars, err := repos.Relationships.AvatarsOf(ctx, firstMemberStudents(first))
-		if err != nil {
-			return err
-		}
-		summaries, err = s.groupSummaries(ctx, tutor, groups, first, avatars)
+		var err error
+		summaries, err = s.listGroups(ctx, repos, tutor)
 		return err
 	})
 	return summaries, err
+}
+
+func (s *Service) GroupsIn(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) ([]Group, []domain.UserID, error) {
+	rows, err := repos.Groups.OfTutor(ctx, tutor)
+	if err != nil {
+		return nil, nil, err
+	}
+	groups := make([]Group, 0, len(rows))
+	var referenced []domain.UserID
+	for _, row := range rows {
+		group, students, err := s.group(ctx, repos, tutor, row.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		groups = append(groups, group)
+		referenced = append(referenced, students...)
+	}
+	return groups, referenced, nil
+}
+
+func (s *Service) listGroups(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) ([]GroupSummary, error) {
+	groups, err := repos.Groups.OfTutor(ctx, tutor)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]domain.GroupID, 0, len(groups))
+	for _, group := range groups {
+		ids = append(ids, group.ID)
+	}
+	first, err := repos.Groups.FirstMembers(ctx, tutor, ids, domain.GroupPreviewMembers)
+	if err != nil {
+		return nil, err
+	}
+	avatars, err := repos.Relationships.AvatarsOf(ctx, firstMemberStudents(first))
+	if err != nil {
+		return nil, err
+	}
+	return s.groupSummaries(ctx, tutor, groups, first, avatars)
 }
 
 func firstMemberStudents(members []repositories.FirstGroupMember) []domain.UserID {
@@ -187,23 +210,33 @@ func (s *Service) memberView(
 func (s *Service) Group(ctx context.Context, tutor domain.UserID, id domain.GroupID) (Group, error) {
 	var group Group
 	err := s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
-		row, err := repos.Groups.ForTutor(ctx, tutor, id)
-		if errors.Is(err, repositories.ErrNotFound) {
-			return ErrGroupNotFound
-		}
-		if err != nil {
-			return err
-		}
-		group, err = s.groupView(ctx, repos, row)
+		var err error
+		group, _, err = s.group(ctx, repos, tutor, id)
 		return err
 	})
 	return group, err
 }
 
+func (s *Service) group(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.GroupID) (Group, []domain.UserID, error) {
+	row, err := repos.Groups.ForTutor(ctx, tutor, id)
+	if errors.Is(err, repositories.ErrNotFound) {
+		return Group{}, nil, ErrGroupNotFound
+	}
+	if err != nil {
+		return Group{}, nil, err
+	}
+	return s.groupDetail(ctx, repos, row)
+}
+
 func (s *Service) groupView(ctx context.Context, repos repositories.Repositories, row repositories.Group) (Group, error) {
+	group, _, err := s.groupDetail(ctx, repos, row)
+	return group, err
+}
+
+func (s *Service) groupDetail(ctx context.Context, repos repositories.Repositories, row repositories.Group) (Group, []domain.UserID, error) {
 	members, err := repos.Groups.Members(ctx, row.TutorID, row.ID)
 	if err != nil {
-		return Group{}, err
+		return Group{}, nil, err
 	}
 	students := make([]domain.UserID, 0, len(members))
 	for _, member := range members {
@@ -213,7 +246,7 @@ func (s *Service) groupView(ctx context.Context, repos repositories.Repositories
 	}
 	avatars, err := repos.Relationships.AvatarsOf(ctx, students)
 	if err != nil {
-		return Group{}, err
+		return Group{}, nil, err
 	}
 	group := Group{ID: row.ID, Name: row.Name, Colour: row.Colour, ArchivedAt: row.ArchivedAt, Members: make([]GroupMember, 0, len(members))}
 	for _, member := range members {
@@ -222,12 +255,15 @@ func (s *Service) groupView(ctx context.Context, repos repositories.Repositories
 			addedAt: member.AddedAt, cardState: member.CardState, accountState: member.AccountState,
 		}, avatars)
 		if err != nil {
-			return Group{}, err
+			return Group{}, nil, err
 		}
 		group.Members = append(group.Members, view)
 	}
 	group.ChannelID, err = repos.Channels.OfGroupFor(ctx, row.TutorID, row.ID)
-	return group, err
+	if err != nil {
+		return Group{}, nil, err
+	}
+	return group, students, nil
 }
 
 func (s *Service) CreateGroup(ctx context.Context, actor domain.TutorActor, request NewGroup) (Group, error) {

@@ -25,4 +25,21 @@ A student's build reads each submission's detail in four passes (the file invent
 
 ## Build time of the largest default-quota tutor export
 
-Measured by change E1d2.
+The [export specification](../specs/files.md#building) requires the build time of the largest export a tutor's default quota allows to be measured once, with the decision rule that a build over 1 hour (half the 2-hour budget) leads to a later change that splits the files into a second archive, and that table bytes reaching 50 % of the 200 MB allowance make the allowance an owner question. `TestExportBuildTimeMeasurement` (build tag `export_measurement`, added by change E1d2) seeds one tutor through the real routes up to the default 5 GB file quota, with the bulk rows (cards, groups, lessons, issues, submissions and messages) inserted through repository helpers in the measurement file only, and builds the tutor's export through the real export service. It records the wall time, the peak heap, the archive size and part count, the rows per sheet, the bytes of `tables.xlsx` and `data.json`, and the share of the time spent streaming files. Which rows came from routes and which from helpers is stated with each run.
+
+| Run | Date | Tree | Wall time | Peak heap | Archive | Parts | `tables.xlsx` | `data.json` | Streaming share | Result |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 2026-11-26 | `41af16b` plus the staged E1d2 change | — | — | — | — | — | — | — | failed in seeding: the 100th issue answered `429`, because the seeding advanced the clock after every 100 issues while two issues seeded earlier in the same hour counted toward `IssuesPerHour`; no build ran (`--- FAIL: TestExportBuildTimeMeasurement (65.58s)`); the seeding now advances after every 50 issues |
+| 2 | 2026-11-26 | `41af16b` plus the staged E1d2 change | 170.7 s (build), 246.5 s with seeding | 45.2 MB over baseline | 4,980,667,294 bytes | 297 | 4,468,089 bytes (1,429,577 compressed) | 41,918,094 bytes (3,683,848 compressed) | 0.609 | passed (`--- PASS: TestExportBuildTimeMeasurement (246.49s)`) |
+
+Run 2 seeded 49 library materials of 100 MB each, attached to lessons with the first ten also in an issued template, and one chat file, one answer file and one corrected file of 25 MB each, all through the routes. Through repository helpers in the measurement file only, it seeded 300 cards, 5,000 lessons, 100,000 messages and the submitted state of the submissions. Through the routes, it created 30 groups of 10 members and 500 issues to those groups, which gave about 5,000 submissions instead of the plan's estimate of 500 issues to 300 students each.
+
+Rows per sheet were students 302, groups 31, group members 302, lessons 5,049, series 0, issues 502, submissions 5,002, answers 1, reviews 2, library 52, messages 99,991 and files 52. The number of authorization queries is not measured, because there is no hook for it. The streaming share comes from progress samples at 10 s resolution and is approximate.
+
+The decision rules give these results:
+
+- **Build time.** 170.7 s is far under 1 hour (half the 2-hour budget), so no split into a second archive is needed.
+- **Table bytes.** `tables.xlsx` and `data.json` together hold about 46 MB, under 50 % of the 200 MB allowance, so the allowance is not an owner question.
+- **Peak heap.** 45 MB, so it does not grow with the 5 GB of files.
+
+The repeated issue and submission reads stay well inside the budget at this workload. A tutor with 500 issues to 300 students each would read about 30 times more submission details. That case is not measured; by these figures it would still stay under 1 hour if the time scaled linearly with the submission count.

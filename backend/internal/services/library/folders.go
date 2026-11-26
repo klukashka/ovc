@@ -32,7 +32,15 @@ func folderOf(row repositories.FolderRow) Folder {
 }
 
 func (s *Service) Folders(ctx context.Context, tutor domain.UserID) ([]Folder, error) {
-	rows, err := s.deps.Store.Repositories().Library.Folders(ctx, tutor)
+	return folders(ctx, s.deps.Store.Repositories(), tutor)
+}
+
+func (s *Service) FoldersIn(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) ([]Folder, error) {
+	return folders(ctx, repos, tutor)
+}
+
+func folders(ctx context.Context, repos repositories.Repositories, tutor domain.UserID) ([]Folder, error) {
+	rows, err := repos.Library.Folders(ctx, tutor)
 	if err != nil {
 		return nil, err
 	}

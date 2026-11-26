@@ -1326,6 +1326,66 @@ func (q *Queries) ListTutorCalendar(ctx context.Context, arg ListTutorCalendarPa
 	return items, nil
 }
 
+const listTutorCalendarAfter = `-- name: ListTutorCalendarAfter :many
+SELECT
+    lessons.id, lessons.starts_at,
+    ARRAY(
+        SELECT DISTINCT referenced.student_id FROM (
+            SELECT card.student_id FROM relationships AS card WHERE card.id = lessons.relationship_id
+            UNION ALL
+            SELECT membership.student_id FROM group_members
+            JOIN relationships AS membership ON membership.id = group_members.relationship_id
+            WHERE group_members.group_id = lessons.group_id
+            UNION ALL
+            SELECT lesson_roster.student_id FROM lesson_roster WHERE lesson_roster.lesson_id = lessons.id
+        ) AS referenced
+        WHERE referenced.student_id IS NOT NULL
+    )::uuid[] AS account_ids
+FROM lessons
+WHERE lessons.tutor_id = $1
+    AND (lessons.starts_at, lessons.id) > ($2::timestamptz, $3::uuid)
+ORDER BY lessons.starts_at, lessons.id
+LIMIT $4::int
+`
+
+type ListTutorCalendarAfterParams struct {
+	TutorID       domain.UserID
+	AfterStartsAt time.Time
+	AfterID       pgtype.UUID
+	RowLimit      int32
+}
+
+type ListTutorCalendarAfterRow struct {
+	ID         domain.LessonID
+	StartsAt   time.Time
+	AccountIds []pgtype.UUID
+}
+
+func (q *Queries) ListTutorCalendarAfter(ctx context.Context, arg ListTutorCalendarAfterParams) ([]ListTutorCalendarAfterRow, error) {
+	rows, err := q.db.Query(ctx, listTutorCalendarAfter,
+		arg.TutorID,
+		arg.AfterStartsAt,
+		arg.AfterID,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTutorCalendarAfterRow
+	for rows.Next() {
+		var i ListTutorCalendarAfterRow
+		if err := rows.Scan(&i.ID, &i.StartsAt, &i.AccountIds); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTutorLessonViews = `-- name: ListTutorLessonViews :many
 SELECT
     lessons.id, lessons.title, lessons.description, lessons.starts_at, lessons.duration_minutes, lessons.status, (lessons.live_at IS NOT NULL)::boolean AS took_place, lessons.timezone,

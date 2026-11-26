@@ -323,3 +323,86 @@ func TestStudentSheetColumnsProjectStudentFields(t *testing.T) {
 		t.Fatalf("student sheet columns that are not projections of the data copy:\n%s", strings.Join(problems, "\n"))
 	}
 }
+
+var tutorSheetRoots = map[core.ExportSheet]string{
+	core.ExportSheetStudents: "TutorExportCard", core.ExportSheetGroups: "TutorExportGroup", core.ExportSheetGroupMembers: "TutorExportGroup",
+	core.ExportSheetLessons: "TutorExportLesson", core.ExportSheetSeries: "LessonSeries", core.ExportSheetIssues: "TutorExportIssue",
+	core.ExportSheetSubmissions: "TutorExportSubmission", core.ExportSheetAnswers: "TutorExportSubmission", core.ExportSheetReviews: "TutorExportSubmission",
+	core.ExportSheetLibrary: "TutorExportLibraryItem", core.ExportSheetMessages: "TutorExportChannelHistory", core.ExportSheetFiles: "TutorExportFileEntry",
+}
+
+var pinnedTutorExportEmbeddings = map[string]string{
+	"TutorExportCard":          "StudentCard",
+	"TutorExportGroup":         "Group",
+	"TutorExportLesson":        "LessonDetail",
+	"TutorExportIssueBlock":    "IssueBlock",
+	"TutorExportIssue":         "Issue",
+	"TutorExportAnswer":        "TutorAnswer",
+	"TutorExportReviewItem":    "TutorReviewItem",
+	"TutorExportRevision":      "TutorReviewRevision",
+	"TutorExportSubmission":    "TutorSubmission",
+	"TutorExportTemplateBlock": "TemplateBlock",
+	"TutorExportTemplate":      "Template",
+	"TutorExportMessage":       "Message",
+}
+
+func TestTutorSheetColumnsProjectTutorFields(t *testing.T) {
+	checked := checkPackage(t, "internal/schemas", nil)
+	languages := []domain.Language{domain.LanguageEnglish, domain.LanguageRussian}
+
+	var problems []string
+	for _, sheet := range core.TutorExportSheets() {
+		root, found := tutorSheetRoots[sheet]
+		columns := core.TutorExportColumns(sheet)
+		if !found || len(columns) == 0 {
+			problems = append(problems, string(sheet)+" has no data-copy struct or no columns")
+			continue
+		}
+		for _, column := range columns {
+			if !projects(checked.typed, root, column.Key) {
+				problems = append(problems, string(sheet)+"."+column.Key+" is not a field of "+root)
+			}
+		}
+		for _, language := range languages {
+			text, known := core.ExportTextFor(language)
+			if !known || len(text.TutorSheets[sheet].Headers) != len(columns) || text.TutorSheets[sheet].Title == "" {
+				problems = append(problems, string(sheet)+" has no matching headers in "+string(language))
+			}
+		}
+	}
+	unprojected := projects(checked.typed, "TutorExportCard", "url")
+
+	if unprojected {
+		t.Fatal("the projection check accepts a key the struct does not have")
+	}
+	if len(problems) > 0 {
+		t.Fatalf("tutor sheet columns that are not projections of the data copy:\n%s", strings.Join(problems, "\n"))
+	}
+}
+
+func TestTutorExportSchemasEmbedOnlyTheirPinnedRouteSchemas(t *testing.T) {
+	structs := schemaStructs(t)
+
+	var problems []string
+	for name, fields := range structs {
+		if !strings.HasPrefix(name, "TutorExport") {
+			continue
+		}
+		for _, field := range fields {
+			if field.embedded && !slices.Equal(field.refers, []string{pinnedTutorExportEmbeddings[name]}) {
+				problems = append(problems, name+" embeds "+strings.Join(field.refers, "."))
+			}
+			if field.key == "url" || (field.key == "expires_at" && name != "TutorExportCardInvitation") {
+				problems = append(problems, name+" declares the address field "+field.key)
+			}
+		}
+	}
+	slices.Sort(problems)
+
+	if len(problems) > 0 {
+		t.Fatalf("tutor export schemas that embed unpinned schemas or carry addresses:\n%s", strings.Join(problems, "\n"))
+	}
+	if _, found := structs["TutorExportSubmission"]; !found {
+		t.Fatal("the tutor export submission schema is missing")
+	}
+}

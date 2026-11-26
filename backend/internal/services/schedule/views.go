@@ -359,16 +359,20 @@ func (s *Service) visibleLesson(
 		return Lesson{}, err
 	}
 	if role == domain.RoleTutor {
-		views, err := s.tutorViews(ctx, repos, account, []domain.LessonID{id})
-		if err != nil {
-			return Lesson{}, err
-		}
-		if len(views) == 0 {
-			return Lesson{}, ErrNotFound
-		}
-		return views[0], nil
+		return s.tutorLesson(ctx, repos, account, id)
 	}
 	return s.studentLesson(ctx, repos, account, id)
+}
+
+func (s *Service) tutorLesson(ctx context.Context, repos repositories.Repositories, account repositories.User, id domain.LessonID) (Lesson, error) {
+	views, err := s.tutorViews(ctx, repos, account, []domain.LessonID{id})
+	if err != nil {
+		return Lesson{}, err
+	}
+	if len(views) == 0 {
+		return Lesson{}, ErrNotFound
+	}
+	return views[0], nil
 }
 
 func (s *Service) studentLesson(ctx context.Context, repos repositories.Repositories, account repositories.User, id domain.LessonID) (Lesson, error) {

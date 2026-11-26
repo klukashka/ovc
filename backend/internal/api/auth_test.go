@@ -279,6 +279,7 @@ func newAuthHarnessTimed(
 		Signer: storage.NewPresigner(local.Settings, local.Settings.Endpoint), Passwords: service, Cleanup: fileService,
 		PublicHost: "ovc.example", Timing: exportTiming, Content: export.Content{
 			Tutors: tutoringService, Lessons: scheduleService, Homework: homeworkService, Chat: chatService, Files: fileService,
+			Cards: tutoringService, TutorLessons: scheduleService, Issues: homeworkService, Library: libraryService,
 		},
 	})
 	createGate := &providerClockGate{source: shared}

@@ -31,6 +31,7 @@ type TutorReviewItem struct {
 }
 
 type TutorRevision struct {
+	ID          domain.ReviewRevisionID
 	Revision    int32
 	State       domain.ReviewState
 	Action      *domain.ReviewAction
@@ -75,6 +76,20 @@ func (s *Service) TutorSubmission(ctx context.Context, tutor domain.UserID, id d
 		return err
 	})
 	return work, err
+}
+
+func (s *Service) TutorSubmissionIn(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.SubmissionID, now time.Time,
+) (TutorWork, []domain.UserID, error) {
+	work, err := s.withoutAddresses().tutorWork(ctx, repos, tutor, id, now)
+	if err != nil {
+		return TutorWork{}, nil, err
+	}
+	parties, err := repos.Homework.TutorSubmissionParties(ctx, tutor, id)
+	if err != nil {
+		return TutorWork{}, nil, err
+	}
+	return work, []domain.UserID{parties.StudentID}, nil
 }
 
 func (s *Service) tutorWork(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.SubmissionID, now time.Time) (TutorWork, error) {
@@ -143,7 +158,7 @@ func (s *Service) tutorRevisions(ctx context.Context, repos repositories.Reposit
 			return nil, err
 		}
 		revision := TutorRevision{
-			Revision: row.Revision, State: row.State, Action: row.Action, Feedback: row.Feedback, Version: row.Version,
+			ID: row.ID, Revision: row.Revision, State: row.State, Action: row.Action, Feedback: row.Feedback, Version: row.Version,
 			PublishedAt: row.PublishedAt, Items: make([]TutorReviewItem, 0, len(items)),
 		}
 		for _, item := range items {

@@ -214,7 +214,15 @@ func TestStudentPurgeWithdrawsNoOtherExport(t *testing.T) {
 	if h.countRows(t, "SELECT count(id) FROM users WHERE id = $1::uuid", world.first.id.String()) != 0 {
 		t.Fatal("the purge did not run")
 	}
-	h.assertStillReady(t, tutorExport)
+	expiredTutorExport, _ := h.exportOf(t, tutorExport.UserID)
+	if expiredTutorExport.ID != tutorExport.ID || expiredTutorExport.State != domain.ExportExpired ||
+		tutorExport.ExpiresAt == nil || !tutorExport.ExpiresAt.Equal(authStart.Add(domain.DeletedAccountRetention)) {
+		t.Fatalf("the tutor's export, which read the deleted student, is %s with expiry %v, want it expired at the student's purge due time",
+			expiredTutorExport.State, tutorExport.ExpiresAt)
+	}
+	if records := h.invalidationsOf(t, tutorExport.ID); len(records) != 0 || h.exportNotifications(t, tutorExport.UserID, domain.NotificationExportFailed) != 0 {
+		t.Fatalf("the purge withdrew the tutor's export %+v", records)
+	}
 	h.assertStillReady(t, outsiderExport)
 }
 

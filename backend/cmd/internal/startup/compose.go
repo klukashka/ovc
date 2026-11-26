@@ -258,6 +258,7 @@ func NewWorker(ctx context.Context, logger *slog.Logger, settings core.Settings,
 		Store: store, Clock: source, Wall: clock.System{}.Now, Random: random, Logger: logger, Objects: objects, Cleanup: fileService,
 		PublicHost: host, Content: export.Content{
 			Tutors: tutoringService, Lessons: scheduleService, Homework: homeworkService, Chat: chatService, Files: fileService,
+			Cards: tutoringService, TutorLessons: scheduleService, Issues: homeworkService, Library: libraryService,
 		},
 	})
 	inbox := notifications.NewInbox(notifications.InboxDependencies{Store: store, Clock: source, Logger: logger})

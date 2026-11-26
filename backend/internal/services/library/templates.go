@@ -232,6 +232,10 @@ func (s *Service) Template(ctx context.Context, tutor domain.UserID, id domain.T
 	return template, err
 }
 
+func (s *Service) TemplateIn(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, id domain.TemplateID, now time.Time) (Template, error) {
+	return s.withoutAddresses().templateOf(ctx, repos, tutor, id, now)
+}
+
 func (s *Service) SaveTemplate(ctx context.Context, actor domain.TutorActor, id domain.TemplateID, save TemplateSave) (Template, error) {
 	tutor := actor.UserID
 	err := s.deps.Store.WithTx(ctx, func(repos repositories.Repositories) error {

@@ -139,10 +139,53 @@ type PublicTutor struct {
 	Subjects []string
 }
 
+type cardBuilder func(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, rows []repositories.Relationship) ([]Card, error)
+
 func (s *Service) ListCards(ctx context.Context, tutor domain.UserID, query CardQuery) (CardPage, error) {
+	listing, err := cardListing(tutor, query)
+	if err != nil {
+		return CardPage{}, err
+	}
+	page := CardPage{}
+	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
+		var err error
+		page, err = s.listCards(ctx, repos, tutor, query, listing, s.cardViews)
+		return err
+	})
+	return page, err
+}
+
+func (s *Service) CardsIn(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, query CardQuery, now time.Time) (CardPage, []domain.UserID, error) {
+	listing, err := cardListing(tutor, query)
+	if err != nil {
+		return CardPage{}, nil, err
+	}
+	var referenced []domain.UserID
+	fullCards := func(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, rows []repositories.Relationship) ([]Card, error) {
+		cards := make([]Card, 0, len(rows))
+		for _, row := range rows {
+			if row.StudentID != nil && domain.CardShowsAccount(row.State) {
+				referenced = append(referenced, *row.StudentID)
+			}
+			card, err := s.fullCard(ctx, repos, tutor, row, now, false)
+			if err != nil {
+				return nil, err
+			}
+			cards = append(cards, card)
+		}
+		return cards, nil
+	}
+	page, err := s.listCards(ctx, repos, tutor, query, listing, fullCards)
+	if err != nil {
+		return CardPage{}, nil, err
+	}
+	return page, referenced, nil
+}
+
+func cardListing(tutor domain.UserID, query CardQuery) (repositories.StudentListQuery, error) {
 	states, known := query.Filter.States()
 	if !known {
-		return CardPage{}, &ValidationError{Fields: []FieldProblem{{Path: "query.state", Code: domain.FieldInvalid}}}
+		return repositories.StudentListQuery{}, &ValidationError{Fields: []FieldProblem{{Path: "query.state", Code: domain.FieldInvalid}}}
 	}
 	listing := repositories.StudentListQuery{Tutor: tutor, States: states, Group: query.Group, Limit: query.Limit + 1}
 	if query.Search != "" {
@@ -151,39 +194,45 @@ func (s *Service) ListCards(ctx context.Context, tutor domain.UserID, query Card
 	if query.Cursor != "" {
 		after, valid := parseCursor(query.Cursor)
 		if !valid {
-			return CardPage{}, &ValidationError{Fields: []FieldProblem{{Path: fieldCursor, Code: domain.FieldInvalid}}}
+			return repositories.StudentListQuery{}, &ValidationError{Fields: []FieldProblem{{Path: fieldCursor, Code: domain.FieldInvalid}}}
 		}
 		listing.After = &after
 	}
+	return listing, nil
+}
+
+func (s *Service) listCards(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, query CardQuery, listing repositories.StudentListQuery, build cardBuilder,
+) (CardPage, error) {
 	page := CardPage{}
-	err := s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
-		if query.Group != nil {
-			if _, err := repos.Groups.ForTutor(ctx, tutor, *query.Group); err != nil {
-				return groupScope(err)
-			}
+	if query.Group != nil {
+		if _, err := repos.Groups.ForTutor(ctx, tutor, *query.Group); err != nil {
+			return CardPage{}, groupScope(err)
 		}
-		rows, err := repos.Relationships.ListForTutor(ctx, listing)
-		if err != nil {
-			return err
-		}
-		if len(rows) > int(query.Limit) {
-			rows = rows[:query.Limit]
-			last := rows[len(rows)-1]
-			next := formatCursor(repositories.RelationshipCursor{CreatedAt: last.CreatedAt, ID: last.ID})
-			page.NextCursor = &next
-		}
-		page.Items, err = s.cardViews(ctx, repos, tutor, rows)
-		if err != nil {
-			return err
-		}
-		ids := make([]domain.RelationshipID, 0, len(rows))
-		for _, row := range rows {
-			ids = append(ids, row.ID)
-		}
-		page.OpenAssignments, err = repos.Homework.OpenAssignments(ctx, tutor, ids)
-		return err
-	})
-	return page, err
+	}
+	rows, err := repos.Relationships.ListForTutor(ctx, listing)
+	if err != nil {
+		return CardPage{}, err
+	}
+	if len(rows) > int(query.Limit) {
+		rows = rows[:query.Limit]
+		last := rows[len(rows)-1]
+		next := formatCursor(repositories.RelationshipCursor{CreatedAt: last.CreatedAt, ID: last.ID})
+		page.NextCursor = &next
+	}
+	page.Items, err = build(ctx, repos, tutor, rows)
+	if err != nil {
+		return CardPage{}, err
+	}
+	ids := make([]domain.RelationshipID, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	page.OpenAssignments, err = repos.Homework.OpenAssignments(ctx, tutor, ids)
+	if err != nil {
+		return CardPage{}, err
+	}
+	return page, nil
 }
 
 func formatCursor(cursor repositories.RelationshipCursor) string {
@@ -240,7 +289,7 @@ func (s *Service) Card(ctx context.Context, tutor domain.UserID, id domain.Relat
 		if err != nil {
 			return err
 		}
-		card, err = s.fullCard(ctx, repos, tutor, row, now)
+		card, err = s.fullCard(ctx, repos, tutor, row, now, true)
 		return err
 	})
 	return card, err
@@ -273,7 +322,7 @@ func (s *Service) CreateCard(ctx context.Context, actor domain.TutorActor, reque
 			return err
 		}
 		created = true
-		card, err = s.fullCard(ctx, repos, tutor, row, now)
+		card, err = s.fullCard(ctx, repos, tutor, row, now, true)
 		return err
 	})
 	if err != nil {
@@ -296,7 +345,7 @@ func (s *Service) replayedCard(ctx context.Context, repos repositories.Repositor
 	if row.State == domain.RelationshipDiscarded {
 		return Card{}, false, ErrCardNotFound
 	}
-	card, err := s.fullCard(ctx, repos, tutor, row, now)
+	card, err := s.fullCard(ctx, repos, tutor, row, now, true)
 	return card, true, err
 }
 
@@ -389,7 +438,7 @@ func (s *Service) UpdateCard(ctx context.Context, actor domain.TutorActor, id do
 			}
 		}
 		changed = fields
-		card, err = s.fullCard(ctx, repos, tutor, updated, now)
+		card, err = s.fullCard(ctx, repos, tutor, updated, now, true)
 		return err
 	})
 	if err != nil {
@@ -594,7 +643,7 @@ func (s *Service) RegenerateInvitation(ctx context.Context, actor domain.TutorAc
 		if err := cardChanged(ctx, repos, tutor, id); err != nil {
 			return err
 		}
-		issued, err = s.invitationView(ctx, repos, row, now)
+		issued, err = s.invitationView(ctx, repos, row, now, true)
 		return err
 	})
 	if errors.Is(err, ErrEmailErased) {
@@ -642,7 +691,9 @@ func (s *Service) issueInvitation(ctx context.Context, repos repositories.Reposi
 	})
 }
 
-func (s *Service) fullCard(ctx context.Context, repos repositories.Repositories, tutor domain.UserID, row repositories.Relationship, now time.Time) (Card, error) {
+func (s *Service) fullCard(
+	ctx context.Context, repos repositories.Repositories, tutor domain.UserID, row repositories.Relationship, now time.Time, withInvitationLink bool,
+) (Card, error) {
 	cards, err := s.cardViews(ctx, repos, tutor, []repositories.Relationship{row})
 	if err != nil {
 		return Card{}, err
@@ -656,7 +707,7 @@ func (s *Service) fullCard(ctx context.Context, repos repositories.Repositories,
 	if channel, has := channels[row.ID]; has {
 		card.ChannelID = &channel
 	}
-	card.Invitation, err = s.invitationView(ctx, repos, row, now)
+	card.Invitation, err = s.invitationView(ctx, repos, row, now, withInvitationLink)
 	return card, err
 }
 
@@ -724,7 +775,9 @@ func (s *Service) accounts(ctx context.Context, repos repositories.Repositories,
 	return found, nil
 }
 
-func (s *Service) invitationView(ctx context.Context, repos repositories.Repositories, card repositories.Relationship, now time.Time) (*CardInvitation, error) {
+func (s *Service) invitationView(
+	ctx context.Context, repos repositories.Repositories, card repositories.Relationship, now time.Time, withInvitationLink bool,
+) (*CardInvitation, error) {
 	if !domain.CardTakesInvitations(card.State) || card.EmailErasedAt != nil {
 		return nil, nil
 	}
@@ -737,8 +790,10 @@ func (s *Service) invitationView(ctx context.Context, repos repositories.Reposit
 	}
 	open := latest.UsedAt == nil && latest.RevokedAt == nil
 	switch {
-	case open && latest.ExpiresAt.After(now):
+	case open && latest.ExpiresAt.After(now) && withInvitationLink:
 		return &CardInvitation{URL: s.readableLink(ctx, card, latest), ExpiresAt: latest.ExpiresAt, Status: domain.InvitationOpen}, nil
+	case open && latest.ExpiresAt.After(now):
+		return &CardInvitation{ExpiresAt: latest.ExpiresAt, Status: domain.InvitationOpen}, nil
 	case open:
 		return &CardInvitation{ExpiresAt: latest.ExpiresAt, Status: domain.InvitationExpired}, nil
 	case latest.RevokeReason != nil && *latest.RevokeReason == domain.RevokeMismatchLimit:

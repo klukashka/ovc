@@ -62,7 +62,7 @@ func (s *Service) EndByTutor(ctx context.Context, actor domain.TutorActor, id do
 		case domain.RelationshipInvited, domain.RelationshipProvisional, domain.RelationshipReclaimPending:
 			return ErrRelationshipNotActive
 		}
-		card, err = s.fullCard(ctx, repos, tutor, row, now)
+		card, err = s.fullCard(ctx, repos, tutor, row, now, true)
 		return err
 	})
 	if err != nil {

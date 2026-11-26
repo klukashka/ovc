@@ -17,6 +17,15 @@ const (
 	ExportSheetFeedback ExportSheet = "feedback"
 	ExportSheetMessages ExportSheet = "messages"
 	ExportSheetFiles    ExportSheet = "files"
+
+	ExportSheetStudents     ExportSheet = "students"
+	ExportSheetGroups       ExportSheet = "groups"
+	ExportSheetGroupMembers ExportSheet = "group_members"
+	ExportSheetSeries       ExportSheet = "series"
+	ExportSheetIssues       ExportSheet = "issues"
+	ExportSheetSubmissions  ExportSheet = "submissions"
+	ExportSheetReviews      ExportSheet = "reviews"
+	ExportSheetLibrary      ExportSheet = "library"
 )
 
 type ExportColumn struct {
@@ -28,6 +37,7 @@ type ExportText struct {
 	Account        ExportSheetText
 	RoleNames      map[domain.Role]string
 	Sheets         map[ExportSheet]ExportSheetText
+	TutorSheets    map[ExportSheet]ExportSheetText
 	Labels         map[domain.LabelKind]string
 	You            string
 	MessageRemoved string
@@ -76,6 +86,71 @@ func StudentExportColumns(sheet ExportSheet) []ExportColumn {
 		}
 	case ExportSheetFiles:
 		return []ExportColumn{{Key: "path"}, {Key: "filename"}, {Key: "media_type"}, {Key: "size_bytes"}, {Key: "sha256"}, {Key: "references"}}
+	case ExportSheetStudents, ExportSheetGroups, ExportSheetGroupMembers, ExportSheetSeries, ExportSheetIssues, ExportSheetSubmissions,
+		ExportSheetReviews, ExportSheetLibrary:
+	}
+	return nil
+}
+
+func TutorExportSheets() []ExportSheet {
+	return []ExportSheet{
+		ExportSheetStudents, ExportSheetGroups, ExportSheetGroupMembers, ExportSheetLessons, ExportSheetSeries, ExportSheetIssues,
+		ExportSheetSubmissions, ExportSheetAnswers, ExportSheetReviews, ExportSheetLibrary, ExportSheetMessages, ExportSheetFiles,
+	}
+}
+
+func TutorExportColumns(sheet ExportSheet) []ExportColumn {
+	switch sheet {
+	case ExportSheetStudents:
+		return []ExportColumn{
+			{Key: "display_name"}, {Key: "state"}, {Key: "email"}, {Key: "email_erased"}, {Key: "account.name"}, {Key: "account.email"},
+			{Key: "groups.name"}, {Key: "notes"}, {Key: "invitation.status"}, {Key: "invitation.expires_at", Date: true},
+			{Key: "linked_at", Date: true}, {Key: "ended_at", Date: true}, {Key: "ended_by"}, {Key: "created_at", Date: true},
+		}
+	case ExportSheetGroups:
+		return []ExportColumn{{Key: "name"}, {Key: "colour"}, {Key: "archived_at", Date: true}, {Key: "members.display_name"}}
+	case ExportSheetGroupMembers:
+		return []ExportColumn{{Key: "name"}, {Key: "members.display_name"}, {Key: "members.name"}, {Key: "members.added_at", Date: true}}
+	case ExportSheetLessons:
+		return []ExportColumn{
+			{Key: "title"}, {Key: "starts_at", Date: true}, {Key: "ends_at", Date: true}, {Key: "status"}, {Key: "took_place"}, {Key: "timezone"},
+			{Key: "audience.label"}, {Key: "audience.members.label"}, {Key: "description"}, {Key: "cancelled_at", Date: true}, {Key: "series_id"},
+			{Key: "materials.path"},
+		}
+	case ExportSheetSeries:
+		return []ExportColumn{
+			{Key: "id"}, {Key: "weekdays"}, {Key: "start"}, {Key: "duration_minutes"}, {Key: "timezone"}, {Key: "first_date"}, {Key: "end_date"},
+			{Key: "count"},
+		}
+	case ExportSheetIssues:
+		return []ExportColumn{
+			{Key: "title"}, {Key: "audience.display_name"}, {Key: "status"}, {Key: "answer_policy"}, {Key: "deadline_at", Date: true},
+			{Key: "issued_at", Date: true}, {Key: "withdrawn_at", Date: true}, {Key: "max_points"}, {Key: "blocks.material.path"},
+		}
+	case ExportSheetSubmissions:
+		return []ExportColumn{
+			{Key: "title"}, {Key: "student.display_name"}, {Key: "status"}, {Key: "late"}, {Key: "issued_before_reclaim"},
+			{Key: "submitted_at", Date: true}, {Key: "checked_at", Date: true}, {Key: "auto_points"}, {Key: "final_points"}, {Key: "max_points"},
+			{Key: "percentage"},
+		}
+	case ExportSheetAnswers:
+		return []ExportColumn{
+			{Key: "title"}, {Key: "student.display_name"}, {Key: "blocks.prompt"}, {Key: "answers.value.text"}, {Key: "blocks.options.text"},
+			{Key: "answers.files.path"}, {Key: "answers.auto_points"}, {Key: "blocks.accepted_answers"},
+		}
+	case ExportSheetReviews:
+		return []ExportColumn{
+			{Key: "title"}, {Key: "student.display_name"}, {Key: "revisions.published_at", Date: true}, {Key: "revisions.feedback"},
+			{Key: "blocks.prompt"}, {Key: "revisions.items.points"}, {Key: "revisions.items.comment"}, {Key: "revisions.items.corrected_files.path"},
+		}
+	case ExportSheetLibrary:
+		return []ExportColumn{
+			{Key: "kind"}, {Key: "title"}, {Key: "path.name"}, {Key: "filename"}, {Key: "file_path"}, {Key: "question_count"}, {Key: "max_points"},
+			{Key: "updated_at", Date: true},
+		}
+	case ExportSheetMessages, ExportSheetFiles:
+		return StudentExportColumns(sheet)
+	case ExportSheetTutors, ExportSheetHomework, ExportSheetFeedback:
 	}
 	return nil
 }
@@ -103,6 +178,43 @@ var exportTexts = map[domain.Language]ExportText{
 			}},
 			ExportSheetFeedback: {Title: "Feedback", Headers: []string{
 				"Assignment", "Feedback", "Question", "Comment", "Corrected files",
+			}},
+			ExportSheetMessages: {Title: "Messages", Headers: []string{
+				"Chat", "Sent (%s)", "Sender", "Text", "Edited (%s)", "Reply to", "Files", "Reactions",
+			}},
+			ExportSheetFiles: {Title: "Files", Headers: []string{
+				"Path", "Original name", "Media type", "Size in bytes", "SHA-256", "Referenced by",
+			}},
+		},
+		TutorSheets: map[ExportSheet]ExportSheetText{
+			ExportSheetStudents: {Title: "Students", Headers: []string{
+				"Name on the card", "State", "Card email", "Email erased", "Account name", "Account email", "Groups", "Notes", "Invitation",
+				"Invitation expires (%s)", "Linked (%s)", "Ended (%s)", "Ended by", "Created (%s)",
+			}},
+			ExportSheetGroups:       {Title: "Groups", Headers: []string{"Group", "Colour", "Archived (%s)", "Members"}},
+			ExportSheetGroupMembers: {Title: "Group members", Headers: []string{"Group", "Name on the card", "Account name", "Added (%s)"}},
+			ExportSheetLessons: {Title: "Lessons", Headers: []string{
+				"Title", "Starts (%s)", "Ends (%s)", "Status", "Took place", "Lesson timezone", "Audience", "Members", "Description", "Cancelled (%s)",
+				"Series", "Materials",
+			}},
+			ExportSheetSeries: {Title: "Series", Headers: []string{
+				"Series", "Weekdays", "Start", "Duration in minutes", "Timezone", "First date", "End date", "Count",
+			}},
+			ExportSheetIssues: {Title: "Issued work", Headers: []string{
+				"Title", "Audience", "Status", "Answers shown", "Deadline (%s)", "Issued (%s)", "Withdrawn (%s)", "Maximum points", "Materials",
+			}},
+			ExportSheetSubmissions: {Title: "Submissions", Headers: []string{
+				"Assignment", "Student", "Status", "Late", "Issued before reclaim", "Submitted (%s)", "Checked (%s)", "Automatic points", "Final points",
+				"Maximum points", "Percentage",
+			}},
+			ExportSheetAnswers: {Title: "Answers", Headers: []string{
+				"Assignment", "Student", "Question", "Answer", "Chosen options", "Files", "Automatic points", "Accepted answers",
+			}},
+			ExportSheetReviews: {Title: "Reviews", Headers: []string{
+				"Assignment", "Student", "Published (%s)", "Feedback", "Question", "Points", "Comment", "Corrected files",
+			}},
+			ExportSheetLibrary: {Title: "Library", Headers: []string{
+				"Kind", "Title", "Folder", "File name", "File", "Questions", "Maximum points", "Updated (%s)",
 			}},
 			ExportSheetMessages: {Title: "Messages", Headers: []string{
 				"Chat", "Sent (%s)", "Sender", "Text", "Edited (%s)", "Reply to", "Files", "Reactions",
@@ -140,6 +252,43 @@ var exportTexts = map[domain.Language]ExportText{
 			}},
 			ExportSheetFeedback: {Title: "Отзывы", Headers: []string{
 				"Задание", "Отзыв", "Вопрос", "Комментарий", "Исправленные файлы",
+			}},
+			ExportSheetMessages: {Title: "Сообщения", Headers: []string{
+				"Чат", "Отправлено (%s)", "Отправитель", "Текст", "Изменено (%s)", "Ответ на", "Файлы", "Реакции",
+			}},
+			ExportSheetFiles: {Title: "Файлы", Headers: []string{
+				"Путь", "Исходное имя", "Тип", "Размер в байтах", "SHA-256", "Где используется",
+			}},
+		},
+		TutorSheets: map[ExportSheet]ExportSheetText{
+			ExportSheetStudents: {Title: "Ученики", Headers: []string{
+				"Имя в карточке", "Состояние", "Почта в карточке", "Почта стёрта", "Имя аккаунта", "Почта аккаунта", "Группы", "Заметки",
+				"Приглашение", "Приглашение действует до (%s)", "Связан (%s)", "Завершено (%s)", "Кем завершено", "Создана (%s)",
+			}},
+			ExportSheetGroups:       {Title: "Группы", Headers: []string{"Группа", "Цвет", "В архиве с (%s)", "Участники"}},
+			ExportSheetGroupMembers: {Title: "Участники групп", Headers: []string{"Группа", "Имя в карточке", "Имя аккаунта", "Добавлен (%s)"}},
+			ExportSheetLessons: {Title: "Уроки", Headers: []string{
+				"Название", "Начало (%s)", "Конец (%s)", "Статус", "Состоялся", "Часовой пояс урока", "Участники", "Состав", "Описание",
+				"Отменён (%s)", "Серия", "Материалы",
+			}},
+			ExportSheetSeries: {Title: "Серии", Headers: []string{
+				"Серия", "Дни недели", "Начало", "Длительность в минутах", "Часовой пояс", "Первая дата", "Последняя дата", "Количество",
+			}},
+			ExportSheetIssues: {Title: "Выданные задания", Headers: []string{
+				"Название", "Кому", "Статус", "Показ ответов", "Срок (%s)", "Выдано (%s)", "Отозвано (%s)", "Максимум баллов", "Материалы",
+			}},
+			ExportSheetSubmissions: {Title: "Работы", Headers: []string{
+				"Задание", "Ученик", "Статус", "С опозданием", "Выдано до восстановления", "Сдано (%s)", "Проверено (%s)", "Автоматические баллы",
+				"Итоговые баллы", "Максимум баллов", "Процент",
+			}},
+			ExportSheetAnswers: {Title: "Ответы", Headers: []string{
+				"Задание", "Ученик", "Вопрос", "Ответ", "Выбранные варианты", "Файлы", "Автоматические баллы", "Принимаемые ответы",
+			}},
+			ExportSheetReviews: {Title: "Проверки", Headers: []string{
+				"Задание", "Ученик", "Опубликовано (%s)", "Отзыв", "Вопрос", "Баллы", "Комментарий", "Исправленные файлы",
+			}},
+			ExportSheetLibrary: {Title: "Библиотека", Headers: []string{
+				"Вид", "Название", "Папка", "Имя файла", "Файл", "Вопросов", "Максимум баллов", "Изменено (%s)",
 			}},
 			ExportSheetMessages: {Title: "Сообщения", Headers: []string{
 				"Чат", "Отправлено (%s)", "Отправитель", "Текст", "Изменено (%s)", "Ответ на", "Файлы", "Реакции",
