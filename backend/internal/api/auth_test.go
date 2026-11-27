@@ -36,6 +36,7 @@ import (
 	"ovc/backend/internal/services/outbox"
 	"ovc/backend/internal/services/schedule"
 	"ovc/backend/internal/services/tutoring"
+	"ovc/backend/internal/testclock"
 	"ovc/backend/internal/testdb"
 	"ovc/backend/internal/testhasher"
 	"ovc/backend/internal/testmail"
@@ -136,6 +137,8 @@ type authHarness struct {
 	exports   *export.Service
 	effects   export.Effects
 	wall      *steppedWall
+
+	authenticationClock *testclock.Holding
 
 	createGate *providerClockGate
 	linkGate   *providerEntropyGate
@@ -249,8 +252,9 @@ func newAuthHarnessTimed(
 		Store: store, Clock: shared, Random: random, Keys: keys, Cipher: cipher, PublicURL: publicOrigin, Logger: logger, Exports: effects,
 	})
 	scheduleService := schedule.New(schedule.Dependencies{Store: store, Clock: shared, Random: random, Keys: keys, Logger: logger, Addresses: fileService})
+	authenticationClock := testclock.NewHolding(shared)
 	service := accounts.New(accounts.Dependencies{
-		Store: store, Clock: shared, Random: random, Hasher: hasher, Keys: keys, Logger: logger,
+		Store: store, Clock: authenticationClock, Random: random, Hasher: hasher, Keys: keys, Logger: logger,
 		Tokens: core.NewAccessTokens(keys, publicOrigin, 15*time.Minute), RefreshTTL: 30 * 24 * time.Hour,
 		TutorQuotas: core.TutorQuotas{FileBytes: 5_000_000_000, RecordingBytes: 50_000_000_000}, Avatars: fileService, Uploads: fileService,
 		Tutoring: tutoringService, Exports: effects,
@@ -385,7 +389,7 @@ func newAuthHarnessTimed(
 	exportLane := worker.ClaimLane{Name: "export", Slots: domain.ExportLaneSlots, Poll: domain.ExportLanePoll, Claim: options.Exports.ClaimBuild}
 	background := worker.New(logger, shared, outbox.New(store, random, logger), lanes, scheduled, worker.DefaultTiming(), exportLane)
 	return &authHarness{
-		server: server, store: store, clock: shared, hasher: hasher, logs: logs,
+		server: server, store: store, clock: shared, authenticationClock: authenticationClock, hasher: hasher, logs: logs,
 		database: database, sink: sink, worker: background, objects: objects, storage: local.Settings, links: links,
 		accounts: options.Auth.Accounts, tutoring: options.Tutoring, chat: options.Chat, reads: reads, keys: keys, mailer: mailer, schedule: scheduleService, jobs: jobs, files: fileService, purger: purger,
 		logger: logger, options: options, provider: provider, lifecycle: lifecycle, random: random, createGate: createGate, linkGate: linkGate,

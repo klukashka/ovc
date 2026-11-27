@@ -111,6 +111,7 @@ func (g *stallGuard) check() {
 	}
 	if g.reading && g.window.stalled(g.now().Sub(g.readingSince)) {
 		g.stalled = true
+		core.MarkRequestReadAborted(g.ctx)
 		if err := g.controller.SetReadDeadline(g.now()); err != nil && !errors.Is(err, http.ErrNotSupported) {
 			g.logger.LogAttrs(g.ctx, slog.LevelWarn, "http.deadline.failed", slog.String("kind", "read"))
 		}

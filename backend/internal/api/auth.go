@@ -174,6 +174,9 @@ func (r *router) authenticate(ctx huma.Context, next func(huma.Context)) {
 
 func (r *router) authenticationCode(ctx context.Context, err error) domain.ErrorCode {
 	switch {
+	case errors.Is(err, context.Canceled) && core.ClientWentAway(ctx, r.now()):
+		r.logger.LogAttrs(ctx, slog.LevelDebug, "auth.authenticate.failed", slog.String("kind", core.ErrorKind(err)))
+		return domain.ErrorServiceUnavailable
 	case errors.Is(err, accounts.ErrTokenExpired):
 		return domain.ErrorTokenExpired
 	case errors.Is(err, accounts.ErrAccountBlocked):

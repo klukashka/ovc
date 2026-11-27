@@ -255,7 +255,11 @@ func (t *queryTracer) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, data pgx.T
 		return
 	}
 	attrs = append(attrs, slog.String("kind", queryErrorKind(data.Err)))
-	t.logger.LogAttrs(ctx, slog.LevelWarn, "db.query.failed", attrs...)
+	level := slog.LevelWarn
+	if ClientWentAway(ctx, t.now()) {
+		level = slog.LevelDebug
+	}
+	t.logger.LogAttrs(ctx, level, "db.query.failed", attrs...)
 }
 
 func ErrorKind(err error) string {

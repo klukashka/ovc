@@ -42,7 +42,7 @@ type outermost struct {
 func (m *outermost) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := m.now()
 	requestID := m.requestID(r)
-	ctx := withAccessCounts(core.WithRequestActor(core.WithRequestID(r.Context(), requestID)))
+	ctx := core.WithRequestReadState(withAccessCounts(core.WithRequestActor(core.WithRequestID(r.Context(), requestID))))
 	r = r.WithContext(ctx)
 	setBaseHeaders(w.Header(), requestID)
 	recorder := &responseRecorder{ResponseWriter: w, status: http.StatusOK, ctx: ctx, logger: m.logger}
@@ -114,6 +114,9 @@ func (m *outermost) logAccess(ctx context.Context, r *http.Request, recorder *re
 		slog.Int("status", recorder.status),
 		slog.Int64("duration_ms", m.now().Sub(start).Milliseconds()),
 	}, accessCountAttributes(ctx)...)
+	if core.ClientWentAway(r.Context(), m.now()) {
+		attributes = append(attributes, slog.Bool("aborted", true))
+	}
 	m.logger.LogAttrs(ctx, level, "http.request.completed", attributes...)
 }
 
@@ -164,4 +167,8 @@ func (r *responseRecorder) Write(body []byte) (int, error) {
 
 func (r *responseRecorder) Unwrap() http.ResponseWriter {
 	return r.ResponseWriter
+}
+
+func (r *responseRecorder) SetReadDeadline(deadline time.Time) error {
+	return core.SetRequestReadDeadline(r.ctx, deadline, http.NewResponseController(r.ResponseWriter).SetReadDeadline)
 }
