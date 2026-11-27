@@ -43,3 +43,33 @@ type NotificationRead struct {
 type NotificationUnread struct {
 	UnreadCount int64 `json:"unread_count"`
 }
+
+type TutorRecentUpdate struct {
+	ID           string                   `json:"id" format:"uuid"`
+	Event        domain.NotificationEvent `json:"event" enum:"invitation.accepted,relationship.ended,export.ready,export.failed"`
+	CreatedAt    time.Time                `json:"created_at"`
+	Label        *string                  `json:"label" nullable:"true"`
+	LabelDeleted bool                     `json:"label_deleted"`
+	LabelKind    *domain.LabelKind        `json:"label_kind" enum:"group,removed_student,former_student" nullable:"true"`
+	Colour       *domain.Colour           `json:"colour" enum:"clay,slate,moss,plum,ochre,teal,rust,ink" nullable:"true"`
+	Link         *NotificationLink        `json:"link"`
+}
+
+func (TutorRecentUpdate) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	return nullableReferences(schema, "link")
+}
+
+type StudentRecentUpdate struct {
+	ID           string                   `json:"id" format:"uuid"`
+	Event        domain.NotificationEvent `json:"event" enum:"join_request.accepted,join_request.declined,relationship.ended,group.archived,issue.withdrawn,export.ready,export.failed"`
+	CreatedAt    time.Time                `json:"created_at"`
+	Label        *string                  `json:"label" nullable:"true"`
+	LabelDeleted bool                     `json:"label_deleted"`
+	LabelKind    *domain.LabelKind        `json:"label_kind" enum:"group,removed_student,former_student" nullable:"true"`
+	Colour       *domain.Colour           `json:"colour" enum:"clay,slate,moss,plum,ochre,teal,rust,ink" nullable:"true"`
+	Link         *NotificationLink        `json:"link"`
+}
+
+func (StudentRecentUpdate) TransformSchema(_ huma.Registry, schema *huma.Schema) *huma.Schema {
+	return nullableReferences(schema, "link")
+}

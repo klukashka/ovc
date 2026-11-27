@@ -22,6 +22,7 @@ function lesson(id: string, title: string, startsAt: string, endsAt: string): Ca
     ends_at: endsAt,
     status: 'scheduled',
     took_place: false,
+    moved: false,
     timezone: 'Europe/Berlin',
     audience: { kind: 'one_to_one', label: 'Анна', label_kind: null, colour: 'moss' },
     tutor: null,

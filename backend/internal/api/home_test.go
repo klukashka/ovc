@@ -210,16 +210,16 @@ func (h *authHarness) assertStudentHomeMatchesReads(t *testing.T, token string, 
 	var week []string
 	today := int64(0)
 	for index, item := range items {
-		if item.Status == "cancelled" {
+		if item.Status == "cancelled" && item.StartsAt.Before(now) {
 			continue
 		}
-		if !item.StartsAt.Before(dayStart) && item.StartsAt.Before(dayStart.Add(24*time.Hour)) {
+		if item.Status != "cancelled" && !item.StartsAt.Before(dayStart) && item.StartsAt.Before(dayStart.Add(24*time.Hour)) {
 			today++
 		}
 		if !item.EndsAt.After(now) {
 			continue
 		}
-		if next == "null" {
+		if next == "null" && item.Status != "cancelled" {
 			next = calendar[index]
 		}
 		if item.StartsAt.Before(now.Add(7 * 24 * time.Hour)) {

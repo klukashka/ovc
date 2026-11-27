@@ -245,6 +245,7 @@ The rollbacks of the slice 8 library migrations refuse to drop rows, so a rollba
 | `status` | `scheduled`, `live`, `ended`, `cancelled` |
 | `timezone` | the tutor-side timezone: the series timezone, or the tutor's at creation for one-off lessons |
 | `schedule_revision` | incremented on every change to start or duration |
+| `moved_at` | nullable `timestamptz`; the server-clock instant of the last edit that changed start or duration, set with `schedule_revision`; other edits preserve it ([lesson marks](schedule.md#lessons-and-series)) |
 | `version` | incremented on every change of any field an edit changes; edits are conditional on it ([edits](schedule.md#rules-for-all-edits)) |
 | `reminded_24h_revision`, `reminded_1h_revision` | the schedule revision the reminders were last written for |
 | `overridden_fields` | set of start time, date, duration, title, description and materials; `materials` is recorded from slice 8 when `POST /lessons/{id}/materials` changes a series occurrence ([lesson materials](schedule.md#lesson-materials)) |

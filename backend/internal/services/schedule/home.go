@@ -55,7 +55,7 @@ func (s *Service) TutorDay(ctx context.Context, tutor domain.UserID) ([]Calendar
 		if err != nil {
 			return err
 		}
-		calendar, err := tutorCalendar(ctx, repos, tutor, CalendarQuery{From: day.start, To: day.end})
+		calendar, err := s.tutorCalendar(ctx, repos, tutor, CalendarQuery{From: day.start, To: day.end})
 		if err != nil {
 			return err
 		}
@@ -91,16 +91,16 @@ func (s *Service) StudentLessons(ctx context.Context, student domain.UserID, tut
 		}
 		weekEnd := day.now.Add(homeWeek)
 		for _, item := range calendar.Items {
-			if item.Status == domain.LessonCancelled {
+			if item.Status == domain.LessonCancelled && item.StartsAt.Before(day.now) {
 				continue
 			}
-			if !item.StartsAt.Before(day.start) && item.StartsAt.Before(day.end) {
+			if item.Status != domain.LessonCancelled && !item.StartsAt.Before(day.start) && item.StartsAt.Before(day.end) {
 				lessons.TodayCount++
 			}
 			if !item.EndsAt().After(day.now) {
 				continue
 			}
-			if lessons.Next == nil {
+			if lessons.Next == nil && item.Status != domain.LessonCancelled {
 				next := item
 				lessons.Next = &next
 			}

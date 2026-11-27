@@ -19,12 +19,12 @@ const homeRoute = "/api/v1/home"
 
 var (
 	tutorHomeKeys = []string{
-		"today_lessons", "today_lessons_count", "needs_checking", "upcoming_deadlines", "unread_channels", "join_requests", "tutor_code", "checklist",
+		"today_lessons", "today_lessons_count", "needs_checking", "upcoming_deadlines", "unread_channels", "join_requests", "tutor_code", "checklist", "recent_updates",
 	}
 	studentHomeKeys = []string{
-		"next_lesson", "today_lessons_count", "todo", "recently_checked", "next_seven_days", "next_seven_days_count", "tutors", "tutors_count",
+		"next_lesson", "today_lessons_count", "todo", "recently_checked", "next_seven_days", "next_seven_days_count", "tutors", "tutors_count", "recent_updates",
 	}
-	calendarItemKeys     = []string{"id", "title", "starts_at", "ends_at", "status", "took_place", "timezone", "audience", "tutor"}
+	calendarItemKeys     = []string{"id", "title", "starts_at", "ends_at", "status", "took_place", "moved", "timezone", "audience", "tutor"}
 	calendarAudienceKeys = []string{"kind", "label", "label_kind", "colour"}
 	homeTutorItemKeys    = []string{"relationship_id", "state", "name", "avatar_id", "colour", "subjects", "channel_id"}
 	homeChannelKeys      = []string{"channel_id", "label", "label_kind", "colour", "unread_count"}
@@ -147,6 +147,7 @@ func assertTutorHomeShape(t *testing.T, parts map[string]json.RawMessage) {
 		t.Fatal(err)
 	}
 	assertKeys(t, "tutor home", raw, tutorHomeKeys)
+	assertEachKeys(t, "recent update", parts["recent_updates"], recentUpdateKeys)
 	for _, lesson := range assertEachKeys(t, "today lesson", parts["today_lessons"], calendarItemKeys) {
 		assertKeys(t, "today lesson audience", decodedAs[map[string]json.RawMessage](t, lesson)["audience"], calendarAudienceKeys)
 	}
@@ -189,6 +190,12 @@ func (c contractCheck) studentHome(label string, raw []byte) {
 	}
 	for _, tutor := range c.array(label+".tutors", decoded["tutors"]) {
 		c.object(label+".tutors.item", tutor, homeTutorItemKeys)
+	}
+	for _, row := range c.array(label+".recent_updates", decoded["recent_updates"]) {
+		fields := c.object(label+".recent_updates.item", row, recentUpdateKeys)
+		if string(fields["link"]) != "null" {
+			c.object(label+".recent_updates.link", fields["link"], []string{"kind", "id"})
+		}
 	}
 	c.noSentinel(label, raw)
 }

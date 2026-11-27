@@ -74,3 +74,21 @@ func JoinRequestDeclinedKey(request JoinRequestID, student UserID) string {
 func RelationshipEndedKey(relationship RelationshipID, endedAtMicros int64) string {
 	return fmt.Sprintf("%s:%s:%d", EventRelationshipEnded, hex.EncodeToString(relationship[:]), endedAtMicros)
 }
+
+const (
+	RecentUpdateWindow = 14 * 24 * time.Hour
+	RecentUpdateLimit  = 10
+)
+
+func RecentUpdateEvents(role Role) []NotificationEvent {
+	switch role {
+	case RoleTutor:
+		return []NotificationEvent{NotificationInvitationAccepted, NotificationRelationshipEnded, NotificationExportReady, NotificationExportFailed}
+	case RoleStudent:
+		return []NotificationEvent{
+			NotificationJoinRequestAccepted, NotificationJoinRequestDeclined, NotificationRelationshipEnded, NotificationGroupArchived,
+			NotificationIssueWithdrawn, NotificationExportReady, NotificationExportFailed,
+		}
+	}
+	return nil
+}

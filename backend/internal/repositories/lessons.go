@@ -415,7 +415,7 @@ func (r Lessons) CardsNext(ctx context.Context, tutor domain.UserID, cards []dom
 			ID: row.ID, Title: row.Title, StartsAt: row.StartsAt, DurationMinutes: row.DurationMinutes, Status: row.Status,
 			Timezone: row.Timezone, RelationshipID: row.RelationshipID, GroupID: row.GroupID, CardName: row.CardName,
 			CardState: row.CardState, CardDiscardReason: row.CardDiscardReason, CardColour: row.CardColour, GroupName: row.GroupName,
-			GroupColour: row.GroupColour,
+			GroupColour: row.GroupColour, MovedAt: row.MovedAt,
 		}})
 	}
 	return next, nil
@@ -447,7 +447,7 @@ func (r Lessons) GroupsNext(ctx context.Context, tutor domain.UserID, groups []d
 			ID: row.ID, Title: row.Title, StartsAt: row.StartsAt, DurationMinutes: row.DurationMinutes, Status: row.Status,
 			Timezone: row.Timezone, RelationshipID: row.RelationshipID, GroupID: row.GroupID, CardName: row.CardName,
 			CardState: row.CardState, CardDiscardReason: row.CardDiscardReason, CardColour: row.CardColour, GroupName: row.GroupName,
-			GroupColour: row.GroupColour,
+			GroupColour: row.GroupColour, MovedAt: row.MovedAt,
 		}})
 	}
 	return next, nil

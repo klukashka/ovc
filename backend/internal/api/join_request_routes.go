@@ -73,6 +73,10 @@ func (r *router) registerJoinRequests() {
 	list.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
 	register(r, list, AudienceTutor, r.tutorRequests)
 
+	count := operation("join-requests-count", http.MethodGet, joinRequestsPath+"/count")
+	count.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
+	register(r, count, AudienceTutor, r.joinRequestCount)
+
 	sent := operation("join-requests-sent", http.MethodGet, joinRequestsPath+"/sent")
 	sent.Errors = errorsOf(http.StatusUnauthorized, http.StatusForbidden, http.StatusNotFound)
 	register(r, sent, AudienceStudentUnverifiedOK, r.sentRequests)
@@ -212,4 +216,18 @@ func (r *router) joinRequestError(ctx context.Context, event string, err error) 
 		return NewError(ctx, domain.ErrorUnauthenticated)
 	}
 	return r.tutoringError(ctx, event, err)
+}
+
+type joinRequestCountOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         schemas.JoinRequestCount
+}
+
+func (r *router) joinRequestCount(ctx context.Context, _ *struct{}) (*joinRequestCountOutput, error) {
+	count, err := r.tutoring.VisibleRequestCount(ctx, principalFrom(ctx).UserID)
+	if err != nil {
+		return nil, r.joinRequestError(ctx, "join_requests.count.failed", err)
+	}
+	recordAccessCount(ctx, accessJoinRequests, count)
+	return &joinRequestCountOutput{CacheControl: noStore, Body: schemas.JoinRequestCount{Count: count}}, nil
 }

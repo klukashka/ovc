@@ -11,6 +11,7 @@ import (
 	"ovc/backend/internal/services/accounts"
 	"ovc/backend/internal/services/chat"
 	"ovc/backend/internal/services/homework"
+	"ovc/backend/internal/services/notifications"
 	"ovc/backend/internal/services/tutoring"
 )
 
@@ -91,6 +92,12 @@ func (r *router) tutorHome(ctx context.Context, principal accounts.Principal) (*
 		return nil, err
 	}
 	body.Checklist = checklist
+	updates, err := r.inbox.RecentUpdates(ctx, principal)
+	if err != nil {
+		return nil, r.flowError(ctx, homeFailed, err)
+	}
+	body.RecentUpdates = tutorRecentUpdatesBody(updates)
+	recordAccessCount(ctx, accessRecentUpdates, int64(len(updates)))
 	recordAccessCount(ctx, accessTodayLessons, body.TodayLessonsCount)
 	if body.NeedsChecking != nil {
 		recordAccessCount(ctx, accessNeedsChecking, body.NeedsChecking.Count)
@@ -224,6 +231,12 @@ func (r *router) studentHome(ctx context.Context, principal accounts.Principal, 
 		next := calendarItemBody(*lessons.Next)
 		body.NextLesson = &next
 	}
+	updates, err := r.inbox.RecentUpdates(ctx, principal)
+	if err != nil {
+		return nil, r.flowError(ctx, homeFailed, err)
+	}
+	body.RecentUpdates = studentRecentUpdatesBody(updates)
+	recordAccessCount(ctx, accessRecentUpdates, int64(len(updates)))
 	recordAccessCount(ctx, accessTodo, body.Todo.Count)
 	recordAccessCount(ctx, accessRecentlyChecked, int64(len(body.RecentlyChecked)))
 	recordAccessCount(ctx, accessNextSevenDays, body.NextSevenDaysCount)
@@ -257,6 +270,36 @@ func homeTutorsBody(tutors []tutoring.MyTutor) []schemas.StudentHomeTutor {
 			RelationshipID: tutor.RelationshipID.String(), State: tutor.State, Name: tutor.Tutor.Name, AvatarID: optionalID(tutor.Tutor.AvatarID),
 			Colour: tutor.Colour, Subjects: append([]string{}, tutor.Tutor.Subjects...), ChannelID: optionalChannel(tutor.ChannelID),
 		})
+	}
+	return body
+}
+
+func tutorRecentUpdatesBody(items []notifications.Item) []schemas.TutorRecentUpdate {
+	body := make([]schemas.TutorRecentUpdate, 0, len(items))
+	for _, item := range items {
+		shown := schemas.TutorRecentUpdate{
+			ID: item.ID.String(), Event: item.Event, CreatedAt: item.CreatedAt, Label: item.Label,
+			LabelDeleted: item.LabelDeleted, LabelKind: item.LabelKind, Colour: item.Colour,
+		}
+		if item.Link != nil {
+			shown.Link = &schemas.NotificationLink{Kind: item.Link.Kind, ID: item.Link.ID.String()}
+		}
+		body = append(body, shown)
+	}
+	return body
+}
+
+func studentRecentUpdatesBody(items []notifications.Item) []schemas.StudentRecentUpdate {
+	body := make([]schemas.StudentRecentUpdate, 0, len(items))
+	for _, item := range items {
+		shown := schemas.StudentRecentUpdate{
+			ID: item.ID.String(), Event: item.Event, CreatedAt: item.CreatedAt, Label: item.Label,
+			LabelDeleted: item.LabelDeleted, LabelKind: item.LabelKind, Colour: item.Colour,
+		}
+		if item.Link != nil {
+			shown.Link = &schemas.NotificationLink{Kind: item.Link.Kind, ID: item.Link.ID.String()}
+		}
+		body = append(body, shown)
 	}
 	return body
 }

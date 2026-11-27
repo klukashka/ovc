@@ -72,6 +72,7 @@ const liveItem: CalendarItem = {
   ends_at: liveLesson.ends_at,
   status: 'live',
   took_place: true,
+  moved: false,
   timezone: liveLesson.timezone,
   audience: { kind: 'one_to_one', label: 'Anna', label_kind: null, colour: 'moss' },
   tutor: { name: 'Maria', colour: 'moss' },
@@ -85,6 +86,7 @@ const followingItem: CalendarItem = {
   ends_at: '2026-11-01T11:00:00Z',
   status: 'scheduled',
   took_place: false,
+  moved: false,
 };
 
 class RoomTabs {

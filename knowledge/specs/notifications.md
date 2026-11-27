@@ -65,6 +65,20 @@ Behavior for FR-13 and the worker that delivers it. Decisions: [ADR-0006](../../
 - **Email:** rendered and sent by the worker through SMTP ([email](#email)).
 - **Web push** (from slice 10, off until its gate opens): decided in [ADR-0015](../../docs/decisions/0015-web-push.md), including the send-time recipient check, and specified with the slice 10 plan.
 
+### Recent updates
+
+`GET /home` includes `recent_updates`, a read-only selection of the caller's notification rows with no read state. It includes only these informational events:
+
+| Role | Events |
+|---|---|
+| Tutor | `invitation.accepted`, `relationship.ended`, `export.ready`, `export.failed` |
+| Student | `join_request.accepted`, `join_request.declined`, `relationship.ended`, `group.archived`, `issue.withdrawn`, `export.ready`, `export.failed` |
+
+- **Window and bound:** creation strictly after the current server-clock instant minus 14 days, newest first by `(created_at, id)`, at most ten rows. A row exactly 14 days old is excluded. The list is empty rather than `null` when no rows qualify; it has no cursor or separate total.
+- **Scope:** only rows whose recipient is the caller. The student's `?tutor=` filter does not narrow this list; export updates have no tutor. Labels, label kinds, deletion flags, colours and links use the same current-scope resolution as the [notification list](#labels-and-links), so an inaccessible subject has no link and no out-of-scope label.
+- **Homework lifecycle:** the existing student homework-row predicate applies before the limit: the referenced submission must belong to the recipient, its issue must not be marked for erasure, and its relationship must be `active`, `provisional` or `ended`. The filter does not require an active issue: `issue.withdrawn` remains with neither title nor link; a `reclaim_pending` or discarded link hides it.
+- **Fields:** exactly a notification item without `read_at`: `id`, `event`, `created_at`, `label`, `label_deleted`, `label_kind`, `colour` and `link`. Each role's schema enumerates only its own informational events. The query selects no read time and does not filter on it; reading Home neither marks rows read nor changes any unread count. Existing notification routes, producers, frames and retention are unchanged.
+
 ### In-app producers in slice 4
 
 Each row below is written in the producer's transaction with `ON CONFLICT DO NOTHING`, and `notification.new` is signalled only when the row was inserted:

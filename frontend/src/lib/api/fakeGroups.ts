@@ -375,6 +375,7 @@ export class FakeGroupServer {
       ends_at: new Date(startsAt + lessonMilliseconds).toISOString(),
       status: 'scheduled',
       took_place: false,
+      moved: false,
       timezone: 'Europe/Moscow',
       audience: { kind: 'group', label: groupName, label_kind: null, colour },
       tutor: null,

@@ -74,6 +74,7 @@ const lessonItem: CalendarItem = {
   ends_at: lessonDetail.ends_at,
   status: lessonDetail.status,
   took_place: false,
+  moved: false,
   timezone: lessonDetail.timezone,
   audience: { kind: 'one_to_one', label: 'Anna', label_kind: null, colour: 'moss' },
   tutor: null,

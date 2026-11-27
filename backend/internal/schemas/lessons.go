@@ -154,6 +154,7 @@ type CalendarItem struct {
 	StartsAt  time.Time           `json:"starts_at"`
 	EndsAt    time.Time           `json:"ends_at"`
 	Status    domain.LessonStatus `json:"status" enum:"scheduled,live,ended,cancelled"`
+	Moved     bool                `json:"moved"`
 	TookPlace bool                `json:"took_place"`
 	Timezone  string              `json:"timezone"`
 	Audience  CalendarAudience    `json:"audience"`

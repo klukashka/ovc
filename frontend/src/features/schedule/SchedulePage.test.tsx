@@ -29,6 +29,7 @@ const sundayLesson: CalendarItem = {
   ends_at: '2026-11-08T16:00:00Z',
   status: 'scheduled',
   took_place: false,
+  moved: false,
   timezone: 'Europe/Moscow',
   audience: { kind: 'one_to_one', label: 'Анна', label_kind: null, colour: 'moss' },
   tutor: null,

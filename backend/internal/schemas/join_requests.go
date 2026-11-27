@@ -64,3 +64,7 @@ type BlockedRequesterPage struct {
 	Items      []BlockedRequester `json:"items" nullable:"false"`
 	NextCursor *string            `json:"next_cursor" nullable:"true"`
 }
+
+type JoinRequestCount struct {
+	Count int64 `json:"count"`
+}

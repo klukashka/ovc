@@ -14,7 +14,9 @@ Slice 5 builds this specification without joining and without materials, as its 
   - attached library materials (from slice 8) and linked issues (from slice 9, [linked issues](#linked-issues));
   - the timezone it is shown in as the tutor-side time: the series timezone for occurrences, the tutor's profile timezone at creation for one-off lessons;
   - a status, a schedule revision incremented by every change to start or duration, a `version` incremented by every change of any field the tutor edits ([edits](#rules-for-all-edits)), a roster, and an optional series with its occurrence date;
+  - `moved_at`, a nullable UTC instant set to the edit's server-clock instant exactly when a change to its start or duration increments `schedule_revision`; a duration-only edit counts as a move, other edits preserve the instant, and both a single edit and a "this and following" edit use the same occurrence update; existing lessons start with no recorded move;
   - for a cancelled lesson, when it was cancelled (`cancelled_at`) and why (`cancel_cause`: `tutor`, `relationship_ended`, `provisional_removed`, `group_archived` or `tutor_deleted`), set together with the status.
+- **The moved mark** on calendar items is true exactly when `moved_at` is not null, the status is not `cancelled`, and start plus duration is after the current server-clock instant. Cancellation and reaching the lesson's end hide the mark without erasing `moved_at`. Home's student lesson items use this same mark.
 - **The current audience** applies while a lesson is `scheduled`, whether or not its start has passed:
   - for a one-to-one lesson, the relationship's student while the relationship is `active` or `provisional` ([ADR-0014](../../docs/decisions/0014-students-join-through-their-tutor.md));
   - for a group lesson, the group's current members; a provisional or reclaim-pending student is never a member.

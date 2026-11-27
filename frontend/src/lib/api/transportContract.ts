@@ -288,6 +288,7 @@ const tutorHomeKeys: readonly string[] = [
   'join_requests',
   'tutor_code',
   'checklist',
+  'recent_updates',
 ];
 
 const studentHomeKeys: readonly string[] = [
@@ -299,6 +300,7 @@ const studentHomeKeys: readonly string[] = [
   'next_seven_days_count',
   'tutors',
   'tutors_count',
+  'recent_updates',
 ];
 
 const assignmentItemKeys: readonly string[] = [
@@ -326,6 +328,7 @@ const calendarItemKeys: readonly string[] = [
   'ends_at',
   'status',
   'took_place',
+  'moved',
   'timezone',
   'audience',
   'tutor',
@@ -788,6 +791,19 @@ export const authTransportContract: Readonly<Record<string, ContractScenario>> =
     check(unknown.status === 404 && unknown.code === 'not_found', 'expected not_found on an unknown route');
     check(created.same(unknown), `expected creation to be refused as an unknown route: ${created.describe()}`);
     check(read.same(unknown), `expected reading to be refused as an unknown route: ${read.describe()}`);
+  },
+
+  'a tutor without join requests reads a zero count': async (subject) => {
+    const token = await accessToken(await subject.transport.login(subject.otherTutorEmail, subject.otherTutorPassword));
+
+    const read = await subject.transport.send(
+      new Request(`${subject.origin}/api/v1/join-requests/count`, { headers: { Authorization: `Bearer ${token}` } }),
+    );
+
+    check(read.status === 200, `expected 200, got ${String(read.status)}`);
+    const body: unknown = await read.json();
+    checkKeys(body, ['count'], 'the join request count');
+    check(property(body, 'count') === 0, 'expected no visible join requests');
   },
 
   'a tutor without join requests reads an empty page (a refused read uses the refusal envelope the 404 scenarios check)':

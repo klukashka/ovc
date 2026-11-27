@@ -584,3 +584,26 @@ func parseCursor(text string) (*repositories.NotificationCursor, error) {
 	}
 	return &repositories.NotificationCursor{CreatedAt: time.UnixMicro(instant).UTC(), ID: id}, nil
 }
+
+func (i *Inbox) RecentUpdates(ctx context.Context, principal accounts.Principal) ([]Item, error) {
+	now, err := i.deps.Clock.Instant(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items := []Item{}
+	err = i.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
+		rows, err := repos.Notifications.Recent(ctx, principal.UserID, principal.Role, now)
+		if err != nil {
+			return err
+		}
+		loaded, err := loadSubjects(ctx, repos, principal, rows, now)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			items = append(items, loaded.item(principal, row, now))
+		}
+		return nil
+	})
+	return items, err
+}

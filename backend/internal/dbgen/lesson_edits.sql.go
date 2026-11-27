@@ -440,6 +440,7 @@ UPDATE lessons SET
     starts_at = $1, duration_minutes = $2, title = $3, description = $4,
     overridden_fields = $5::text[], version = version + 1,
     schedule_revision = schedule_revision + CASE WHEN $6::boolean THEN 1 ELSE 0 END,
+    moved_at = CASE WHEN $6::boolean THEN $7::timestamptz ELSE moved_at END,
     updated_at = $7::timestamptz
 WHERE id = $8 AND status = 'scheduled' AND starts_at > $7::timestamptz
 RETURNING schedule_revision

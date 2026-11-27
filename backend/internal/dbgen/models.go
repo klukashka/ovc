@@ -334,6 +334,7 @@ type Lesson struct {
 	EndedAt             *time.Time
 	CreatedAt           time.Time
 	UpdatedAt           time.Time
+	MovedAt             *time.Time
 }
 
 type LessonMaterial struct {

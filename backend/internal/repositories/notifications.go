@@ -112,3 +112,25 @@ func (r Notifications) JoinRequests(ctx context.Context, ids []domain.JoinReques
 	}
 	return rows, nil
 }
+
+func (r Notifications) Recent(ctx context.Context, user domain.UserID, role domain.Role, now time.Time) ([]Notification, error) {
+	events := domain.RecentUpdateEvents(role)
+	kinds := make([]string, 0, len(events))
+	for _, event := range events {
+		kinds = append(kinds, string(event))
+	}
+	rows, err := r.queries.ListRecentNotifications(ctx, dbgen.ListRecentNotificationsParams{
+		UserID: user, Kinds: kinds, After: now.Add(-domain.RecentUpdateWindow), RowLimit: domain.RecentUpdateLimit,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list recent notifications: %w", err)
+	}
+	items := make([]Notification, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, Notification{
+			ID: row.ID, Event: row.Event, TutorID: row.TutorID, StudentID: row.StudentID,
+			SubjectID: row.SubjectID, RelationshipID: row.RelationshipID, CreatedAt: row.CreatedAt,
+		})
+	}
+	return items, nil
+}

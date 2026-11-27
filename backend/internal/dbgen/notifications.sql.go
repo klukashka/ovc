@@ -380,6 +380,76 @@ func (q *Queries) ListNotifications(ctx context.Context, arg ListNotificationsPa
 	return items, nil
 }
 
+const listRecentNotifications = `-- name: ListRecentNotifications :many
+SELECT id, event, tutor_id, student_id, subject_id, relationship_id, created_at
+FROM notifications
+WHERE user_id = $1 AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+)
+    AND event = ANY ($2::text[])
+    AND created_at > $3::timestamptz
+ORDER BY created_at DESC, id DESC
+LIMIT $4::int
+`
+
+type ListRecentNotificationsParams struct {
+	UserID   domain.UserID
+	Kinds    []string
+	After    time.Time
+	RowLimit int32
+}
+
+type ListRecentNotificationsRow struct {
+	ID             domain.NotificationID
+	Event          domain.NotificationEvent
+	TutorID        *domain.UserID
+	StudentID      *domain.UserID
+	SubjectID      domain.EntityID
+	RelationshipID *domain.RelationshipID
+	CreatedAt      time.Time
+}
+
+func (q *Queries) ListRecentNotifications(ctx context.Context, arg ListRecentNotificationsParams) ([]ListRecentNotificationsRow, error) {
+	rows, err := q.db.Query(ctx, listRecentNotifications,
+		arg.UserID,
+		arg.Kinds,
+		arg.After,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRecentNotificationsRow
+	for rows.Next() {
+		var i ListRecentNotificationsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Event,
+			&i.TutorID,
+			&i.StudentID,
+			&i.SubjectID,
+			&i.RelationshipID,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markNotificationsRead = `-- name: MarkNotificationsRead :execrows
 UPDATE notifications SET read_at = $1::timestamptz
 WHERE user_id = $2 AND (

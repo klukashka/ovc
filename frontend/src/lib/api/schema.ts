@@ -623,6 +623,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/join-requests/count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["join-requests-count"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/join-requests/sent": {
         parameters: {
             query?: never;
@@ -1480,6 +1496,7 @@ export interface components {
             ends_at: string;
             /** Format: uuid */
             id: string;
+            moved: boolean;
             /** Format: date-time */
             starts_at: string;
             /** @enum {string} */
@@ -1937,6 +1954,10 @@ export interface components {
             /** @enum {string} */
             status: "open";
             url: string;
+        };
+        JoinRequestCount: {
+            /** Format: int64 */
+            count: number;
         };
         JoinRequestDecision: {
             /** Format: uuid */
@@ -2765,6 +2786,7 @@ export interface components {
             next_seven_days: components["schemas"]["CalendarItem"][];
             /** Format: int64 */
             next_seven_days_count: number;
+            recent_updates: components["schemas"]["StudentRecentUpdate"][];
             recently_checked: components["schemas"]["StudentAssignmentItem"][];
             /** Format: int64 */
             today_lessons_count: number;
@@ -2791,6 +2813,21 @@ export interface components {
             /** @enum {string} */
             state: "active" | "provisional";
             subjects: string[];
+        };
+        StudentRecentUpdate: {
+            /** @enum {string|null} */
+            colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink" | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @enum {string} */
+            event: "join_request.accepted" | "join_request.declined" | "relationship.ended" | "group.archived" | "issue.withdrawn" | "export.ready" | "export.failed";
+            /** Format: uuid */
+            id: string;
+            label: string | null;
+            label_deleted: boolean;
+            /** @enum {string|null} */
+            label_kind: "group" | "removed_student" | "former_student" | null;
+            link: components["schemas"]["NotificationLink"] | null;
         };
         StudentRevealed: {
             questions: components["schemas"]["StudentRevealedQuestion"][];
@@ -3064,6 +3101,7 @@ export interface components {
             checklist: components["schemas"]["TutorHomeChecklist"];
             join_requests: components["schemas"]["TutorHomeJoinRequests"] | null;
             needs_checking: components["schemas"]["TutorHomeNeedsChecking"] | null;
+            recent_updates: components["schemas"]["TutorRecentUpdate"][];
             today_lessons: components["schemas"]["CalendarItem"][];
             /** Format: int64 */
             today_lessons_count: number;
@@ -3125,6 +3163,21 @@ export interface components {
         TutorJoinRequestPage: {
             items: components["schemas"]["TutorJoinRequest"][];
             next_cursor: string | null;
+        };
+        TutorRecentUpdate: {
+            /** @enum {string|null} */
+            colour: "clay" | "slate" | "moss" | "plum" | "ochre" | "teal" | "rust" | "ink" | null;
+            /** Format: date-time */
+            created_at: string;
+            /** @enum {string} */
+            event: "invitation.accepted" | "relationship.ended" | "export.ready" | "export.failed";
+            /** Format: uuid */
+            id: string;
+            label: string | null;
+            label_deleted: boolean;
+            /** @enum {string|null} */
+            label_kind: "group" | "removed_student" | "former_student" | null;
+            link: components["schemas"]["NotificationLink"] | null;
         };
         TutorReviewItem: {
             comment: string;
@@ -7335,6 +7388,108 @@ export interface operations {
             };
             /** @description Too Many Requests */
             429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "join-requests-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JoinRequestCount"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Request Entity Too Large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unsupported Media Type */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14962,6 +15117,9 @@ export const studentCardSummaryEnded_byValues: ReadonlyArray<FlattenedDeepRequir
 export const studentCardSummaryStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentCardSummary"]["state"]> = ["invited", "provisional", "reclaim_pending", "active", "ended"];
 export const studentHomeTutorColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentHomeTutor"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const studentHomeTutorStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentHomeTutor"]["state"]> = ["active", "provisional"];
+export const studentRecentUpdateColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentRecentUpdate"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const studentRecentUpdateEventValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentRecentUpdate"]["event"]> = ["join_request.accepted", "join_request.declined", "relationship.ended", "group.archived", "issue.withdrawn", "export.ready", "export.failed"];
+export const studentRecentUpdateLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentRecentUpdate"]["label_kind"]> = ["group", "removed_student", "former_student"];
 export const studentSubmissionStatusValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentSubmission"]["status"]> = ["not_started", "draft", "submitted", "returned", "checked", "closed"];
 export const studentTemplateBlockTypeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["StudentTemplateBlock"]["type"]> = ["instruction", "material", "single_choice", "multiple_choice", "short_text", "short_number", "long_text", "file"];
 export const templateBlockScoringValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateBlock"]["scoring"]> = ["all_or_nothing", "partial"];
@@ -14971,6 +15129,9 @@ export const templateBlockInputTypeValues: ReadonlyArray<FlattenedDeepRequired<c
 export const templateProblemCodeValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TemplateProblem"]["code"]> = ["no_blocks", "text_missing", "prompt_missing", "too_few_options", "option_empty", "correct_count", "no_correct_option", "no_accepted_answer", "accepted_answer_empty", "value_invalid", "tolerance_invalid"];
 export const tutorHomeChannelColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorHomeChannel"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
 export const tutorHomeChannelLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorHomeChannel"]["label_kind"]> = ["deleted_user", "former_student", "removed_student"];
+export const tutorRecentUpdateColourValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorRecentUpdate"]["colour"]> = ["clay", "slate", "moss", "plum", "ochre", "teal", "rust", "ink"];
+export const tutorRecentUpdateEventValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorRecentUpdate"]["event"]> = ["invitation.accepted", "relationship.ended", "export.ready", "export.failed"];
+export const tutorRecentUpdateLabel_kindValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorRecentUpdate"]["label_kind"]> = ["group", "removed_student", "former_student"];
 export const tutorReviewRevisionActionValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorReviewRevision"]["action"]> = ["check", "return"];
 export const tutorReviewRevisionStateValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorReviewRevision"]["state"]> = ["draft", "published"];
 export const tutorSubmissionAnswer_policyValues: ReadonlyArray<FlattenedDeepRequired<components>["schemas"]["TutorSubmission"]["answer_policy"]> = ["never", "after_submission", "after_check"];

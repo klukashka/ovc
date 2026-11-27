@@ -22,6 +22,7 @@ UPDATE lessons SET
     starts_at = @starts_at, duration_minutes = @duration_minutes, title = @title, description = sqlc.narg(description),
     overridden_fields = sqlc.arg(overridden_fields)::text[], version = version + 1,
     schedule_revision = schedule_revision + CASE WHEN sqlc.arg(moved)::boolean THEN 1 ELSE 0 END,
+    moved_at = CASE WHEN sqlc.arg(moved)::boolean THEN sqlc.arg(now)::timestamptz ELSE moved_at END,
     updated_at = sqlc.arg(now)::timestamptz
 WHERE id = @id AND status = 'scheduled' AND starts_at > sqlc.arg(now)::timestamptz
 RETURNING schedule_revision;

@@ -378,6 +378,21 @@ const exportsPath = '/api/v1/exports';
 const currentExportPath = '/api/v1/exports/current';
 const exportDownloadPath = '/api/v1/exports/current/download';
 const minuteMilliseconds = 60 * 1_000;
+const recentUpdateWindowMilliseconds = 14 * 24 * 60 * minuteMilliseconds;
+const recentUpdateLimit = 10;
+
+function recentUpdateFields(row: Notification): Omit<Notification, 'event' | 'read_at'> {
+  return {
+    id: row.id,
+    created_at: row.created_at,
+    label: row.label,
+    label_deleted: row.label_deleted,
+    label_kind: row.label_kind,
+    colour: row.colour,
+    link: row.link,
+  };
+}
+
 const currentPasswordWindowMilliseconds = 15 * minuteMilliseconds;
 const currentPasswordFailureLimit = 5;
 const exportAddressMilliseconds = 5 * minuteMilliseconds;
@@ -404,6 +419,7 @@ function fakeAudienceRefusal(method: string, path: string, caller: Me): Response
     path === '/api/v1/students' ||
     path.startsWith(cardPathPrefix) ||
     path === joinRequestsPath ||
+    path === `${joinRequestsPath}/count` ||
     path.startsWith('/api/v1/groups') ||
     path.startsWith('/api/v1/library') ||
     path.startsWith('/api/v1/tutor/') ||
@@ -1624,6 +1640,9 @@ export class FakeAuthServer {
     if (request.method === 'GET' && path.startsWith(invitationPathPrefix)) {
       return this.answerInvitation(decodeURIComponent(path.slice(invitationPathPrefix.length)));
     }
+    if (request.method === 'GET' && path === `${joinRequestsPath}/count` && caller !== undefined) {
+      return json(200, { count: Math.min(this.visibleJoinRequests(caller.id).length, homeCountCap) });
+    }
     if (request.method === 'GET' && path === joinRequestsPath) {
       return this.readJoinRequests(token, address.searchParams);
     }
@@ -2012,6 +2031,7 @@ export class FakeAuthServer {
       );
     const requests = this.visibleJoinRequests(caller.id);
     return {
+      recent_updates: this.tutorRecentUpdates(caller),
       today_lessons: today.slice(0, homeListLimit),
       today_lessons_count: today.length,
       needs_checking: unconfirmed
@@ -2050,12 +2070,13 @@ export class FakeAuthServer {
     const lookaheadEnd = localDayStart(now, caller.timezone, homeLookaheadDays);
     const lessons = byStart(this.calendarItems.get(caller.id) ?? []).filter(
       (item) =>
-        item.status !== 'cancelled' &&
         Date.parse(item.ends_at) > dayStart &&
         Date.parse(item.starts_at) < lookaheadEnd &&
         this.lessonInFilter(item, filter),
     );
-    const upcoming = lessons.filter((item) => Date.parse(item.ends_at) > now);
+    const upcoming = lessons.filter(
+      (item) => Date.parse(item.ends_at) > now && (item.status !== 'cancelled' || Date.parse(item.starts_at) >= now),
+    );
     const nextSevenDays = upcoming.filter((item) => Date.parse(item.starts_at) < now + homeWeekMilliseconds);
     const work = this.assignments.get(caller.id) ?? [];
     const inFilter = (item: StudentAssignmentItem): boolean =>
@@ -2063,8 +2084,11 @@ export class FakeAuthServer {
     const todo = work.filter((item) => todoStatuses.has(item.status)).sort(todoOrder);
     const checked = work.filter((item) => item.status === 'checked').sort(checkedOrder);
     return {
-      next_lesson: upcoming[0] ?? null,
-      today_lessons_count: lessons.filter(startsWithin(dayStart, localDayStart(now, caller.timezone, 1))).length,
+      recent_updates: this.studentRecentUpdates(caller),
+      next_lesson: upcoming.find((item) => item.status !== 'cancelled') ?? null,
+      today_lessons_count: lessons
+        .filter((item) => item.status !== 'cancelled')
+        .filter(startsWithin(dayStart, localDayStart(now, caller.timezone, 1))).length,
       todo: { count: Math.min(todo.length, homeCountCap), items: todo.filter(inFilter).slice(0, homePanelLimit) },
       recently_checked: checked.filter(inFilter).slice(0, homePanelLimit),
       next_seven_days: nextSevenDays.slice(0, homeListLimit),
@@ -2072,6 +2096,46 @@ export class FakeAuthServer {
       tutors: current.slice(0, homeListLimit).map(homeTutor),
       tutors_count: current.length,
     };
+  }
+
+  private recentNotifications(caller: Me): Notification[] {
+    const after = this.serverNow() - recentUpdateWindowMilliseconds;
+    return (this.notifications.get(caller.id) ?? []).filter((item) => Date.parse(item.created_at) > after);
+  }
+
+  private tutorRecentUpdates(caller: Me): TutorHome['recent_updates'] {
+    const items: TutorHome['recent_updates'] = [];
+    for (const row of this.recentNotifications(caller)) {
+      const event = row.event;
+      if (
+        event === 'invitation.accepted' ||
+        event === 'relationship.ended' ||
+        event === 'export.ready' ||
+        event === 'export.failed'
+      ) {
+        items.push({ ...recentUpdateFields(row), event });
+      }
+    }
+    return items.slice(0, recentUpdateLimit);
+  }
+
+  private studentRecentUpdates(caller: Me): StudentHome['recent_updates'] {
+    const items: StudentHome['recent_updates'] = [];
+    for (const row of this.recentNotifications(caller)) {
+      const event = row.event;
+      if (
+        event === 'join_request.accepted' ||
+        event === 'join_request.declined' ||
+        event === 'relationship.ended' ||
+        event === 'group.archived' ||
+        event === 'issue.withdrawn' ||
+        event === 'export.ready' ||
+        event === 'export.failed'
+      ) {
+        items.push({ ...recentUpdateFields(row), event });
+      }
+    }
+    return items.slice(0, recentUpdateLimit);
   }
 
   private lessonInFilter(item: CalendarItem, filter: HomeFilter): boolean {

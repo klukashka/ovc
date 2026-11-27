@@ -54,6 +54,7 @@ type TutorHomeChecklist struct {
 }
 
 type TutorHome struct {
+	RecentUpdates     []TutorRecentUpdate     `json:"recent_updates" nullable:"false"`
 	TodayLessons      []CalendarItem          `json:"today_lessons" nullable:"false"`
 	TodayLessonsCount int64                   `json:"today_lessons_count"`
 	NeedsChecking     *TutorHomeNeedsChecking `json:"needs_checking"`
@@ -84,6 +85,7 @@ type StudentHomeTutor struct {
 }
 
 type StudentHome struct {
+	RecentUpdates      []StudentRecentUpdate   `json:"recent_updates" nullable:"false"`
 	NextLesson         *CalendarItem           `json:"next_lesson"`
 	TodayLessonsCount  int64                   `json:"today_lessons_count"`
 	Todo               StudentHomeTodo         `json:"todo"`

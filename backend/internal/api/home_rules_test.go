@@ -349,16 +349,16 @@ func TestHomeAccessRecord(t *testing.T) {
 	}
 	base := []string{"duration_ms", "level", "method", "msg", "request_id", "route", "status", "time"}
 	actor := append(slices.Clone(base), "role", "user_id")
-	tutorKeys := append(slices.Clone(actor), "join_requests", "needs_checking", "today_lessons", "unread_channels", "upcoming_deadlines")
-	studentKeys := append(slices.Clone(actor), "next_seven_days", "recently_checked", "todo", "tutors")
-	unconfirmedKeys := append(slices.Clone(actor), "today_lessons", "unread_channels")
+	tutorKeys := append(slices.Clone(actor), "join_requests", "needs_checking", "today_lessons", "unread_channels", "upcoming_deadlines", "recent_updates")
+	studentKeys := append(slices.Clone(actor), "next_seven_days", "recently_checked", "todo", "tutors", "recent_updates")
+	unconfirmedKeys := append(slices.Clone(actor), "today_lessons", "unread_channels", "recent_updates")
 	for index, want := range [][]string{tutorKeys, studentKeys, unconfirmedKeys, actor, actor, base} {
 		slices.Sort(want)
 		if got := recordKeys(records[index]); !slices.Equal(got, want) {
 			t.Errorf("home access record %d carries %v, want %v", index, got, want)
 		}
 	}
-	for _, key := range []string{"today_lessons", "needs_checking", "upcoming_deadlines", "unread_channels", "join_requests"} {
+	for _, key := range []string{"today_lessons", "needs_checking", "upcoming_deadlines", "unread_channels", "join_requests", "recent_updates"} {
 		var count int64
 		if err := json.Unmarshal(records[0][key], &count); err != nil {
 			t.Errorf("the tutor record's %s is not a number: %s", key, records[0][key])

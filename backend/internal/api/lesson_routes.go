@@ -129,7 +129,7 @@ func (r *router) calendar(ctx context.Context, input *calendarInput) (*calendarO
 
 func calendarItemBody(item schedule.CalendarItem) schemas.CalendarItem {
 	return schemas.CalendarItem{
-		ID: item.ID.String(), Title: item.Title, StartsAt: item.StartsAt, EndsAt: item.EndsAt(), Status: item.Status, TookPlace: item.TookPlace, Timezone: item.Timezone,
+		ID: item.ID.String(), Title: item.Title, StartsAt: item.StartsAt, EndsAt: item.EndsAt(), Status: item.Status, TookPlace: item.TookPlace, Timezone: item.Timezone, Moved: item.Moved,
 		Audience: schemas.CalendarAudience{Kind: item.Audience.Kind, Label: item.Audience.Label, LabelKind: item.Audience.LabelKind, Colour: item.Audience.Colour},
 		Tutor:    tutorLabelBody(item.Tutor),
 	}

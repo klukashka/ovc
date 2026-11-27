@@ -128,3 +128,22 @@ JOIN users AS students ON students.id = join_requests.student_id
 LEFT JOIN relationships AS cards
     ON cards.tutor_id = join_requests.tutor_id AND cards.student_id = join_requests.student_id AND cards.state <> 'discarded'
 WHERE join_requests.id = ANY (sqlc.arg(ids)::uuid[]);
+
+-- name: ListRecentNotifications :many
+SELECT id, event, tutor_id, student_id, subject_id, relationship_id, created_at
+FROM notifications
+WHERE user_id = @user_id AND (
+    notifications.user_id IS DISTINCT FROM notifications.student_id
+    OR notifications.event NOT IN ('issue.created', 'issue.withdrawn', 'submission.submitted', 'submission.checked', 'submission.returned', 'submission.review_updated')
+    OR EXISTS (
+        SELECT 1 FROM submissions
+        JOIN issues ON issues.id = submissions.issue_id
+        JOIN relationships ON relationships.id = submissions.relationship_id
+        WHERE submissions.id = notifications.subject_id AND submissions.student_id = notifications.user_id
+            AND issues.erase_pending_since IS NULL AND relationships.state IN ('active', 'provisional', 'ended')
+    )
+)
+    AND event = ANY (sqlc.arg(kinds)::text[])
+    AND created_at > sqlc.arg(after)::timestamptz
+ORDER BY created_at DESC, id DESC
+LIMIT sqlc.arg(row_limit)::int;

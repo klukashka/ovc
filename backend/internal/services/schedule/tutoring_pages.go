@@ -54,10 +54,10 @@ type GroupLessons struct {
 	HasOpenSeries     bool
 }
 
-func tutorItems(rows []repositories.TutorCalendarItem) []CalendarItem {
+func tutorItems(rows []repositories.TutorCalendarItem, now time.Time) []CalendarItem {
 	items := make([]CalendarItem, 0, len(rows))
 	for _, row := range rows {
-		items = append(items, tutorItem(row))
+		items = append(items, tutorItem(row, now))
 	}
 	return items
 }
@@ -73,7 +73,7 @@ func (s *Service) CardNextLessons(ctx context.Context, tutor domain.UserID, card
 			return err
 		}
 		rows, err := repos.Lessons.CardNext(ctx, tutor, card, now, domain.CardNextLessonCount)
-		items = tutorItems(rows)
+		items = tutorItems(rows, now)
 		return err
 	})
 	return items, err
@@ -81,6 +81,10 @@ func (s *Service) CardNextLessons(ctx context.Context, tutor domain.UserID, card
 
 func (s *Service) CardHistory(ctx context.Context, tutor domain.UserID, card domain.RelationshipID, query HistoryQuery) (LessonPage, error) {
 	after, err := parseLessonCursor(query.Cursor)
+	if err != nil {
+		return LessonPage{}, err
+	}
+	now, err := s.deps.Clock.Instant(ctx)
 	if err != nil {
 		return LessonPage{}, err
 	}
@@ -99,7 +103,7 @@ func (s *Service) CardHistory(ctx context.Context, tutor domain.UserID, card dom
 			next := encodeLessonCursor(last.StartsAt, last.ID)
 			page.NextCursor = &next
 		}
-		page.Items = tutorItems(rows)
+		page.Items = tutorItems(rows, now)
 		return nil
 	})
 	return page, err
@@ -114,7 +118,7 @@ func (s *Service) CardsNextLesson(ctx context.Context, tutor domain.UserID, card
 	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
 		rows, err := repos.Lessons.CardsNext(ctx, tutor, cards, now)
 		for _, row := range rows {
-			next[row.Card] = tutorItem(row.Lesson)
+			next[row.Card] = tutorItem(row.Lesson, now)
 		}
 		return err
 	})
@@ -135,7 +139,7 @@ func (s *Service) GroupLessons(ctx context.Context, tutor domain.UserID, group d
 		if err != nil {
 			return err
 		}
-		lessons.Next = tutorItems(rows)
+		lessons.Next = tutorItems(rows, now)
 		if lessons.FutureLessonCount, err = repos.Lessons.CountFutureOfGroup(ctx, tutor, group, now); err != nil {
 			return err
 		}
@@ -154,7 +158,7 @@ func (s *Service) GroupsNextLesson(ctx context.Context, tutor domain.UserID, gro
 	err = s.deps.Store.WithReadTx(ctx, func(repos repositories.Repositories) error {
 		rows, err := repos.Lessons.GroupsNext(ctx, tutor, groups, now)
 		for _, row := range rows {
-			next[row.Group] = tutorItem(row.Lesson)
+			next[row.Group] = tutorItem(row.Lesson, now)
 		}
 		return err
 	})

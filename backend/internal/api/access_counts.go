@@ -9,6 +9,7 @@ import (
 type accessCount string
 
 const (
+	accessRecentUpdates     accessCount = "recent_updates"
 	accessTodayLessons      accessCount = "today_lessons"
 	accessNeedsChecking     accessCount = "needs_checking"
 	accessUpcomingDeadlines accessCount = "upcoming_deadlines"

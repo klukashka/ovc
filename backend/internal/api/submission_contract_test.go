@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"ovc/backend/internal/domain"
 )
@@ -486,6 +487,20 @@ func TestAnswerKeyContract(t *testing.T) {
 		}
 	}
 	check.noSentinel("notification rows", []byte(result.body))
+	recentHome := h.homeAnswer(t, parties.studentToken, "")
+	h.mustAnswer(t, recentHome, http.StatusOK)
+	check.studentHome("home recent updates", []byte(recentHome.body))
+	if items := recentUpdates(t, recentHome); len(items) == 0 {
+		t.Fatal("the student got no recent updates for the sentinel scan")
+	}
+	calendarAnswer := h.calendarCall(t, parties.studentToken, authStart, authStart.Add(30*24*time.Hour), "")
+	h.mustAnswer(t, calendarAnswer, http.StatusOK)
+	calendarFields := check.object("student calendar", []byte(calendarAnswer.body), []string{"items", "truncated"})
+	for _, row := range check.array("student calendar items", calendarFields["items"]) {
+		fields := check.object("student calendar item", row, calendarItemKeys)
+		check.object("student calendar audience", fields["audience"], calendarAudienceKeys)
+	}
+	check.noSentinel("student calendar", []byte(calendarAnswer.body))
 	scanned := map[string]bool{}
 	for _, message := range h.mailTo(t, studentEmail) {
 		check.noSentinelInText("email "+message.Subject, message.Subject+"\n"+message.Text+"\n"+message.HTML)
