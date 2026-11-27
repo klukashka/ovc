@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Перед уроком — репетитор</title>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&amp;family=Literata:opsz,wght@7..72,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1C1B18}
+a{color:#B7C48C}a:hover{color:#C9D5A0}
+</style>
+</helmet>
+<div style="width: 1280px; height: 800px; display: flex; background: #1C1B18; color: #ECE8DF; font-family: 'Golos Text', system-ui, sans-serif; font-size: 15px; line-height: 22px;">
+  <nav aria-label="Основная навигация" style="width: 248px; flex-shrink: 0; background: #201F1C; border-right: 1px solid #37352F; padding: 16px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 4px;">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 6px 8px 18px;">
+      <span style="width: 28px; height: 28px; border-radius: 999px; background: #2E2D28; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600;">А</span>
+      <span style="font-weight: 600;">Анна Репетитор</span>
+    </div>
+    <a href="#" style="padding: 6px 8px; border-radius: 6px; color: #ABA496; text-decoration: none; font-size: 14px;">Сегодня</a>
+    <a href="#" aria-current="page" style="padding: 6px 8px; border-radius: 6px; color: #ECE8DF; text-decoration: none; font-size: 14px; background: #2E2D28; font-weight: 500;">Расписание</a>
+    <a href="#" style="padding: 6px 8px; border-radius: 6px; color: #ABA496; text-decoration: none; font-size: 14px;">Ученики</a>
+    <a href="#" style="padding: 6px 8px; border-radius: 6px; color: #ABA496; text-decoration: none; font-size: 14px;">Группы</a>
+    <a href="#" style="padding: 6px 8px; border-radius: 6px; color: #ABA496; text-decoration: none; font-size: 14px;">Задания</a>
+    <a href="#" style="padding: 6px 8px; border-radius: 6px; color: #ABA496; text-decoration: none; font-size: 14px;">Сообщения</a>
+    <a href="#" style="padding: 6px 8px; border-radius: 6px; color: #ABA496; text-decoration: none; font-size: 14px;">Настройки</a>
+  </nav>
+
+  <main style="flex: 1; padding: 40px 56px; box-sizing: border-box; display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+        <a href="#" style="display:inline-flex;align-items:center;gap:6px;font-size:14px;color:#ABA496;text-decoration:none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>К расписанию</a>
+        <h1 style="margin: 0; font-family: Literata, Georgia, serif; font-weight: 400; font-size: 28px; line-height: 36px;">Английский: разговорная практика</h1>
+        <p style="margin: 0; color: #ABA496; font-size: 14px;">Сегодня, 18:00–19:00 · Иван Ученик · индивидуальный урок</p>
+      </div>
+      <button type="button" aria-label="Действия урока" style="width: 44px; height: 44px; border-radius: 8px; border: 1px solid #7D7667; background: transparent; color: #ECE8DF; font-size: 18px;">⋯</button>
+    </div>
+
+    <div style="display: flex; gap: 40px; align-items: flex-start;">
+      <section aria-label="Проверка камеры и микрофона" style="flex: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0;">
+        <div style="position: relative; aspect-ratio: 16 / 9; border-radius: 10px; background: #2A2925; border: 1px solid #37352F; overflow: hidden; display: flex; align-items: center; justify-content: center;">
+          <div style="width: 220px; height: 220px; border-radius: 999px; background: #34322C; display: flex; align-items: flex-end; justify-content: center; overflow: hidden;" aria-hidden="true">
+            <div style="width: 150px; height: 150px; border-radius: 999px 999px 0 0; background: #45423A; margin-bottom: -40px;"></div>
+          </div>
+          <span style="position: absolute; left: 14px; bottom: 12px; font-size: 13px; padding: 3px 8px; border-radius: 6px; background: rgba(0,0,0,.55);">Вы · Анна</span>
+          <span style="position: absolute; right: 14px; top: 12px; font-size: 12px; color: #86C3A4; padding: 3px 8px; border-radius: 6px; background: rgba(0,0,0,.45);">Камера и микрофон работают</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+          <button type="button" aria-pressed="true" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #7D7667; background: transparent; color: #ECE8DF; font: 500 15px 'Golos Text', sans-serif;">Микрофон</button>
+          <button type="button" aria-pressed="true" style="height: 44px; padding: 0 14px; border-radius: 8px; border: 1px solid #7D7667; background: transparent; color: #ECE8DF; font: 500 15px 'Golos Text', sans-serif;">Камера</button>
+          <span style="color: #ABA496; font-size: 14px;">Встроенная камера · Микрофон MacBook</span>
+        </div>
+      </section>
+
+      <aside style="width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 20px;">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; align-items: center; gap: 8px; font-size: 18px; font-weight: 500; line-height: 26px; color: #E58A7C;">
+            <span style="width: 8px; height: 8px; border-radius: 999px; background: #E58A7C;" aria-hidden="true"></span>Идёт сейчас
+          </div>
+          <p style="margin: 0; color: #ABA496; font-size: 14px;">Иван уже в комнате и ждёт вас.</p>
+        </div>
+        <div style="display: flex; align-items: center; gap: 10px; border-top: 1px solid #37352F; border-bottom: 1px solid #37352F; padding: 12px 0;">
+          <span style="width: 32px; height: 32px; border-radius: 999px; background: #2E2D28; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600;">И</span>
+          <span style="flex: 1;">Иван Ученик</span>
+          <span style="font-size: 13px; color: #86C3A4;">в комнате</span>
+        </div>
+        <button type="button" style="height: 48px; border-radius: 8px; border: none; background: #A3B275; color: #1C1B18; font: 600 16px 'Golos Text', sans-serif;">Войти в урок</button>
+        <div style="display: flex; flex-direction: column; gap: 8px; font-size: 14px;">
+          <button type="button" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 14px;border-radius:8px;border:1px solid #7D7667;background:transparent;color:#ECE8DF;font:500 14px 'Golos Text',sans-serif;white-space:nowrap;align-self:flex-start"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>Открыть в новой вкладке</button>
+          <button type="button" style="display:inline-flex;align-items:center;justify-content:center;gap:8px;height:40px;padding:0 14px;border-radius:8px;border:1px solid #7D7667;background:transparent;color:#ECE8DF;font:500 14px 'Golos Text',sans-serif;white-space:nowrap;align-self:flex-start"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l8-8"/></svg>Прикрепить материал к уроку</button>
+        </div>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

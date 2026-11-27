@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Сообщения — компьютер</title>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&amp;family=Literata:opsz,wght@7..72,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1C1B18}
+.rail a{width:44px;height:44px;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#ABA496;position:relative}
+.rail a[aria-current]{background:#2E2D28;color:#ECE8DF}
+.row{display:flex;gap:12px;align-items:center;padding:8px 10px;border-radius:10px;cursor:pointer}
+.row:hover{background:#26251F}
+.row[aria-current]{background:#3A4129}
+.av{width:48px;height:48px;border-radius:999px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:16px;color:#1C1B18}
+.meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.l1{display:flex;justify-content:space-between;gap:8px}
+.name{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.time{font-size:12px;color:#ABA496;flex-shrink:0}
+.prev{font-size:14px;color:#ABA496;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{min-width:22px;height:22px;border-radius:999px;background:#A3B275;color:#1C1B18;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;padding:0 6px;box-sizing:border-box}
+.ib{width:40px;height:40px;border-radius:999px;border:none;background:transparent;display:flex;align-items:center;justify-content:center;color:#ABA496}
+.ib:hover{background:#2A2925}
+.msg{max-width:520px;padding:7px 12px 6px;border-radius:14px;font-size:15px;line-height:21px;position:relative}
+.in{background:#2A2925;align-self:flex-start;border-bottom-left-radius:4px}
+.out{background:#3A4129;align-self:flex-end;border-bottom-right-radius:4px}
+.stamp{float:right;margin:6px 0 -4px 12px;font-size:11px;color:#ABA496;display:inline-flex;gap:3px;align-items:center}
+.out .stamp{color:#B7C48C}
+.chip{display:inline-flex;align-items:center;gap:4px;height:26px;padding:0 9px;border-radius:999px;background:#2A2925;border:1px solid #37352F;font-size:13px}
+.chip[aria-pressed=true]{background:#3A4129;border-color:#5C6B3A}
+.menu button{display:flex;gap:12px;align-items:center;width:100%;height:38px;padding:0 14px;border:none;background:transparent;color:#ECE8DF;font:400 14px 'Golos Text',sans-serif;text-align:left;border-radius:6px}
+.menu button:hover{background:#2E2D28}
+.tab{height:32px;padding:0 12px;border-radius:999px;border:none;background:transparent;color:#ABA496;font:500 14px 'Golos Text',sans-serif}
+.tab[aria-selected=true]{background:#2E2D28;color:#ECE8DF}
+</style>
+</helmet>
+<div style="width:1280px;height:800px;display:flex;background:#1C1B18;color:#ECE8DF;font-family:'Golos Text',system-ui,sans-serif;font-size:15px;line-height:22px;overflow:hidden">
+
+  <nav class="rail" aria-label="Основная навигация" style="width:68px;flex-shrink:0;background:#201F1C;border-right:1px solid #37352F;display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 0">
+    <span style="width:36px;height:36px;border-radius:999px;background:#2E2D28;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;margin-bottom:10px">А</span>
+    <a href="#" aria-label="Сегодня"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></a>
+    <a href="#" aria-label="Расписание"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg></a>
+    <a href="#" aria-label="Ученики"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M16 4.5a3.5 3.5 0 0 1 0 7M18 14.8c1.9.7 3.1 2.4 3.5 5.2"/></svg></a>
+    <a href="#" aria-label="Задания"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg></a>
+    <a href="#" aria-label="Сообщения" aria-current="page"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/></svg><span style="position:absolute;top:4px;right:3px;min-width:16px;height:16px;border-radius:999px;background:#A3B275;color:#1C1B18;font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;padding:0 4px;box-sizing:border-box">3</span></a>
+    <span style="flex:1"></span>
+    <a href="#" aria-label="Настройки"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></a>
+  </nav>
+
+  <section aria-label="Чаты" style="width:340px;flex-shrink:0;border-right:1px solid #37352F;display:flex;flex-direction:column;background:#1E1D1A">
+    <div style="padding:14px 12px 8px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:8px;height:40px;border-radius:999px;background:#2A2925;padding:0 14px;color:#ABA496">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+        <span style="font-size:15px">Поиск</span>
+      </div>
+      <div role="tablist" aria-label="Фильтр чатов" style="display:flex;gap:4px">
+        <button class="tab" role="tab" aria-selected="true">Все</button>
+        <button class="tab" role="tab">Ученики</button>
+        <button class="tab" role="tab">Группы</button>
+        <button class="tab" role="tab">Непрочитанные <span style="color:#B7C48C">3</span></button>
+      </div>
+    </div>
+    <div style="flex:1;overflow:hidden;padding:0 6px;display:flex;flex-direction:column;gap:2px">
+      <div class="row" aria-current="true">
+        <span class="av" style="background:#C9A97A">ИП</span>
+        <div class="meta"><div class="l1"><span class="name">Иван Петров</span><span class="time" style="color:#B7C48C">18:42</span></div>
+        <div class="l1"><span class="prev" style="color:#ECE8DF">печатает…</span></div></div>
+      </div>
+      <div class="row">
+        <span class="av" style="background:#8FB3A0">B1</span>
+        <div class="meta"><div class="l1"><span class="name">Группа B1 · вторник</span><span class="time">17:05</span></div>
+        <div class="l1"><span class="prev"><span style="color:#ECE8DF">Мария:</span> А домашку до пятницы сдавать?</span><span class="badge">2</span></div></div>
+      </div>
+      <div class="row">
+        <span class="av" style="background:#B39BC8">МС</span>
+        <div class="meta"><div class="l1"><span class="name">Мария Смирнова</span><span class="time">16:30</span></div>
+        <div class="l1"><span class="prev">Спасибо, всё поняла!</span><span class="badge">1</span></div></div>
+      </div>
+      <div class="row">
+        <span class="av" style="background:#D49A8A">ОК</span>
+        <div class="meta"><div class="l1"><span class="name">Олег Козлов</span><span class="time">вчера</span></div>
+        <div class="l1"><span class="prev">Вы: Перенесём на четверг?</span><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B7C48C" stroke-width="2"><path d="M2 12l5 5L17 7M9 17l1 1L22 6"/></svg></div></div>
+      </div>
+      <div class="row">
+        <span class="av" style="background:#9AAEC9">C2</span>
+        <div class="meta"><div class="l1"><span class="name">Группа C1 · разговорный</span><span class="time">пн</span></div>
+        <div class="l1"><span class="prev">Вы: 📎 Лексика_урок_12.pdf</span></div></div>
+      </div>
+      <div class="row">
+        <span class="av" style="background:#B8B08A">ЕН</span>
+        <div class="meta"><div class="l1"><span class="name">Елена Новикова</span><span class="time">22 нояб.</span></div>
+        <div class="l1"><span class="prev">До встречи в субботу</span></div></div>
+      </div>
+      <div class="row" style="opacity:.7">
+        <span class="av" style="background:#6E6A5E;color:#ECE8DF">ДВ</span>
+        <div class="meta"><div class="l1"><span class="name">Дмитрий Волков</span><span class="time">3 нояб.</span></div>
+        <div class="l1"><span class="prev">Занятия завершены · только чтение</span></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section aria-label="Переписка с Иваном Петровым" style="flex:1;min-width:0;display:flex;flex-direction:column;background:#1C1B18">
+    <header style="height:60px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 12px 0 20px;border-bottom:1px solid #37352F;background:#1E1D1A">
+      <span class="av" style="background:#C9A97A;width:40px;height:40px;font-size:14px">ИП</span>
+      <div style="flex:1;display:flex;flex-direction:column;line-height:19px">
+        <span style="font-weight:600">Иван Петров</span>
+        <span style="font-size:13px;color:#B7C48C">печатает…</span>
+      </div>
+      <button class="ib" aria-label="Поиск в переписке"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></button>
+      <button class="ib" aria-label="Карточка ученика"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg></button>
+      <button class="ib" aria-label="Ещё"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="12" cy="19" r="1.7"/></svg></button>
+    </header>
+
+    <div style="height:48px;flex-shrink:0;display:flex;align-items:center;gap:12px;padding:0 20px;border-bottom:1px solid #37352F;background:#1E1D1A">
+      <span style="width:2px;height:30px;background:#A3B275;border-radius:2px"></span>
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;line-height:18px">
+        <span style="font-size:13px;color:#B7C48C;font-weight:500">Закреплённое сообщение</span>
+        <span style="font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Уроки по вторникам и четвергам в 18:00. Ссылка на урок — в расписании.</span>
+      </div>
+      <button class="ib" aria-label="Открепить" style="width:32px;height:32px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+
+    <div style="flex:1;overflow:hidden;padding:16px 64px 12px;display:flex;flex-direction:column;gap:4px;justify-content:flex-end;position:relative">
+      <span style="align-self:center;font-size:13px;padding:3px 12px;border-radius:999px;background:#2A2925;color:#ABA496;margin-bottom:8px">Сегодня</span>
+
+      <div class="msg in">Добрый вечер! Я сделал упражнения 3 и 4, а в пятом не понял, когда ставить Present Perfect<span class="stamp">18:31</span></div>
+      <div class="msg in" style="border-top-left-radius:4px;padding:6px">
+        <div style="display:flex;align-items:center;gap:10px;padding:4px 6px 2px">
+          <span style="width:44px;height:44px;border-radius:999px;background:#A3B275;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1C1B18" stroke-width="2"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/></svg></span>
+          <div style="display:flex;flex-direction:column;line-height:19px;padding-right:40px"><span style="font-weight:500">Упражнение 5 — фото.jpg</span><span style="font-size:13px;color:#ABA496">1,2 МБ</span></div>
+          <span class="stamp" style="align-self:flex-end">18:31</span>
+        </div>
+      </div>
+      <div style="align-self:flex-start;display:flex;gap:6px;margin:2px 0 6px"><span class="chip" aria-pressed="true">👍 1</span></div>
+
+      <div class="msg out" style="margin-top:6px">
+        <div style="border-left:2px solid #B7C48C;padding:2px 0 2px 8px;margin:2px 0 6px;background:rgba(183,196,140,.08);border-radius:0 6px 6px 0">
+          <div style="font-size:13px;color:#B7C48C;font-weight:500;line-height:17px">Иван Петров</div>
+          <div style="font-size:13px;color:#ABA496;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:360px">…в пятом не понял, когда ставить Present Perfect</div>
+        </div>
+        Когда важен результат к настоящему моменту, а не время действия: «I have lost my keys» — ключей нет сейчас. Разберём подробно на уроке в четверг 🙂<span class="stamp">18:40 <svg width="16" height="12" viewBox="0 0 24 18" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 9l5 5L16 4M10 14l1 1L22 3"/></svg></span>
+      </div>
+      <div class="msg out" style="border-top-right-radius:4px">Хорошая работа с 3 и 4, ошибок нет<span class="stamp">18:40 <svg width="16" height="12" viewBox="0 0 24 18" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M1 9l5 5L16 4M10 14l1 1L22 3"/></svg></span></div>
+
+      <div class="msg in" style="margin-top:6px;outline:1px solid #5C6B3A">Понял, спасибо! А можно перенести четверговый урок на 19:00?<span class="stamp">18:42</span></div>
+
+      <div class="menu" role="menu" style="position:absolute;left:420px;bottom:60px;width:220px;background:#262520;border:1px solid #37352F;border-radius:10px;padding:6px;box-shadow:0 12px 32px rgba(0,0,0,.45)">
+        <div style="display:flex;justify-content:space-between;padding:4px 6px 8px;border-bottom:1px solid #37352F;margin-bottom:4px;font-size:20px">
+          <span>👍</span><span>❤️</span><span>😂</span><span>😮</span><span>🙏</span><span>👏</span>
+        </div>
+        <button role="menuitem"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ABA496" stroke-width="1.8"><path d="M9 14L4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 5 5v6"/></svg>Ответить</button>
+        <button role="menuitem"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ABA496" stroke-width="1.8"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M4 16V6a2 2 0 0 1 2-2h10"/></svg>Копировать текст</button>
+        <button role="menuitem"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ABA496" stroke-width="1.8"><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z"/></svg>Закрепить</button>
+      </div>
+    </div>
+
+    <footer style="flex-shrink:0;padding:10px 64px 16px">
+      <div style="display:flex;align-items:flex-end;gap:8px;background:#26251F;border:1px solid #37352F;border-radius:14px;padding:6px 6px 6px 8px">
+        <button class="ib" aria-label="Прикрепить файл"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 11.5l-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6l8-8"/></svg></button>
+        <div style="flex:1;padding:9px 4px;color:#ABA496;font-size:15px">Сообщение</div>
+        <button class="ib" aria-label="Эмодзи"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4.5 4.5 0 0 0 7 0M9 9.5h.01M15 9.5h.01"/></svg></button>
+        <button aria-label="Отправить" style="width:40px;height:40px;border-radius:999px;border:none;background:#A3B275;display:flex;align-items:center;justify-content:center"><svg width="20" height="20" viewBox="0 0 24 24" fill="#1C1B18"><path d="M3 20l18-8L3 4l2 7 9 1-9 1z"/></svg></button>
+      </div>
+    </footer>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

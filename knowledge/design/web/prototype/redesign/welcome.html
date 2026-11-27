@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>OVC — приветственная страница</title>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&amp;family=Literata:opsz,wght@7..72,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1C1B18}
+a{color:#B7C48C}a:hover{color:#C9D5A0}
+</style>
+</helmet>
+<div style="width: 1440px; min-height: 3000px; background: #1C1B18; color: #ECE8DF; font-family: 'Golos Text', system-ui, sans-serif; font-size: 16px; line-height: 24px;">
+  <header style="max-width: 1120px; margin: 0 auto; padding: 20px 0; display: flex; align-items: center; justify-content: space-between;">
+    <span style="font-family: Literata, Georgia, serif; font-size: 22px;">OVC</span>
+    <nav aria-label="Разделы" style="display: flex; align-items: center; gap: 28px; font-size: 15px;">
+      <a href="#features" style="color: #ABA496; text-decoration: none;">Возможности</a>
+      <a href="#pricing" style="color: #ABA496; text-decoration: none;">Тарифы</a>
+      <a href="#faq" style="color: #ABA496; text-decoration: none;">Вопросы</a>
+      <a href="#" style="color: #ECE8DF; text-decoration: none;">Войти</a>
+      <a href="#" style="height: 40px; padding: 0 16px; border-radius: 8px; background: #A3B275; color: #1C1B18; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center;">Начать бесплатно</a>
+    </nav>
+  </header>
+
+  <section style="max-width: 1120px; margin: 0 auto; padding: 72px 0 64px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 64px; align-items: center;">
+    <div style="display: flex; flex-direction: column; gap: 20px;">
+      <h1 style="margin: 0; font-family: Literata, Georgia, serif; font-weight: 400; font-size: 52px; line-height: 60px;">Рабочее место репетитора: уроки, чат, расписание и домашка</h1>
+      <p style="margin: 0; color: #ABA496; font-size: 18px; line-height: 28px; max-width: 520px;">Видеоуроки с доской, чаты с учениками, расписание с еженедельными сериями и задания, которые проверяются сами. Всё в одном окне, без пяти разных сервисов.</p>
+      <div style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+        <a href="#" style="height: 48px; padding: 0 22px; border-radius: 8px; background: #A3B275; color: #1C1B18; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center;">Начать бесплатно</a>
+        <a href="#how" style="height: 48px; padding: 0 20px; border-radius: 8px; border: 1px solid #7D7667; color: #ECE8DF; text-decoration: none; font-weight: 500; display: inline-flex; align-items: center;">Как это работает</a>
+      </div>
+      <p style="margin: 0; color: #ABA496; font-size: 14px;">[N] дней бесплатно, потом 490 ₽ в месяц. Без привязки карты. Данные хранятся в России.</p>
+    </div>
+    <figure style="margin: 0; border-radius: 12px; border: 1px solid #37352F; background: #201F1C; overflow: hidden;" aria-label="Снимок экрана: страница «Сегодня» репетитора">
+      <div style="display: flex; height: 380px;">
+        <div style="width: 120px; background: #201F1C; border-right: 1px solid #37352F; padding: 14px 10px; display: flex; flex-direction: column; gap: 8px;">
+          <span style="height: 10px; width: 70px; border-radius: 4px; background: #37352F;"></span>
+          <span style="height: 22px; border-radius: 6px; background: #2E2D28;"></span>
+          <span style="height: 10px; width: 80px; border-radius: 4px; background: #37352F;"></span>
+          <span style="height: 10px; width: 64px; border-radius: 4px; background: #37352F;"></span>
+          <span style="height: 10px; width: 76px; border-radius: 4px; background: #37352F;"></span>
+        </div>
+        <div style="flex: 1; padding: 22px; display: flex; flex-direction: column; gap: 14px; background: #1C1B18;">
+          <span style="font-family: Literata, Georgia, serif; font-size: 22px;">Сегодня</span>
+          <div style="border: 1px solid #37352F; border-radius: 10px; background: #23221E; padding: 14px; display: flex; flex-direction: column; gap: 6px;">
+            <span style="font-size: 13px; color: #B7C48C;">● Скоро начало · 18:00</span>
+            <span style="font-weight: 500;">Английский: разговорная практика</span>
+            <span style="font-size: 13px; color: #ABA496;">Иван Ученик</span>
+            <span style="align-self: flex-start; margin-top: 6px; padding: 6px 12px; border-radius: 8px; background: #A3B275; color: #1C1B18; font-size: 13px; font-weight: 600;">Подключиться к уроку</span>
+          </div>
+          <div style="display: flex; justify-content: space-between; border-top: 1px solid #37352F; padding-top: 10px; font-size: 13px;"><span>На проверке</span><span style="color: #B7C48C;">3 работы</span></div>
+          <div style="display: flex; justify-content: space-between; border-top: 1px solid #37352F; padding-top: 10px; font-size: 13px;"><span>Заявки на занятия</span><span style="color: #B7C48C;">1 новая</span></div>
+        </div>
+      </div>
+      <figcaption style="padding: 10px 14px; font-size: 13px; color: #ABA496; border-top: 1px solid #37352F;">Здесь будет настоящий снимок экрана OVC</figcaption>
+    </figure>
+  </section>
+
+  <section id="features" style="max-width: 1120px; margin: 0 auto; padding: 48px 0; display: flex; flex-direction: column; gap: 32px;">
+    <h2 style="margin: 0; font-family: Literata, Georgia, serif; font-weight: 400; font-size: 36px; line-height: 44px;">Всё, что нужно для частных уроков</h2>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0; border-top: 1px solid #37352F;">
+      <div style="padding: 28px 28px 28px 0; border-bottom: 1px solid #37352F; display: flex; flex-direction: column; gap: 8px;"><span style="font-size: 18px; font-weight: 500;">Видеоуроки с доской</span><span style="color: #ABA496;">Комната урока на BigBlueButton: видео, общая доска, презентация и запись. Ученику нужен только браузер.</span></div>
+      <div style="padding: 28px; border-bottom: 1px solid #37352F; border-left: 1px solid #37352F; display: flex; flex-direction: column; gap: 8px;"><span style="font-size: 18px; font-weight: 500;">Чаты с учениками</span><span style="color: #ABA496;">Личные и групповые чаты с файлами, ответами, закреплением и поиском — как в мессенджере, но внутри рабочего места.</span></div>
+      <div style="padding: 28px 0 28px 28px; border-bottom: 1px solid #37352F; border-left: 1px solid #37352F; display: flex; flex-direction: column; gap: 8px;"><span style="font-size: 18px; font-weight: 500;">Расписание</span><span style="color: #ABA496;">Разовые уроки и еженедельные серии, напоминания ученикам, отмена и перенос в пару кликов.</span></div>
+      <div style="padding: 28px 28px 28px 0; border-bottom: 1px solid #37352F; display: flex; flex-direction: column; gap: 8px;"><span style="font-size: 18px; font-weight: 500;">Домашние задания</span><span style="color: #ABA496;">Тесты, которые проверяются сами, и задания с проверкой репетитором. Библиотека и конструктор.</span></div>
+      <div style="padding: 28px; border-bottom: 1px solid #37352F; border-left: 1px solid #37352F; display: flex; flex-direction: column; gap: 8px;"><span style="font-size: 18px; font-weight: 500;">Ученики и группы</span><span style="color: #ABA496;">Приглашение по ссылке, группы, карточки учеников. Один ученик может заниматься у нескольких репетиторов.</span></div>
+      <div style="padding: 28px 0 28px 28px; border-bottom: 1px solid #37352F; border-left: 1px solid #37352F; display: flex; flex-direction: column; gap: 8px;"><span style="font-size: 18px; font-weight: 500;">Ваши данные — ваши</span><span style="color: #ABA496;">Выгрузка всего одним архивом: таблицы, календарь, файлы. Данные хранятся на серверах в России.</span></div>
+    </div>
+  </section>
+
+  <section id="how" style="max-width: 1120px; margin: 0 auto; padding: 48px 0; display: flex; flex-direction: column; gap: 28px;">
+    <h2 style="margin: 0; font-family: Literata, Georgia, serif; font-weight: 400; font-size: 36px; line-height: 44px;">Как начать</h2>
+    <ol style="margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 32px;">
+      <li style="display: flex; flex-direction: column; gap: 8px;"><span style="font-family: Literata, Georgia, serif; font-size: 32px; color: #B7C48C;">1</span><span style="font-weight: 500; font-size: 18px;">Зарегистрируйтесь</span><span style="color: #ABA496;">Пара минут, без карты.</span></li>
+      <li style="display: flex; flex-direction: column; gap: 8px;"><span style="font-family: Literata, Georgia, serif; font-size: 32px; color: #B7C48C;">2</span><span style="font-weight: 500; font-size: 18px;">Пригласите учеников</span><span style="color: #ABA496;">Отправьте ссылку или код — ученик сам создаст аккаунт.</span></li>
+      <li style="display: flex; flex-direction: column; gap: 8px;"><span style="font-family: Literata, Georgia, serif; font-size: 32px; color: #B7C48C;">3</span><span style="font-weight: 500; font-size: 18px;">Проведите первый урок</span><span style="color: #ABA496;">Назначьте урок, подключитесь из браузера и выдайте домашнее задание.</span></li>
+    </ol>
+  </section>
+
+  <section id="pricing" style="max-width: 1120px; margin: 0 auto; padding: 48px 0; display: flex; justify-content: space-between; gap: 48px; align-items: center; border-top: 1px solid #37352F;">
+    <div style="display: flex; flex-direction: column; gap: 10px; max-width: 560px;">
+      <h2 style="margin: 0; font-family: Literata, Georgia, serif; font-weight: 400; font-size: 36px; line-height: 44px;">Один тариф, без сюрпризов</h2>
+      <p style="margin: 0; color: #ABA496;">Все возможности, любое число учеников. [N] дней бесплатно, без привязки карты. Отменить можно в любой момент.</p>
+    </div>
+    <div style="border: 1px solid #37352F; border-radius: 10px; background: #23221E; padding: 28px 32px; display: flex; flex-direction: column; gap: 14px; min-width: 300px;">
+      <span style="font-size: 40px; font-weight: 600; line-height: 48px;">490 ₽ <span style="font-size: 16px; font-weight: 400; color: #ABA496;">в месяц</span></span>
+      <a href="#" style="height: 48px; border-radius: 8px; background: #A3B275; color: #1C1B18; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; justify-content: center;">Начать бесплатно</a>
+    </div>
+  </section>
+
+  <section id="faq" style="max-width: 720px; margin: 0 auto; padding: 48px 0; display: flex; flex-direction: column; gap: 8px;">
+    <h2 style="margin: 0 0 16px; font-family: Literata, Georgia, serif; font-weight: 400; font-size: 36px; line-height: 44px;">Вопросы</h2>
+    <details style="border-top: 1px solid #37352F; padding: 16px 0;"><summary style="font-weight: 500; cursor: pointer;">Что нужно ученику?</summary><p style="margin: 10px 0 0; color: #ABA496;">Только браузер на компьютере или телефоне. Устанавливать ничего не нужно.</p></details>
+    <details style="border-top: 1px solid #37352F; padding: 16px 0;"><summary style="font-weight: 500; cursor: pointer;">Как работает бесплатный период?</summary><p style="margin: 10px 0 0; color: #ABA496;">[N] дней со всеми возможностями. Карту привязывать не нужно.</p></details>
+    <details style="border-top: 1px solid #37352F; padding: 16px 0;"><summary style="font-weight: 500; cursor: pointer;">Где хранятся данные и можно ли их забрать?</summary><p style="margin: 10px 0 0; color: #ABA496;">На серверах в России. Любой пользователь может выгрузить свои данные одним архивом.</p></details>
+    <details style="border-top: 1px solid #37352F; padding: 16px 0;"><summary style="font-weight: 500; cursor: pointer;">Есть групповые занятия?</summary><p style="margin: 10px 0 0; color: #ABA496;">Да: группы, групповые чаты и уроки.</p></details>
+    <details style="border-top: 1px solid #37352F; border-bottom: 1px solid #37352F; padding: 16px 0;"><summary style="font-weight: 500; cursor: pointer;">Что будет с данными, если я уйду?</summary><p style="margin: 10px 0 0; color: #ABA496;">Перед удалением аккаунта можно выгрузить всё. После удаления данные стираются в установленные сроки.</p></details>
+  </section>
+
+  <section style="max-width: 1120px; margin: 0 auto; padding: 56px 0 72px; display: flex; flex-direction: column; align-items: center; gap: 18px; text-align: center;">
+    <h2 style="margin: 0; font-family: Literata, Georgia, serif; font-weight: 400; font-size: 36px; line-height: 44px;">Попробуйте на своих учениках</h2>
+    <a href="#" style="height: 48px; padding: 0 24px; border-radius: 8px; background: #A3B275; color: #1C1B18; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center;">Начать бесплатно</a>
+  </section>
+
+  <footer style="border-top: 1px solid #37352F;">
+    <div style="max-width: 1120px; margin: 0 auto; padding: 28px 0 40px; display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; font-size: 14px; color: #ABA496;">
+      <span>© OVC, [оператор], [контакт поддержки]</span>
+      <nav aria-label="Документы" style="display: flex; gap: 24px;">
+        <a href="#" style="color:#ABA496;text-decoration:none">Политика конфиденциальности</a>
+        <a href="#" style="color:#ABA496;text-decoration:none">Согласие на обработку данных</a>
+        <a href="#" style="color:#ABA496;text-decoration:none">Условия использования</a>
+      </nav>
+    </div>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":3000}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

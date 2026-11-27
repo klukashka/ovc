@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Сообщения — телефон</title>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1C1B18}
+.row{display:flex;gap:12px;align-items:center;padding:8px 14px}
+.av{width:52px;height:52px;border-radius:999px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:17px;color:#1C1B18}
+.meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;border-bottom:1px solid #2E2D28;padding-bottom:10px}
+.l1{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.name{font-weight:600;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.time{font-size:12px;color:#ABA496;flex-shrink:0}
+.prev{font-size:15px;color:#ABA496;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.badge{min-width:22px;height:22px;border-radius:999px;background:#A3B275;color:#1C1B18;font-size:12px;font-weight:600;display:flex;align-items:center;justify-content:center;padding:0 6px;box-sizing:border-box}
+.tb a{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:#ABA496;text-decoration:none}
+.tb a[aria-current]{color:#B7C48C}
+</style>
+</helmet>
+<div style="width:390px;height:844px;display:flex;flex-direction:column;background:#1C1B18;color:#ECE8DF;font-family:'Golos Text',system-ui,sans-serif;font-size:15px;line-height:22px;overflow:hidden">
+  <header style="padding:18px 16px 8px;display:flex;flex-direction:column;gap:12px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h1 style="margin:0;font-size:24px;font-weight:600">Сообщения</h1>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;height:40px;border-radius:12px;background:#2A2925;padding:0 12px;color:#ABA496">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>Поиск
+    </div>
+  </header>
+  <div style="flex:1;overflow:hidden">
+    <div class="row"><span class="av" style="background:#C9A97A">ИП</span><div class="meta"><div class="l1"><span class="name">Иван Петров</span><span class="time" style="color:#B7C48C">18:42</span></div><div class="l1"><span class="prev">Понял, спасибо! А можно перенести…</span><span class="badge">1</span></div></div></div>
+    <div class="row"><span class="av" style="background:#8FB3A0">B1</span><div class="meta"><div class="l1"><span class="name">Группа B1 · вторник</span><span class="time">17:05</span></div><div class="l1"><span class="prev"><span style="color:#ECE8DF">Мария:</span> А домашку до пятницы?</span><span class="badge">2</span></div></div></div>
+    <div class="row"><span class="av" style="background:#B39BC8">МС</span><div class="meta"><div class="l1"><span class="name">Мария Смирнова</span><span class="time">16:30</span></div><div class="l1"><span class="prev">Спасибо, всё поняла!</span></div></div></div>
+    <div class="row"><span class="av" style="background:#D49A8A">ОК</span><div class="meta"><div class="l1"><span class="name">Олег Козлов</span><span class="time">вчера</span></div><div class="l1"><span class="prev">Вы: Перенесём на четверг?</span></div></div></div>
+    <div class="row"><span class="av" style="background:#9AAEC9">C1</span><div class="meta"><div class="l1"><span class="name">Группа C1 · разговорный</span><span class="time">пн</span></div><div class="l1"><span class="prev">Вы: 📎 Лексика_урок_12.pdf</span></div></div></div>
+    <div class="row"><span class="av" style="background:#B8B08A">ЕН</span><div class="meta"><div class="l1"><span class="name">Елена Новикова</span><span class="time">22 нояб.</span></div><div class="l1"><span class="prev">До встречи в субботу</span></div></div></div>
+  </div>
+  <nav class="tb" aria-label="Основная навигация" style="height:64px;flex-shrink:0;display:flex;align-items:center;border-top:1px solid #37352F;background:#201F1C;padding-bottom:8px">
+    <a href="#"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>Сегодня</a>
+    <a href="#"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Расписание</a>
+    <a href="#"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/></svg>Ученики</a>
+    <a href="#" aria-current="page"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/></svg>Чаты</a>
+    <a href="#"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>Ещё</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

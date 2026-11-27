@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Сегодня — репетитор</title>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&amp;family=Literata:opsz,wght@7..72,400&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#1C1B18}
+.nav a{display:flex;align-items:center;gap:12px;height:38px;padding:0 10px;border-radius:8px;color:#ABA496;text-decoration:none;font-size:14px}
+.nav a[aria-current]{background:#2E2D28;color:#ECE8DF;font-weight:500}
+.nav .cnt{margin-left:auto;font-size:12px;font-weight:600;color:#1C1B18;background:#A3B275;border-radius:999px;min-width:20px;height:20px;display:flex;align-items:center;justify-content:center;padding:0 6px;box-sizing:border-box}
+.h2{margin:0;font-size:13px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;color:#ABA496}
+.item{display:flex;align-items:center;gap:14px;padding:12px 4px;border-bottom:1px solid #2E2D28;cursor:pointer}
+.item:hover{background:#211F1B}
+.ico{width:36px;height:36px;border-radius:10px;background:#2A2925;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.t{flex:1;min-width:0;display:flex;flex-direction:column;line-height:20px}
+.sub{font-size:13px;color:#ABA496}
+.chev{color:#7D7667}
+.btn{height:36px;padding:0 14px;border-radius:8px;border:1px solid #7D7667;background:transparent;color:#ECE8DF;font:500 14px 'Golos Text',sans-serif}
+.slot{display:flex;gap:14px;padding:10px 0;border-bottom:1px solid #2E2D28}
+.slot .tm{width:48px;font-size:14px;color:#ABA496;flex-shrink:0}
+.av{width:28px;height:28px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;color:#1C1B18;flex-shrink:0}
+</style>
+</helmet>
+<div style="width:1280px;height:800px;display:flex;background:#1C1B18;color:#ECE8DF;font-family:'Golos Text',system-ui,sans-serif;font-size:15px;line-height:22px;overflow:hidden">
+  <nav class="nav" aria-label="Основная навигация" style="width:232px;flex-shrink:0;background:#201F1C;border-right:1px solid #37352F;padding:16px 12px;box-sizing:border-box;display:flex;flex-direction:column;gap:2px">
+    <div style="display:flex;align-items:center;gap:10px;padding:4px 10px 16px"><span style="width:30px;height:30px;border-radius:999px;background:#2E2D28;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600">А</span><span style="font-weight:600">Анна Репетитор</span></div>
+    <a href="#" aria-current="page"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2"/></svg>Сегодня</a>
+    <a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Расписание</a>
+    <a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/></svg>Ученики<span class="cnt">1</span></a>
+    <a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="8" cy="9" r="3"/><circle cx="16" cy="9" r="3"/><path d="M2 20c.6-3 2.8-4.5 6-4.5s5.4 1.5 6 4.5M14 15.6c3 .1 5.3 1.6 6 4.4"/></svg>Группы</a>
+    <a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>Задания<span class="cnt">3</span></a>
+    <a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/></svg>Сообщения<span class="cnt">3</span></a>
+    <span style="flex:1"></span>
+    <a href="#"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M5 19l2-2M17 7l2-2"/></svg>Настройки</a>
+  </nav>
+
+  <main style="flex:1;min-width:0;padding:36px 48px;box-sizing:border-box;display:flex;flex-direction:column;gap:24px">
+    <div>
+      <h1 style="margin:0;font-family:Literata,Georgia,serif;font-weight:400;font-size:30px;line-height:38px">Добрый вечер, Анна</h1>
+      <p style="margin:4px 0 0;color:#ABA496">Пятница, 27 ноября · сегодня 3 урока</p>
+    </div>
+
+    <div style="display:flex;gap:40px;align-items:flex-start">
+      <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:28px">
+        <section aria-label="Текущий урок" style="display:flex;align-items:center;gap:18px;padding:18px 20px;border-radius:12px;background:#262A1E;border:1px solid #4A5434">
+          <span class="av" style="width:48px;height:48px;font-size:16px;background:#C9A97A">ИП</span>
+          <div style="flex:1;display:flex;flex-direction:column;gap:2px">
+            <span style="display:flex;align-items:center;gap:8px;color:#E58A7C;font-size:13px;font-weight:600"><span style="width:8px;height:8px;border-radius:999px;background:#E58A7C"></span>ИДЁТ СЕЙЧАС · ещё 34 мин</span>
+            <span style="font-size:18px;font-weight:600">Иван Петров</span>
+            <span class="sub">Английский: разговорная практика · 18:00–19:00 · Иван уже в комнате</span>
+          </div>
+          <button style="height:44px;padding:0 22px;border-radius:8px;border:none;background:#A3B275;color:#1C1B18;font:600 15px 'Golos Text',sans-serif">Войти в урок</button>
+        </section>
+
+        <section aria-labelledby="att" style="display:flex;flex-direction:column">
+          <h2 id="att" class="h2" style="margin-bottom:6px">Требует внимания</h2>
+          <div class="item">
+            <span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#B7C48C" stroke-width="1.8"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5M19 8v6M16 11h6"/></svg></span>
+            <div class="t"><span>Ольга Ким хочет заниматься с вами</span><span class="sub">Заявка пришла 2 часа назад</span></div>
+            <button class="btn">Отклонить</button><button class="btn" style="border-color:#A3B275;color:#B7C48C">Принять</button>
+          </div>
+          <div class="item">
+            <span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D9A75E" stroke-width="1.8"><rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 12l2 2 4-4"/></svg></span>
+            <div class="t"><span>3 работы ждут проверки</span><span class="sub">Мария Смирнова, Олег Козлов и ещё 1 · самая давняя — 2 дня</span></div>
+            <span class="chev">›</span>
+          </div>
+          <div class="item">
+            <span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ABA496" stroke-width="1.8"><path d="M4 5h16v11H9l-5 4z"/></svg></span>
+            <div class="t"><span>3 непрочитанных сообщения</span><span class="sub">Группа B1 · вторник, Мария Смирнова</span></div>
+            <span class="chev">›</span>
+          </div>
+          <div class="item">
+            <span class="ico"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ABA496" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+            <div class="t"><span>Завтра срок: «Эссе о путешествии»</span><span class="sub">Группа B1 · сдали 2 из 5</span></div>
+            <span class="chev">›</span>
+          </div>
+        </section>
+
+        <section aria-labelledby="upd" style="display:flex;flex-direction:column;gap:6px">
+          <h2 id="upd" class="h2">Недавние изменения</h2>
+          <div style="display:flex;gap:10px;align-items:baseline;font-size:14px"><span style="color:#E58A7C;font-weight:500">Отменён</span><span>Урок с Еленой Новиковой, сб 29 ноября 11:00</span><span class="sub" style="margin-left:auto">сегодня 14:10</span></div>
+          <div style="display:flex;gap:10px;align-items:baseline;font-size:14px"><span style="color:#D9A75E;font-weight:500">Перенесён</span><span>Группа C1: вт 2 декабря, 19:00 → 20:00</span><span class="sub" style="margin-left:auto">вчера</span></div>
+        </section>
+      </div>
+
+      <aside style="width:300px;flex-shrink:0;display:flex;flex-direction:column;gap:18px">
+        <section aria-labelledby="agenda">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px"><h2 id="agenda" class="h2">Сегодня</h2><a href="#" style="font-size:13px;color:#B7C48C;text-decoration:none">Расписание ›</a></div>
+          <div class="slot"><span class="tm">18:00</span><div style="display:flex;flex-direction:column;line-height:20px"><span style="font-weight:500">Иван Петров</span><span class="sub" style="color:#E58A7C">идёт сейчас</span></div></div>
+          <div class="slot"><span class="tm">19:30</span><div style="display:flex;flex-direction:column;line-height:20px"><span style="font-weight:500">Группа B1 · вторник</span><span class="sub">5 учеников · 60 мин</span></div></div>
+          <div class="slot" style="border:none"><span class="tm">21:00</span><div style="display:flex;flex-direction:column;line-height:20px"><span style="font-weight:500">Мария Смирнова</span><span class="sub">45 мин</span></div></div>
+        </section>
+        <section style="padding:14px 16px;border-radius:12px;background:#23221E;border:1px solid #37352F;display:flex;flex-direction:column;gap:8px">
+          <span style="font-weight:500">Пригласить ученика</span>
+          <span class="sub">Ученик вводит ваш код при регистрации или отправляет заявку.</span>
+          <div style="display:flex;gap:8px;align-items:center"><code style="font-size:16px;letter-spacing:.12em;padding:4px 10px;border-radius:6px;background:#2A2925">K7M-4QX</code><button class="btn" style="height:32px">Копировать</button></div>
+        </section>
+      </aside>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
