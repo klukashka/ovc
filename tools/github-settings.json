@@ -1,0 +1,79 @@
+{
+  "repository": "klukashka/ovc",
+  "repository_settings": {
+    "visibility": "public",
+    "default_branch": "main",
+    "has_issues": true,
+    "has_wiki": false,
+    "has_discussions": false,
+    "has_projects": false,
+    "has_pages": false
+  },
+  "secret_scanning": {
+    "secret_scanning": "enabled",
+    "secret_scanning_push_protection": "enabled"
+  },
+  "actions_permissions": {
+    "enabled": true,
+    "allowed_actions": "selected",
+    "sha_pinning_required": true
+  },
+  "selected_actions": {
+    "github_owned_allowed": false,
+    "verified_allowed": false,
+    "patterns_allowed": [
+      "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1",
+      "actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5",
+      "actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1",
+      "actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9"
+    ]
+  },
+  "workflow_permissions": {
+    "default_workflow_permissions": "read",
+    "can_approve_pull_request_reviews": false
+  },
+  "fork_pr_approval": {
+    "approval_policy": "all_external_contributors"
+  },
+  "retention": {
+    "days": 3
+  },
+  "private_vulnerability_reporting": {
+    "enabled": true
+  },
+  "rulesets": [
+    {
+      "name": "main",
+      "target": "branch",
+      "enforcement": "active",
+      "include_any": [["refs/heads/main"], ["~DEFAULT_BRANCH"]],
+      "rules": ["deletion", "non_fast_forward", "required_linear_history"]
+    },
+    {
+      "name": "tags",
+      "target": "tag",
+      "enforcement": "active",
+      "include": ["~ALL"],
+      "rules": ["creation", "update", "deletion"]
+    }
+  ],
+  "labels": [
+    { "name": "kind:feat", "color": "1f883d", "description": "A new feature" },
+    { "name": "kind:fix", "color": "d1242f", "description": "A bug fix" },
+    { "name": "kind:chore", "color": "6e7781", "description": "Tooling, configuration or maintenance" },
+    { "name": "kind:docs", "color": "0969da", "description": "Documentation only" },
+    { "name": "tier:trivial", "color": "c5def5", "description": "Trivial verification tier" },
+    { "name": "tier:standard", "color": "7aa7e0", "description": "Standard verification tier" },
+    { "name": "tier:slice", "color": "1d4ed8", "description": "Slice verification tier" },
+    { "name": "security-trigger", "color": "b60205", "description": "Meets the security trigger" },
+    { "name": "needs-owner", "color": "fbca04", "description": "Waits for the owner's decision" }
+  ],
+  "write_access": {
+    "collaborators": ["klukashka"]
+  },
+  "stored_settings": {
+    "secrets": 0,
+    "variables": 0,
+    "environments": 0
+  }
+}

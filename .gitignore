@@ -41,3 +41,6 @@ backend/.data/
 docker-compose.override.yml
 
 /bin/
+
+.agents/
+.codex/

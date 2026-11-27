@@ -1,11 +1,11 @@
 # Proposal 0008: Run the merge gate on hosted machines in Russia
 
-- Status: deferred: accepted in principle by the project owner on 2026-11-27, with GitHub as the preferred direction and no work scheduled (pending owner review)
+- Status: adopted in part by [ADR-0026](../decisions/0026-github-hosting-and-ci.md) on 2026-11-27: a public GitHub repository and a shadow CI on GitHub-hosted runners, with a later change to make CI the gate; option A is not adopted (pending owner review). Earlier the same day: deferred, accepted in principle with GitHub as the preferred direction
 - Reviewed: pending owner review; written 2026-11-27, when the owner asked for research and a proposal
 - Author: coding agent
 - Date: 2026-11-27
-- Trigger: the owner schedules the work. Until then the gate stays on the laptop under ADR-0018.
-- Related: [ADR-0018](../decisions/0018-targeted-checks-and-merge-gate.md), [ADR-0008](../decisions/0008-hosting-and-data-residency.md), [ADR-0009](../decisions/0009-owner-approved-exceptions-and-visibility.md), [ADR-0011](../decisions/0011-tiered-verification.md), [NFR-6.1 and NFR-6.2](../requirements/non-functional.md#nfr-6-maintainability-and-verification), [threat model: T-19, T-38, T-39, T-41](../threat-model.md), [hosted CI research](../../knowledge/research/hosted-ci-2026-11-27.md)
+- Trigger: the owner scheduled the work on 2026-11-27. The gate stays on the laptop under ADR-0018 until the change that makes CI the gate merges (pending owner review).
+- Related: [ADR-0018](../decisions/0018-targeted-checks-and-merge-gate.md), [ADR-0008](../decisions/0008-hosting-and-data-residency.md), [ADR-0009](../decisions/0009-owner-approved-exceptions-and-visibility.md), [ADR-0011](../decisions/0011-tiered-verification.md), [NFR-6.1 and NFR-6.2](../requirements/non-functional.md#nfr-6-maintainability-and-verification), [threat model: T-19, T-38, T-39, T-41, T-49](../threat-model.md), [hosted CI research](../../knowledge/research/hosted-ci-2026-11-27.md)
 
 ## Motivation
 
@@ -172,6 +172,10 @@ The project owner answered the questions this proposal raised on 2026-11-27 (pen
 - **A copy of `main` off the laptop.** Later.
 - **Next step.** The proposal is accepted in principle only. No decision record, task plan or setup work is scheduled now. This file keeps option A as the agent's analysis next to the owner's preferred direction.
 
+## Owner's decision of 2026-11-27
+
+Later on 2026-11-27 the owner decided to take the checks off the laptop and run them on GitHub-hosted runners, and to make the repository public, so that the standard hosted runners are free and rulesets work on the Free plan (pending owner review). The self-hosted runner variant of option B is not adopted, and neither is option A.
+
 ## Decision
 
-Not decided.
+Adopted in part by [ADR-0026](../decisions/0026-github-hosting-and-ci.md): a public GitHub repository without a license file and a CI on GitHub-hosted runners, dispatched from `main`, that runs in shadow mode beside the local gate. A separate later change lets a CI run replace the local gate. ADR-0026 addresses the open risks of option B recorded above: storage abroad (code, history and logs public, no user data), payment (none, on a public repository with a $0 spending limit), suspension (the local gate and every checkout's history remain) and the dispatch from `main` that checks its ref. A copy of `main` off the laptop now exists as `origin` (pending owner review).

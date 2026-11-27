@@ -1,0 +1,12 @@
+[
+  { "id": 1, "name": "kind:feat", "color": "1f883d", "default": false },
+  { "id": 2, "name": "kind:fix", "color": "d1242f", "default": false },
+  { "id": 3, "name": "kind:chore", "color": "6e7781", "default": false },
+  { "id": 4, "name": "kind:docs", "color": "0969da", "default": false },
+  { "id": 5, "name": "tier:trivial", "color": "c5def5", "default": false },
+  { "id": 6, "name": "tier:standard", "color": "7aa7e0", "default": false },
+  { "id": 7, "name": "tier:slice", "color": "1d4ed8", "default": false },
+  { "id": 8, "name": "security-trigger", "color": "b60205", "default": false },
+  { "id": 9, "name": "needs-owner", "color": "fbca04", "default": false },
+  { "id": 10, "name": "bug", "color": "d73a4a", "default": true }
+]

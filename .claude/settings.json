@@ -164,7 +164,16 @@
       "mcp__plugin_design_linear__*",
       "mcp__plugin_design_notion__*",
       "mcp__plugin_design_slack__*",
-      "mcp__plugin_ui-design-review_uxkin__*"
+      "mcp__plugin_ui-design-review_uxkin__*",
+      "mcp__plugin_engineering_github__*",
+      "Edit(**/.git/config)",
+      "Edit(**/.git/**)",
+      "Edit(~/.gitconfig)",
+      "Edit(~/.config/git/**)",
+      "Write(**/.git/config)",
+      "Write(**/.git/**)",
+      "Write(~/.gitconfig)",
+      "Write(~/.config/git/**)"
     ]
   },
   "attribution": {
@@ -178,7 +187,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_secrets.py\""
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_secrets.py\"",
+            "onFailure": "block"
           }
         ]
       }

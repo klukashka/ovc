@@ -1,0 +1,18 @@
+{
+  "id": 1000001,
+  "name": "ovc",
+  "full_name": "klukashka/ovc",
+  "private": false,
+  "visibility": "public",
+  "default_branch": "main",
+  "has_issues": true,
+  "has_wiki": false,
+  "has_discussions": false,
+  "has_projects": false,
+  "has_pages": false,
+  "allow_forking": true,
+  "security_and_analysis": {
+    "secret_scanning": { "status": "enabled" },
+    "secret_scanning_push_protection": { "status": "enabled" }
+  }
+}

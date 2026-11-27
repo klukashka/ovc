@@ -44,6 +44,7 @@ full_checks=(
   "C|.|python3 .claude/hooks/check_guard_secrets.py"
   "C|.|tools/check-dev-env.sh"
   "B|.|tools/check-merge-gate.sh"
+  "B|.|tools/check-workflows.sh"
 )
 
 lane_self_test_checks=(
@@ -126,12 +127,67 @@ influential_ignored_files=(
   tools/docs/.pnpmfile.cjs
 )
 
+ci_full_jobs=(
+  "pre|verbatim|.|tools/check-tool-binaries.sh"
+  "frontend-checks|verbatim|.|pnpm --dir tools/docs install --frozen-lockfile"
+  "frontend-checks|verbatim|.|tools/docs/check-docs.sh"
+  "backend-checks|verbatim|.|bin/gitleaks git --redact --no-banner --config .gitleaks.toml ."
+  "backend-checks|history-range|.|bin/gitleaks git --staged --redact --no-banner --config .gitleaks.toml ."
+  "frontend-checks|verbatim|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=tools/go.mod"
+  "frontend-checks|verbatim|.|bin/osv-scanner scan source --no-call-analysis=go --lockfile=backend/go.mod"
+  "frontend-checks|verbatim|.|bin/osv-scanner scan source --lockfile=frontend/pnpm-lock.yaml"
+  "frontend-checks|verbatim|.|bin/osv-scanner scan source --lockfile=tools/docs/pnpm-lock.yaml"
+  "backend-checks|verbatim|backend|go mod tidy -diff"
+  'backend-checks|verbatim|backend|unformatted="$(gofmt -l .)" && test -z "$unformatted"'
+  "backend-checks|verbatim|backend|go vet ./..."
+  "backend-checks|verbatim|backend|../bin/golangci-lint run ./..."
+  "backend-checks|verbatim|backend|../bin/govulncheck ./..."
+  "backend-tests|go-packages|backend|../tools/dev-env.sh go test -race -count=1 ./..."
+  "backend-checks|verbatim|backend|../bin/sqlc -f sqlc.yaml diff"
+  "frontend-checks|verbatim|frontend|pnpm install --frozen-lockfile"
+  "frontend-checks|verbatim|frontend|pnpm typecheck"
+  "frontend-checks|verbatim|frontend|pnpm lint"
+  "frontend-checks|verbatim|frontend|pnpm format:check"
+  "frontend-checks|verbatim|frontend|pnpm test"
+  "frontend-checks|verbatim|frontend|pnpm build"
+  "frontend-checks|verbatim|frontend|pnpm check:classes"
+  "frontend-checks|verbatim|frontend|pnpm check:bundle"
+  "frontend-checks|verbatim|frontend|pnpm api:check"
+  "frontend-checks|verbatim|frontend|pnpm audit --audit-level high"
+  "e2e|e2e-projects|frontend|../tools/dev-env.sh pnpm e2e --max-failures=10 --trace=off"
+  "frontend-checks|verbatim|.|python3 .claude/hooks/check_guard_secrets.py"
+  "frontend-checks|verbatim|.|tools/check-dev-env.sh"
+  "backend-checks|verbatim|.|tools/check-merge-gate.sh"
+  "backend-checks|verbatim|.|tools/check-workflows.sh"
+)
+
+ci_docs_jobs=(
+  "pre|verbatim|.|tools/check-tool-binaries.sh"
+  "docs-checks|verbatim|.|pnpm --dir tools/docs install --frozen-lockfile"
+  "docs-checks|verbatim|.|tools/docs/check-docs.sh"
+  "docs-checks|verbatim|.|bin/gitleaks git --redact --no-banner --config .gitleaks.toml ."
+  "docs-checks|history-range|.|bin/gitleaks git --staged --redact --no-banner --config .gitleaks.toml ."
+)
+
+ci_bin_jobs=" backend-tests backend-checks frontend-checks docs-checks "
+ci_rules=" verbatim go-packages e2e-projects history-range "
+ci_unset_arguments=(-u GITHUB_ENV -u GITHUB_PATH -u GITHUB_OUTPUT -u GITHUB_STEP_SUMMARY)
+go_test_shard_count=3
+e2e_grouped_engines="firefox webkit"
+e2e_spec_group_count=4
+e2e_sharded_project=chromium
+e2e_sharded_count=4
+e2e_workers=2
+
 usage() {
   printf '%s\n' \
     'usage: merge-gate.sh gate --ff-only [--change BRANCH] [--repo PATH] [--lock-dir PATH] [--checks full|self-test|self-test-lanes] [--lane-grace SECONDS] [--skip-tool-probes] [--skip-power-log]' \
     '       merge-gate.sh gate --squash --change BRANCH [--repo PATH] [--lock-dir PATH] [--checks full|self-test|self-test-lanes] [--lane-grace SECONDS] [--skip-tool-probes] [--skip-power-log]' \
     '       merge-gate.sh finish [--repo PATH] [--lock-dir PATH]' \
-    '       merge-gate.sh release [--repo PATH] [--lock-dir PATH]' >&2
+    '       merge-gate.sh release [--repo PATH] [--lock-dir PATH]' \
+    '       merge-gate.sh list [--scope full|docs] [--job NAME]' \
+    '       merge-gate.sh run-job NAME [--shard N/M] --repo PATH [--base REV] [--packages FILE]' \
+    '       merge-gate.sh classify --repo PATH --base REV' >&2
   exit 2
 }
 
@@ -1661,11 +1717,467 @@ release() {
   printf 'merge gate: released %s, held by pid %s from %s (%s)\n' "$lock_path" "$holder_pid" "$holder_checkout" "$holder_state"
 }
 
+ci_scope_of_job() {
+  case "$1" in
+    docs-checks) printf 'docs' ;;
+    backend-tests | backend-checks | frontend-checks | e2e) printf 'full' ;;
+    *) return 1 ;;
+  esac
+}
+
+ci_job_scope() {
+  ci_scope_of_job "$1" ||
+    fail "$1 is not a CI job; the jobs are backend-tests, backend-checks, frontend-checks, e2e and docs-checks"
+}
+
+ci_check_row() {
+  local scope="$1" index="$2" job="$3" rule="$4" job_scope
+  case "$ci_rules" in
+    *" $rule "*) ;;
+    *) fail "the CI job table of the $scope scope names the unknown rule $rule" ;;
+  esac
+  if [[ "$index" == 0 || "$job" == pre ]]; then
+    [[ "$index" == 0 && "$job" == pre && "$rule" == verbatim ]] ||
+      fail "the CI job table of the $scope scope must map the first entry, and only it, to pre with the verbatim rule"
+    return 0
+  fi
+  job_scope="$(ci_scope_of_job "$job")" || fail "the CI job table of the $scope scope names the unknown job $job"
+  [[ "$job_scope" == "$scope" ]] || fail "the CI job table of the $scope scope maps an entry to $job, a job of the $job_scope scope"
+  case "$job|$rule" in
+    backend-tests\|go-packages | e2e\|e2e-projects) ;;
+    backend-tests\|* | e2e\|* | *\|go-packages | *\|e2e-projects)
+      fail "the CI job table of the $scope scope maps an entry of $job to the $rule rule"
+      ;;
+  esac
+}
+
+ci_load_scope() {
+  local scope="$1" entry row rest job="" rule="" matches index=0
+  local entries=() rows=()
+  case "$scope" in
+    full)
+      for entry in "${full_checks[@]}"; do
+        entries+=("${entry#*|}")
+      done
+      rows=("${ci_full_jobs[@]}")
+      ;;
+    docs)
+      entries=("${docs_only_checks[@]}")
+      rows=("${ci_docs_jobs[@]}")
+      ;;
+    *) fail "the scope $scope is neither full nor docs" ;;
+  esac
+  for row in "${rows[@]}"; do
+    rest="${row#*|}"
+    rest="${rest#*|}"
+    matches=0
+    for entry in "${entries[@]}"; do
+      [[ "$entry" != "$rest" ]] || matches=$((matches + 1))
+    done
+    [[ "$matches" == 1 ]] ||
+      fail "the CI job table of the $scope scope maps $rest, which the $scope check list holds $matches times"
+  done
+  ci_entry_jobs=()
+  ci_entry_rules=()
+  ci_entry_directories=()
+  ci_entry_commands=()
+  for entry in "${entries[@]}"; do
+    matches=0
+    for row in "${rows[@]}"; do
+      rest="${row#*|}"
+      rest="${rest#*|}"
+      if [[ "$rest" == "$entry" ]]; then
+        matches=$((matches + 1))
+        job="${row%%|*}"
+        rule="${row#*|}"
+        rule="${rule%%|*}"
+      fi
+    done
+    [[ "$matches" == 1 ]] || fail "the CI job table of the $scope scope maps the entry $entry $matches times"
+    ci_check_row "$scope" "$index" "$job" "$rule"
+    ci_entry_jobs[index]="$job"
+    ci_entry_rules[index]="$rule"
+    ci_entry_directories[index]="${entry%%|*}"
+    ci_entry_commands[index]="${entry#*|}"
+    index=$((index + 1))
+  done
+  ci_entry_count="$index"
+}
+
+ci_select_job() {
+  local job="$1" index=0 mapped=0
+  ci_job_entries=()
+  case "$ci_bin_jobs" in
+    *" $job "*) ci_job_entries+=(0) ;;
+  esac
+  while [[ "$index" -lt "$ci_entry_count" ]]; do
+    if [[ "${ci_entry_jobs[index]}" == "$job" ]]; then
+      ci_job_entries+=("$index")
+      mapped=$((mapped + 1))
+    fi
+    index=$((index + 1))
+  done
+  [[ "$mapped" -gt 0 ]] || fail "the CI job table maps no entry to $job"
+}
+
+ci_print_entry() {
+  printf '%s|%s|%s|%s\n' "${ci_entry_jobs[$1]}" "${ci_entry_rules[$1]}" "${ci_entry_directories[$1]}" "${ci_entry_commands[$1]}"
+}
+
+e2e_shard_total() {
+  local engines=()
+  read -r -a engines <<<"$e2e_grouped_engines"
+  printf '%s' "$((${#engines[@]} * e2e_spec_group_count + e2e_sharded_count))"
+}
+
+e2e_project_names() {
+  local engine group
+  printf '%s\n' "$e2e_sharded_project"
+  for engine in $e2e_grouped_engines; do
+    group=1
+    while [[ "$group" -le "$e2e_spec_group_count" ]]; do
+      printf '%s-%s\n' "$engine" "$group"
+      group=$((group + 1))
+    done
+  done
+}
+
+e2e_shard_arguments() {
+  local shard="$1" engine offset=0
+  for engine in $e2e_grouped_engines; do
+    if [[ "$shard" -le $((offset + e2e_spec_group_count)) ]]; then
+      printf -- '--project %s-%s' "$engine" "$((shard - offset))"
+      return 0
+    fi
+    offset=$((offset + e2e_spec_group_count))
+  done
+  printf -- '--project %s --shard=%s/%s' "$e2e_sharded_project" "$((shard - offset))" "$e2e_sharded_count"
+}
+
+ci_rewritten_command() {
+  local index="$1" command
+  command="${ci_entry_commands[index]}"
+  case "${ci_entry_rules[index]}" in
+    verbatim) ci_command="$command" ;;
+    go-packages)
+      [[ "$command" == *" ./..." ]] || fail "the entry $command does not end with ./..., so the shard's packages cannot replace it"
+      ci_command="${command% ./...} $shard_packages"
+      ;;
+    e2e-projects) ci_command="$command --workers=$e2e_workers $(e2e_shard_arguments "$shard_number")" ;;
+    history-range)
+      [[ "$command" == *" --staged "* ]] || fail "the entry $command scans no staged changes, so it cannot become a scan of a range"
+      ci_command="${command/ --staged / --log-opts=$base_commit..HEAD }"
+      ;;
+    *) fail "the entry $command has the unknown rule ${ci_entry_rules[index]}" ;;
+  esac
+}
+
+without_step_files() {
+  env "${ci_unset_arguments[@]}" "$@"
+}
+
+refuse_unclean_candidate() {
+  local changes
+  candidate_head="$(in_repo rev-parse --verify --quiet "HEAD^{commit}")" || fail "the candidate checkout $root has no commit"
+  changes="$(in_repo status --porcelain --untracked-files=all)" || fail "git status failed in the candidate checkout $root"
+  [[ -z "$changes" ]] ||
+    fail "the candidate checkout $root has unstaged, staged or untracked changes; it must be a clean checkout of the candidate commit"
+  refuse_influential_ignored_files
+  candidate_tree="$(in_repo rev-parse --verify "HEAD^{tree}")" || fail "the candidate checkout $root has no tree"
+}
+
+resolve_candidate_base() {
+  [[ "$base_arg" != -* ]] || fail "the base $base_arg is not a revision"
+  has_control_character "$base_arg" && fail "the base holds a control character"
+  base_commit="$(in_repo rev-parse --verify --quiet "$base_arg^{commit}")" ||
+    fail "the base $base_arg is not a commit of the candidate checkout"
+  [[ "$base_commit" != "$candidate_head" ]] || fail "the candidate $candidate_head holds no commit beyond the base"
+  in_repo merge-base --is-ancestor "$base_commit" "$candidate_head" ||
+    fail "the base $base_commit is not an ancestor of the candidate $candidate_head"
+}
+
+refuse_job_tool_settings() {
+  local folder line node_version pnpm_version pnpm_settings problem
+  environment_lines=()
+  if command -v go >/dev/null 2>&1; then
+    for folder in "${go_setting_folders[@]}"; do
+      [[ -d "$root/$folder" ]] || continue
+      line="$(go_environment_line "$folder")" || exit 1
+      environment_lines+=("$line")
+    done
+  else
+    environment_lines+=("go environment: go is not on the path of this job")
+  fi
+  if ! command -v node >/dev/null 2>&1 || ! command -v pnpm >/dev/null 2>&1; then
+    environment_lines+=("node environment: node or pnpm is not on the path of this job")
+    return 0
+  fi
+  node_version="$(node --version)" || fail "node --version failed"
+  pnpm_version="$(pnpm --dir "$root/frontend" --version)" || fail "pnpm --version failed"
+  pnpm_settings="$(pnpm --dir "$root/frontend" config list --json)" || fail "pnpm config list failed"
+  problem="$(printf '%s' "$pnpm_settings" | pnpm_settings_problem)" || fail "could not read pnpm's settings"
+  [[ -z "$problem" ]] ||
+    fail "pnpm's effective settings $problem, from its user, global or project configuration, would change what the checks run; remove them before the job"
+  environment_lines+=("node environment: node $node_version, pnpm $pnpm_version, pnpm node-options, script-shell and shell-emulator: defaults")
+}
+
+line_listed() {
+  case $'\n'"$1"$'\n' in
+    *$'\n'"$2"$'\n'*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+read_shard_packages() {
+  local directory="$1" listed line
+  [[ -f "$packages_arg" && ! -L "$packages_arg" ]] || fail "the package list $packages_arg is not a regular file"
+  listed="$(without_step_files go -C "$root/$directory" list ./... </dev/null)" ||
+    fail "go list ./... failed in the candidate's $directory"
+  shard_packages=""
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^[A-Za-z0-9][A-Za-z0-9._/~-]*$ ]] || fail "the package list $packages_arg holds a line that is not a Go package path"
+    line_listed "$listed" "$line" ||
+      fail "the package list names $line, which go list ./... does not list in the candidate's $directory"
+    case " $shard_packages " in
+      *" $line "*) fail "the package list names $line twice" ;;
+    esac
+    shard_packages="$shard_packages${shard_packages:+ }$line"
+  done <"$packages_arg"
+  [[ -n "$shard_packages" ]] || fail "the package list $packages_arg is empty"
+}
+
+playwright_project_names() {
+  python3 -I -c '
+import json
+import sys
+
+try:
+    report = json.load(sys.stdin)
+except ValueError:
+    sys.exit(1)
+config = report.get("config") if isinstance(report, dict) else None
+projects = config.get("projects") if isinstance(config, dict) else None
+if not isinstance(projects, list):
+    sys.exit(1)
+names = []
+for project in projects:
+    if not isinstance(project, dict) or not isinstance(project.get("name"), str):
+        sys.exit(1)
+    names.append(project["name"])
+print(" ".join(sorted(names)))
+'
+}
+
+check_e2e_projects() {
+  local directory="$1" listing actual expected
+  listing="$(umask 077 && mktemp "${TMPDIR:-/tmp}/merge-gate-e2e-projects.XXXXXX")"
+  if ! (cd "$root/$directory" && exec env "${ci_unset_arguments[@]}" pnpm exec playwright test --list --reporter=json) </dev/null >"$listing"; then
+    rm -f "$listing"
+    fail "pnpm exec playwright test --list failed in the candidate's $directory"
+  fi
+  if ! actual="$(playwright_project_names <"$listing")"; then
+    rm -f "$listing"
+    fail "the Playwright list of the candidate's $directory is not a JSON report with named projects"
+  fi
+  rm -f "$listing"
+  expected="$(e2e_project_names | LC_ALL=C sort | paste -sd ' ' -)"
+  [[ "$actual" == "$expected" ]] ||
+    fail "the candidate's Playwright projects ($actual) differ from the harness's shard set ($expected); the harness must cover a project before a candidate adds it"
+  e2e_projects_line="e2e projects: $actual"
+}
+
+ci_check_job_options() {
+  local index needs_base=no shard_count=""
+  for index in "${ci_job_entries[@]}"; do
+    if [[ "${ci_entry_rules[index]}" == history-range ]]; then
+      needs_base=yes
+    fi
+  done
+  case "$ci_job" in
+    backend-tests) shard_count="$go_test_shard_count" ;;
+    e2e) shard_count="$(e2e_shard_total)" ;;
+  esac
+  shard_number=""
+  if [[ -n "$shard_count" ]]; then
+    [[ "$shard_arg" =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]] || fail "run-job $ci_job needs --shard N/$shard_count"
+    shard_number="${BASH_REMATCH[1]}"
+    [[ "${BASH_REMATCH[2]}" == "$shard_count" && "$shard_number" -le "$shard_count" ]] ||
+      fail "run-job $ci_job needs --shard N/$shard_count with N from 1 to $shard_count"
+  else
+    [[ -z "$shard_arg" ]] || fail "run-job $ci_job takes no --shard"
+  fi
+  if [[ "$ci_job" == backend-tests ]]; then
+    [[ -n "$packages_arg" ]] || fail "run-job backend-tests needs --packages with the shard's package list"
+  else
+    [[ -z "$packages_arg" ]] || fail "run-job $ci_job takes no --packages"
+  fi
+  if [[ "$needs_base" == yes ]]; then
+    [[ -n "$base_arg" ]] || fail "run-job $ci_job needs --base with main's commit, the base of its range scan"
+  else
+    [[ -z "$base_arg" ]] || fail "run-job $ci_job takes no --base"
+  fi
+}
+
+run_job() {
+  local job_scope index directory status started finished failed="" after_head after_changes line
+  job_scope="$(ci_job_scope "$ci_job")" || exit 1
+  ci_load_scope "$job_scope"
+  ci_select_job "$ci_job"
+  ci_check_job_options
+  resolve_repo
+  refuse_unclean_candidate
+  refuse_job_tool_settings
+  base_commit=""
+  if [[ -n "$base_arg" ]]; then
+    resolve_candidate_base
+  fi
+  shard_packages=""
+  e2e_projects_line=""
+  for index in "${ci_job_entries[@]}"; do
+    case "${ci_entry_rules[index]}" in
+      go-packages) read_shard_packages "${ci_entry_directories[index]}" ;;
+      e2e-projects) check_e2e_projects "${ci_entry_directories[index]}" ;;
+    esac
+  done
+  printf 'merge gate run-job\n'
+  printf 'job: %s\n' "$ci_job"
+  printf 'scope: %s\n' "$job_scope"
+  printf 'shard: %s\n' "${shard_arg:-none}"
+  printf 'candidate: %s\n' "$candidate_head"
+  printf 'candidate tree: %s\n' "$candidate_tree"
+  printf 'base: %s\n' "${base_commit:-none}"
+  for line in ${environment_lines[@]+"${environment_lines[@]}"}; do
+    printf '%s\n' "$line"
+  done
+  if [[ -n "$shard_packages" ]]; then
+    printf 'packages: %s\n' "$shard_packages"
+  fi
+  if [[ -n "$e2e_projects_line" ]]; then
+    printf '%s\n' "$e2e_projects_line"
+  fi
+  for index in "${ci_job_entries[@]}"; do
+    ci_rewritten_command "$index"
+    directory="${ci_entry_directories[index]}"
+    if [[ -n "$failed" ]]; then
+      printf 'not run: %s: %s\n' "$directory" "$ci_command"
+      continue
+    fi
+    printf 'merge gate: running in %s: %s\n' "$directory" "$ci_command" >&2
+    started="$(now_seconds)"
+    status=0
+    (cd "$root/$directory" && exec env "${ci_unset_arguments[@]}" bash -c "$ci_command") </dev/null >&2 || status=$?
+    finished="$(now_seconds)"
+    printf 'exit %s: %s s: %s: %s\n' "$status" "$(elapsed_seconds "$started" "$finished")" "$directory" "$ci_command"
+    if [[ "$status" != 0 ]]; then
+      failed="$directory: $ci_command"
+    fi
+  done
+  after_head="$(in_repo rev-parse --verify "HEAD^{commit}")" || fail "the candidate checkout $root lost its commit during the job"
+  after_changes="$(in_repo status --porcelain --untracked-files=all)" || fail "git status failed in the candidate checkout $root"
+  if [[ "$after_head" != "$candidate_head" || -n "$after_changes" ]]; then
+    printf 'candidate checkout after the job: changed\n'
+    [[ -z "$after_changes" ]] || printf 'changed in the candidate checkout: %s\n' "$after_changes"
+    failed="${failed:-the candidate checkout changed during the job}"
+  else
+    printf 'candidate checkout after the job: unchanged\n'
+  fi
+  if [[ -n "$failed" ]]; then
+    printf 'result: failed: %s\n' "$failed"
+    exit 1
+  fi
+  printf 'result: passed\n'
+}
+
+classify() {
+  resolve_repo
+  refuse_unclean_candidate
+  resolve_candidate_base
+  mode=ff-only
+  base="$base_commit"
+  head="$candidate_head"
+  if docs_only_change; then
+    printf 'docs-only\n'
+  else
+    printf 'full\n'
+  fi
+}
+
+list_entries() {
+  local scope="$scope_arg" job_scope index=0
+  case "$scope" in
+    "" | full | docs) ;;
+    *) usage ;;
+  esac
+  if [[ -n "$ci_job" ]]; then
+    job_scope="$(ci_job_scope "$ci_job")" || exit 1
+    [[ -z "$scope" || "$scope" == "$job_scope" ]] || fail "$ci_job is a job of the $job_scope scope, not of $scope"
+    scope="$job_scope"
+  fi
+  ci_load_scope "${scope:-full}"
+  if [[ -z "$ci_job" ]]; then
+    while [[ "$index" -lt "$ci_entry_count" ]]; do
+      ci_print_entry "$index"
+      index=$((index + 1))
+    done
+    return 0
+  fi
+  ci_select_job "$ci_job"
+  for index in "${ci_job_entries[@]}"; do
+    ci_print_entry "$index"
+  done
+}
+
+ci_main() {
+  local subcommand="$1"
+  shift
+  ci_job=""
+  scope_arg=""
+  shard_arg=""
+  repo_arg=""
+  base_arg=""
+  packages_arg=""
+  if [[ "$subcommand" == run-job ]]; then
+    [[ $# -ge 1 && -n "$1" && "$1" != -* ]] || usage
+    ci_job="$1"
+    shift
+  fi
+  while [[ $# -gt 0 ]]; do
+    [[ $# -ge 2 && -n "$2" ]] || usage
+    case "$subcommand|$1" in
+      list\|--scope) scope_arg="$2" ;;
+      list\|--job) ci_job="$2" ;;
+      run-job\|--shard) shard_arg="$2" ;;
+      run-job\|--packages) packages_arg="$2" ;;
+      run-job\|--repo | classify\|--repo) repo_arg="$2" ;;
+      run-job\|--base | classify\|--base) base_arg="$2" ;;
+      *) usage ;;
+    esac
+    shift 2
+  done
+  case "$subcommand" in
+    list) list_entries ;;
+    run-job)
+      [[ -n "$repo_arg" ]] || usage
+      run_job
+      ;;
+    classify)
+      [[ -n "$repo_arg" && -n "$base_arg" ]] || usage
+      classify
+      ;;
+  esac
+}
+
 main() {
   refuse_shell_environment
   [[ $# -ge 1 ]] || usage
   subcommand="$1"
   shift
+  case "$subcommand" in
+    list | run-job | classify)
+      ci_main "$subcommand" "$@"
+      return 0
+      ;;
+  esac
   mode=""
   repo_arg=""
   lock_dir=""

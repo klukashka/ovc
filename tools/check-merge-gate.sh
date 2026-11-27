@@ -93,6 +93,15 @@ run_unchecked() {
   set -e
 }
 
+classify_agrees() {
+  local gate_status="$status" gate_output="$output"
+  run_unchecked bash "$gate_script" classify --repo "$repo" --base main
+
+  check "$status|$output" "0|$1" "classify prints $1 $2, as the gate's scope does"
+  status="$gate_status"
+  output="$gate_output"
+}
+
 lock_state() {
   if [[ -e "$lock" ]]; then
     echo held
@@ -163,6 +172,7 @@ run_gate gate --ff-only --checks self-test
 power_log_reads=no
 check "$status" "0" "a clean fast-forward gate passes"
 contains "$output" "scope: docs-only" "a Markdown-only change under docs/ is docs-only"
+classify_agrees docs-only "for a Markdown-only change under docs/"
 contains "$output" "check list: self-test" "the report names the self-test check list"
 contains "$output" "tested tree: $(in_repo rev-parse 'HEAD^{tree}')" "the report records the tested tree"
 contains "$output" "base main: $(in_repo rev-parse main)" "the report records the base commit"
@@ -207,6 +217,7 @@ start_change docs/read-by-script
 commit_file docs/listed.md "listed" "Add a document a script reads"
 run_gate gate --ff-only --checks self-test
 contains "$output" "scope: full" "a document a script reads is gated with the full run"
+classify_agrees full "for a document a script reads"
 run_gate release
 check "$status" "0" "an abandoned passed gate is released"
 
@@ -214,6 +225,7 @@ start_change docs/layers
 commit_file knowledge/architecture/detailed.md "layers" "Change the package layers"
 run_gate gate --ff-only --checks self-test
 contains "$output" "scope: full" "the package layers document is gated with the full run"
+classify_agrees full "for the package layers document"
 run_gate release
 
 start_change docs/link
@@ -222,6 +234,7 @@ in_repo add -- docs/link.md
 in_repo commit --quiet -m "Link a document"
 run_gate gate --ff-only --checks self-test
 contains "$output" "scope: full" "a symbolic link named like Markdown is gated with the full run"
+classify_agrees full "for a symbolic link named like Markdown"
 run_gate release
 
 start_change fix/dirty
@@ -330,6 +343,7 @@ in_repo commit --quiet -a -m "Make the guide executable"
 run_gate gate --ff-only --checks self-test
 check "$status" "0" "a mode change passes the self-test gate"
 contains "$output" "scope: full" "a mode change of a Markdown file is gated with the full run"
+classify_agrees full "for a mode change of a Markdown file"
 run_gate release
 
 start_change docs/gitlink
@@ -339,6 +353,7 @@ in_repo commit --quiet -m "Add a submodule named like Markdown"
 run_gate gate --ff-only --checks self-test
 check "$status" "0" "a submodule passes the self-test gate"
 contains "$output" "scope: full" "a submodule named like Markdown is gated with the full run"
+classify_agrees full "for a submodule named like Markdown"
 run_gate release
 rmdir "$repo/docs/sub.md"
 
@@ -427,6 +442,7 @@ e2e|frontend|../tools/dev-env.sh pnpm e2e --max-failures=10 --trace=off
 C|.|python3 .claude/hooks/check_guard_secrets.py
 C|.|tools/check-dev-env.sh
 B|.|tools/check-merge-gate.sh
+B|.|tools/check-workflows.sh
 LIST
 )"
 tagged_full_list="$(awk '/^full_checks=\(/ { inside = 1; next } inside && /^\)/ { exit } inside' "$source_gate" |
@@ -434,7 +450,7 @@ tagged_full_list="$(awk '/^full_checks=\(/ { inside = 1; next } inside && /^\)/ 
 check "$tagged_full_list" "$expected_full_list" "the tagged list holds every command of the full run in order, each with its slot"
 check "$(printf '%s\n' "$tagged_full_list" | cut -d'|' -f2- | LC_ALL=C sort | uniq -d)" "" "no command of the full run appears twice"
 check "$(printf '%s\n' "$tagged_full_list" | cut -d'|' -f1 | LC_ALL=C sort | uniq -c | awk '{ printf "%s=%s ", $2, $1 }')" \
-  "A=1 B=9 C=18 e2e=1 pre=1 " "the slots pre, A, B, C and e2e together hold the 30 commands of the full run"
+  "A=1 B=10 C=18 e2e=1 pre=1 " "the slots pre, A, B, C and e2e together hold the 31 commands of the full run"
 check "$(printf '%s\n' "$tagged_full_list" | head -n 1)" "pre|.|tools/check-tool-binaries.sh" "the tool-binary check runs alone before every lane"
 
 validate_records() {
@@ -1211,3 +1227,269 @@ check "$(printf '%s\n' "$power_log_sample" | parse_with_gate run_fields_from_pow
   "battery-during-run: no; sleep: yes" "a sleep entry inside the run reads as sleep, entries outside it are ignored"
 check "$(printf 'garbage\n' | parse_with_gate run_fields_from_power_log '2026-11-16 10:00:00' '2026-11-16 10:20:00')" \
   "battery-during-run: no; sleep: no" "a readable power log without entries in the run reads as no battery and no sleep"
+
+tagged_docs_list="$(awk '/^docs_only_checks=\(/ { inside = 1; next } inside && /^\)/ { exit } inside' "$source_gate" |
+  sed -e 's/^  //' -e 's/^"\(.*\)"$/\1/' -e "s/^'\\(.*\\)'\$/\\1/")"
+
+run_unchecked bash "$gate_script" list --scope full
+
+check "$status" "0" "list prints the full scope"
+check "$(printf '%s\n' "$output" | cut -d'|' -f3-)" "$(printf '%s\n' "$tagged_full_list" | cut -d'|' -f2-)" \
+  "list --scope full prints exactly the entries of the gate's full list in order"
+check "$(paste -d'|' <(printf '%s\n' "$tagged_full_list" | cut -d'|' -f1) <(printf '%s\n' "$output" | cut -d'|' -f1) | LC_ALL=C sort -u | tr '\n' ' ')" \
+  "A|backend-tests B|backend-checks C|frontend-checks e2e|e2e pre|pre " "list gives each entry of the full list the CI job of its lane"
+
+run_unchecked bash "$gate_script" list --scope docs
+
+check "$status" "0" "list prints the docs scope"
+check "$(printf '%s\n' "$output" | cut -d'|' -f3-)" "$tagged_docs_list" "list --scope docs prints exactly the entries of the Markdown-only list in order"
+check "$(printf '%s\n' "$output" | cut -d'|' -f1 | tr '\n' ' ')" "pre docs-checks docs-checks docs-checks docs-checks " \
+  "list maps the Markdown-only list to pre and the docs-checks job"
+
+job_entries_without_pre() {
+  local job
+  for job in "$@"; do
+    bash "$gate_script" list --job "$job" | awk -F'|' '$1 != "pre"' | cut -d'|' -f3-
+  done
+}
+
+full_jobs_cover="$(job_entries_without_pre backend-tests backend-checks frontend-checks e2e | LC_ALL=C sort)"
+docs_jobs_cover="$(job_entries_without_pre docs-checks | LC_ALL=C sort)"
+
+check "$full_jobs_cover" "$(printf '%s\n' "$tagged_full_list" | awk -F'|' '$1 != "pre"' | cut -d'|' -f2- | LC_ALL=C sort)" \
+  "the full scope's CI jobs together run every entry of the full list except pre exactly once"
+check "$docs_jobs_cover" "$(printf '%s\n' "$tagged_docs_list" | awk 'NR > 1' | LC_ALL=C sort)" \
+  "the docs-checks job runs every entry of the Markdown-only list except pre exactly once"
+
+first_entry_jobs=""
+pre_counts=""
+for job in backend-tests backend-checks frontend-checks e2e docs-checks; do
+  job_list="$(bash "$gate_script" list --job "$job")"
+  first_entry_jobs="$first_entry_jobs$job=$(printf '%s\n' "$job_list" | awk -F'|' 'NR == 1 { print $1 }') "
+  pre_counts="$pre_counts$job=$(printf '%s\n' "$job_list" | awk -F'|' '$1 == "pre" { found++ } END { print found + 0 }') "
+done
+
+check "$first_entry_jobs" "backend-tests=pre backend-checks=pre frontend-checks=pre e2e=e2e docs-checks=pre " \
+  "pre runs first in each job that builds bin/ and in no other"
+check "$pre_counts" "backend-tests=1 backend-checks=1 frontend-checks=1 e2e=0 docs-checks=1 " "pre runs once in each job that builds bin/"
+
+run_unchecked bash "$gate_script" list --scope full --job docs-checks
+
+check "$status" "1" "list refuses a job of another scope"
+
+rewritten_with_gate() {
+  (
+    source "$gate_script"
+    ci_load_scope "$1"
+    shard_number="$2"
+    shard_packages="$3"
+    base_commit="$4"
+    index=0
+    while [[ "$index" -lt "$ci_entry_count" ]]; do
+      if [[ "${ci_entry_rules[index]}" == "$5" ]]; then
+        ci_rewritten_command "$index"
+        printf '%s\n' "$ci_command"
+      fi
+      index=$((index + 1))
+    done
+  )
+}
+
+range_base="$(in_repo rev-parse main)"
+
+go_rewrite="$(rewritten_with_gate full "" "ovc/backend/internal/api ovc/backend/internal/core" "" go-packages)"
+full_range_rewrite="$(rewritten_with_gate full "" "" "$range_base" history-range)"
+docs_range_rewrite="$(rewritten_with_gate docs "" "" "$range_base" history-range)"
+e2e_rewrites=""
+for shard in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  e2e_rewrites="$e2e_rewrites$(rewritten_with_gate full "$shard" "" "" e2e-projects)"$'\n'
+done
+
+check "$go_rewrite" "../tools/dev-env.sh go test -race -count=1 ovc/backend/internal/api ovc/backend/internal/core" \
+  "the Go test entry gets the shard's package list in place of ./..."
+check "$full_range_rewrite" "bin/gitleaks git --log-opts=$range_base..HEAD --redact --no-banner --config .gitleaks.toml ." \
+  "the staged Gitleaks scan of the full scope becomes a scan of the base..HEAD range"
+check "$docs_range_rewrite" "$full_range_rewrite" "the staged Gitleaks scan of the docs scope becomes the same range scan"
+check "$(printf '%s' "$e2e_rewrites" | sed 's|^\.\./tools/dev-env\.sh pnpm e2e --max-failures=10 --trace=off --workers=2 ||')" "$(
+  cat <<'SHARDS'
+--project firefox-1
+--project firefox-2
+--project firefox-3
+--project firefox-4
+--project webkit-1
+--project webkit-2
+--project webkit-3
+--project webkit-4
+--project chromium --shard=1/4
+--project chromium --shard=2/4
+--project chromium --shard=3/4
+--project chromium --shard=4/4
+SHARDS
+)" "the twelve end-to-end shards run the end-to-end entry with two workers for each Firefox and WebKit group and a quarter of Chromium"
+
+playwright_config="$own_repo/frontend/playwright.config.ts"
+spec_group_count="$(sed -n 's/^const specGroupCount = \([0-9][0-9]*\);$/\1/p' "$playwright_config")"
+config_projects="$(
+  {
+    grep -o "{ name: '[a-z0-9-]*'" "$playwright_config" | sed "s/^{ name: '\\(.*\\)'\$/\\1/"
+    for engine in $(grep -o "specGroupProjects('[a-z]*'" "$playwright_config" | sed "s/^specGroupProjects('\\(.*\\)'\$/\\1/"); do
+      group=1
+      while [[ "$group" -le "$spec_group_count" ]]; do
+        printf '%s-%s\n' "$engine" "$group"
+        group=$((group + 1))
+      done
+    done
+  } | LC_ALL=C sort
+)"
+
+harness_projects="$(parse_with_gate e2e_project_names | LC_ALL=C sort)"
+shard_projects="$(printf '%s' "$e2e_rewrites" | sed -n 's/.* --project \([^ ]*\).*/\1/p' | LC_ALL=C sort -u)"
+
+check "$harness_projects" "$config_projects" "the harness's end-to-end project set equals the projects of the current Playwright configuration"
+check "$shard_projects" "$config_projects" "the end-to-end shards together cover every project of the current Playwright configuration"
+check "$(parse_with_gate e2e_shard_total)" "12" "the end-to-end job has twelve shards"
+
+candidate="$work/candidate"
+calls="$work/dev-env-calls"
+shard_packages_file="$work/shard-packages"
+
+candidate_git() {
+  git -C "$candidate" "$@"
+}
+
+run_candidate_job() {
+  local assignments=()
+  while [[ "$1" != -- ]]; do
+    assignments+=("$1")
+    shift
+  done
+  shift
+  set +e
+  output="$(env ${assignments[@]+"${assignments[@]}"} bash "$gate_script" run-job "$@" --repo "$candidate" 2>&1)"
+  status=$?
+  set -e
+}
+
+tool_binaries_failure="$work/tool-binaries-fail"
+repository_package_manager="$(python3 -I -c 'import json, sys; print(json.load(open(sys.argv[1]))["packageManager"])' "$own_repo/frontend/package.json")"
+mkdir -p "$candidate/backend/internal/api" "$candidate/backend/internal/store" "$candidate/tools" "$candidate/frontend"
+candidate_git init --quiet -b main
+candidate_git config user.name "Merge gate check"
+candidate_git config user.email "merge-gate-check@example.invalid"
+candidate_git config commit.gpgsign false
+printf 'module example.invalid/candidate\n\ngo 1.21\n' >"$candidate/backend/go.mod"
+printf 'package api\n' >"$candidate/backend/internal/api/api.go"
+printf 'package store\n' >"$candidate/backend/internal/store/store.go"
+printf '%s\n' '#!/usr/bin/env bash' \
+  "printf '%s|%s|%s|%s|%s\\n' \"\${GITHUB_ENV-unset}\" \"\${GITHUB_PATH-unset}\" \"\${GITHUB_OUTPUT-unset}\" \"\${GITHUB_STEP_SUMMARY-unset}\" \"\$*\" >>\"$calls\"" \
+  >"$candidate/tools/dev-env.sh"
+printf '#!/usr/bin/env bash\n[[ ! -e "%s" ]]\n' "$tool_binaries_failure" >"$candidate/tools/check-tool-binaries.sh"
+printf '{\n  "name": "candidate",\n  "private": true,\n  "packageManager": "%s"\n}\n' "$repository_package_manager" >"$candidate/frontend/package.json"
+chmod +x "$candidate/tools/dev-env.sh" "$candidate/tools/check-tool-binaries.sh"
+printf 'go.work\n' >"$candidate/.gitignore"
+pnpm --dir "$candidate/frontend" --version >/dev/null
+pnpm --dir "$candidate/frontend" config list --json >/dev/null
+candidate_git add -A
+candidate_git commit --quiet -m "Add the candidate's base"
+sed 's|go test -race -count=1 ./[.][.][.]|go test -count=1 -run Candidate ./...|' "$source_gate" >"$candidate/tools/merge-gate.sh"
+candidate_git add -- tools/merge-gate.sh
+candidate_git commit --quiet -m "Edit the candidate's gate script"
+candidate_base="$(candidate_git rev-parse HEAD~1)"
+printf 'example.invalid/candidate/internal/api\n' >"$shard_packages_file"
+: >"$calls"
+
+run_candidate_job GITHUB_ENV="$work/github-env" GITHUB_PATH="$work/github-path" GITHUB_OUTPUT="$work/github-output" \
+  GITHUB_STEP_SUMMARY="$work/github-summary" -- backend-tests --shard 1/3 --packages "$shard_packages_file"
+
+check "$status" "0" "run-job passes the backend test shard of a candidate whose own gate script differs"
+check "$(cat "$calls")" "unset|unset|unset|unset|go test -race -count=1 example.invalid/candidate/internal/api" \
+  "run-job runs the harness's Go test entry with the shard's packages, not the candidate's, without the step files in its environment"
+check "$(count_matching '^exit 0: [0-9]+[.][0-9] s: backend: [.][.]/tools/dev-env[.]sh go test -race -count=1 example[.]invalid/candidate/internal/api$')" "1" \
+  "run-job prints the entry with its exit status and seconds"
+contains "$output" "candidate: $(candidate_git rev-parse HEAD)" "run-job names the candidate commit"
+contains "$output" "candidate checkout after the job: unchanged" "run-job confirms the candidate checkout did not change"
+contains "$output" "result: passed" "run-job reports the passed job"
+check "$(count_matching '^exit 0: [0-9]+[.][0-9] s: [.]: tools/check-tool-binaries[.]sh$')" "1" \
+  "run-job checks the pinned tools in bin/ before the backend test shard"
+
+: >"$calls"
+: >"$tool_binaries_failure"
+
+run_candidate_job -- docs-checks --base "$candidate_base"
+
+rm "$tool_binaries_failure"
+check "$status" "1" "run-job fails a job whose first entry fails"
+check "$(count_matching '^exit 1: [0-9]+[.][0-9] s: [.]: tools/check-tool-binaries[.]sh$')" "1" "run-job reports the failed entry"
+contains "$output" "not run: .: pnpm --dir tools/docs install --frozen-lockfile" "run-job stops at the first failure"
+contains "$output" "not run: .: bin/gitleaks git --log-opts=$candidate_base..HEAD --redact --no-banner --config .gitleaks.toml ." \
+  "run-job lists the staged Gitleaks scan as a scan of the base..HEAD range"
+contains "$output" "result: failed: .: tools/check-tool-binaries.sh" "run-job names the failed entry in its result"
+
+printf 'untracked\n' >"$candidate/untracked.txt"
+
+run_candidate_job -- backend-tests --shard 1/3 --packages "$shard_packages_file"
+
+rm "$candidate/untracked.txt"
+check "$status" "1" "run-job refuses a candidate checkout with an untracked file"
+contains "$output" "the candidate checkout $candidate has unstaged, staged or untracked changes" "the refusal names the unclean candidate"
+check "$(cat "$calls")" "" "a refused job runs no entry"
+
+printf 'changed\n' >>"$candidate/backend/internal/api/api.go"
+
+run_candidate_job -- backend-tests --shard 1/3 --packages "$shard_packages_file"
+
+printf 'package api\n' >"$candidate/backend/internal/api/api.go"
+check "$status" "1" "run-job refuses a candidate checkout with an unstaged change"
+check "$(cat "$calls")" "" "a job refused for an unstaged change runs no entry"
+
+printf 'go 1.21\n' >"$candidate/go.work"
+
+run_candidate_job -- backend-tests --shard 1/3 --packages "$shard_packages_file"
+
+rm "$candidate/go.work"
+check "$status" "1" "run-job refuses an ignored workspace file in the candidate checkout"
+contains "$output" "go.work exists in the checkout" "the refusal names the ignored file"
+check "$(cat "$calls")" "" "a job refused for an ignored file runs no entry"
+
+for name in GOFLAGS GOWORK GOENV GOTOOLCHAIN GOPACKAGESDRIVER NODE_OPTIONS E2E_HARNESS_GATE_RUN_LOCK_FD BASH_ENV ENV SHELLOPTS \
+  BASHOPTS GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE \
+  GIT_SHALLOW_FILE GIT_REPLACE_REF_BASE GIT_NO_REPLACE_OBJECTS; do
+  run_candidate_job "$name=$(environment_value "$name")" -- backend-tests --shard 1/3 --packages "$shard_packages_file"
+
+  check "$status" "1" "run-job refuses to start with $name exported"
+  contains "$output" "$name set in the gate's environment" "the run-job refusal names $name"
+  check "$(cat "$calls")" "" "a job refused for $name runs no entry"
+done
+
+for name in npm_config_ignore_scripts pnpm_config_node_options GIT_CONFIG_COUNT BASH_FUNC_x; do
+  run_candidate_job "$name=x" -- backend-tests --shard 1/3 --packages "$shard_packages_file"
+
+  check "$status" "1" "run-job refuses to start with $name exported"
+  contains "$output" "$name set in the gate's environment" "the run-job refusal names $name"
+done
+
+run_candidate_job -- backend-tests --shard 1/3
+
+check "$status" "1" "run-job refuses a backend test shard without its package list"
+contains "$output" "needs --packages" "the refusal names the missing package list"
+
+run_candidate_job -- backend-tests --shard 4/3 --packages "$shard_packages_file"
+
+check "$status" "1" "run-job refuses a backend test shard outside the three shards"
+
+run_candidate_job -- e2e --shard 13/12
+
+check "$status" "1" "run-job refuses an end-to-end shard outside the twelve shards"
+
+run_candidate_job -- backend-checks
+
+check "$status" "1" "run-job refuses a job with a range scan and no base"
+contains "$output" "needs --base" "the refusal names the missing base"
+
+printf 'example.invalid/candidate/internal/missing\n' >"$shard_packages_file"
+
+run_candidate_job -- backend-tests --shard 1/3 --packages "$shard_packages_file"
+
+check "$status" "1" "run-job refuses a package list that names a package go list does not list"
+contains "$output" "which go list ./... does not list" "the refusal names the unlisted package"
+check "$(cat "$calls")" "" "a job refused for its package list runs no entry"

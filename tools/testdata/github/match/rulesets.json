@@ -1,0 +1,4 @@
+[
+  { "id": 4000001, "name": "main", "target": "branch", "enforcement": "active", "source_type": "Repository", "source": "klukashka/ovc" },
+  { "id": 4000002, "name": "tags", "target": "tag", "enforcement": "active", "source_type": "Repository", "source": "klukashka/ovc" }
+]

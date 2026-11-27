@@ -1,0 +1,46 @@
+name: Change
+description: Describe a problem or a change to OVC. Decisions land in the repository, not in this issue.
+title: "Change: "
+body:
+  - type: markdown
+    attributes:
+      value: Do not include personal data of any user. Security problems go through private vulnerability reporting, not through a public issue.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - feat
+        - fix
+        - chore
+        - docs
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is wrong or missing, and who it affects.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What should be true once the change has merged.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Criteria checkable without asking a person, such as a named test that passes or a command that prints a given result.
+    validations:
+      required: false
+  - type: textarea
+    id: references
+    attributes:
+      label: Affected components and specifications
+      description: The components, specifications and decision records the change touches, if known.
+    validations:
+      required: false

@@ -1,0 +1,853 @@
+name: gate
+run-name: gate ${{ inputs.scope }} ${{ inputs.sha }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: The candidate commit, one commit on the tip of main
+        required: true
+        type: string
+      scope:
+        description: The check list to run
+        required: true
+        type: choice
+        options:
+          - full
+          - docs
+
+permissions: {}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - name: Record the runner image
+        run: echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+      - name: Validate the inputs and the ref
+        env:
+          CANDIDATE: ${{ inputs.sha }}
+          SCOPE: ${{ inputs.scope }}
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" != refs/heads/main ]]; then
+            echo "the gate runs only from refs/heads/main" >&2
+            exit 1
+          fi
+          if [[ ! "$CANDIDATE" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "sha must be a full lower-case commit hash of 40 characters" >&2
+            exit 1
+          fi
+          if [[ "$SCOPE" != full && "$SCOPE" != docs ]]; then
+            echo "scope must be full or docs" >&2
+            exit 1
+          fi
+
+  prepare:
+    needs: validate
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    outputs:
+      candidate: ${{ steps.commits.outputs.candidate }}
+      tree: ${{ steps.commits.outputs.tree }}
+      main: ${{ steps.commits.outputs.main }}
+      scope: ${{ steps.classify.outputs.scope }}
+      classification: ${{ steps.classify.outputs.classification }}
+      jobs: ${{ steps.classify.outputs.jobs }}
+      packages-1: ${{ steps.packages.outputs.packages-1 }}
+      packages-2: ${{ steps.packages.outputs.packages-2 }}
+      packages-3: ${{ steps.packages.outputs.packages-3 }}
+    steps:
+      - name: Record the runner image
+        run: echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+      - name: Refuse a ref other than main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" != refs/heads/main ]]; then
+            echo "the gate runs only from refs/heads/main" >&2
+            exit 1
+          fi
+      - name: Check out the harness from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: harness
+          persist-credentials: false
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.sha }}
+          path: candidate
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Check that the candidate is one commit on the tip of main
+        id: commits
+        env:
+          CANDIDATE: ${{ inputs.sha }}
+          MAIN: ${{ github.sha }}
+        run: |
+          head="$(git -C candidate rev-parse --verify 'HEAD^{commit}')"
+          if [[ "$head" != "$CANDIDATE" ]]; then
+            echo "the candidate checkout is at $head, not at the requested commit $CANDIDATE" >&2
+            exit 1
+          fi
+          read -r -a parents <<<"$(git -C candidate rev-list --parents -n 1 HEAD)"
+          if [[ "${#parents[@]}" -ne 2 || "${parents[1]}" != "$MAIN" ]]; then
+            echo "candidate is not on main's tip: it must be exactly one commit whose only parent is $MAIN" >&2
+            exit 1
+          fi
+          tree="$(git -C candidate rev-parse --verify 'HEAD^{tree}')"
+          {
+            echo "candidate=$head"
+            echo "tree=$tree"
+            echo "main=$MAIN"
+          } >>"$GITHUB_OUTPUT"
+      - name: Classify the candidate and choose the jobs of the scope
+        id: classify
+        env:
+          SCOPE: ${{ inputs.scope }}
+          MAIN: ${{ github.sha }}
+        run: |
+          classification="$(harness/tools/merge-gate.sh classify --repo "$GITHUB_WORKSPACE/candidate" --base "$MAIN")"
+          case "$SCOPE:$classification" in
+            full:full | full:docs-only) jobs="backend-tests backend-checks frontend-checks e2e" ;;
+            docs:docs-only) jobs="docs-checks" ;;
+            docs:full)
+              echo "the candidate changes more than the Markdown-only list covers; dispatch the full scope" >&2
+              exit 1
+              ;;
+            *)
+              echo "unexpected scope $SCOPE or classification $classification" >&2
+              exit 1
+              ;;
+          esac
+          {
+            echo "scope=$SCOPE"
+            echo "classification=$classification"
+            echo "jobs=$jobs"
+          } >>"$GITHUB_OUTPUT"
+          echo "scope $SCOPE, classification $classification, jobs $jobs"
+      - name: Set up Go from the candidate's tools/go.mod
+        if: steps.classify.outputs.scope == 'full'
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        with:
+          go-version-file: candidate/tools/go.mod
+          cache: false
+      - name: Assign the backend packages to the test shards
+        if: steps.classify.outputs.scope == 'full'
+        id: packages
+        working-directory: candidate/backend
+        env:
+          GOFLAGS: -mod=readonly
+          GOTOOLCHAIN: local
+        run: |
+          module="$(go list -m)"
+          go list ./... | LC_ALL=C sort >"$RUNNER_TEMP/packages"
+          if [[ "$(LC_ALL=C sort -u "$RUNNER_TEMP/packages" | wc -l)" -ne "$(wc -l <"$RUNNER_TEMP/packages")" ]]; then
+            echo "go list ./... printed a package twice" >&2
+            exit 1
+          fi
+          awk -v api="$module/internal/api" -v folder="$RUNNER_TEMP" '
+            $0 == api { print > (folder "/shard-1"); found = 1; next }
+            { print > (folder "/shard-" (2 + index_count % 2)); index_count++ }
+            END { if (!found) { print "go list ./... does not list " api > "/dev/stderr"; exit 1 } }
+          ' "$RUNNER_TEMP/packages"
+          for shard in 1 2 3; do
+            touch "$RUNNER_TEMP/shard-$shard"
+            if [[ ! -s "$RUNNER_TEMP/shard-$shard" ]]; then
+              echo "shard $shard has no packages" >&2
+              exit 1
+            fi
+          done
+          if ! cat "$RUNNER_TEMP"/shard-1 "$RUNNER_TEMP"/shard-2 "$RUNNER_TEMP"/shard-3 | LC_ALL=C sort | cmp -s - "$RUNNER_TEMP/packages"; then
+            echo "the shard assignment does not cover go list ./... exactly once" >&2
+            exit 1
+          fi
+          for shard in 1 2 3; do
+            echo "packages-$shard=$(paste -s -d ' ' "$RUNNER_TEMP/shard-$shard")" >>"$GITHUB_OUTPUT"
+            echo "shard $shard: $(paste -s -d ' ' "$RUNNER_TEMP/shard-$shard")"
+          done
+
+  backend-tests:
+    needs: prepare
+    if: needs.prepare.outputs.scope == 'full'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - name: Record the runner image
+        run: echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+      - name: Refuse a ref other than main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" != refs/heads/main ]]; then
+            echo "the gate runs only from refs/heads/main" >&2
+            exit 1
+          fi
+      - name: Check out the harness from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: harness
+          persist-credentials: false
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.candidate }}
+          path: candidate
+          persist-credentials: false
+      - name: Confirm the candidate commit
+        env:
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+        run: |
+          if [[ "$(git -C candidate rev-parse --verify 'HEAD^{commit}')" != "$CANDIDATE" ]]; then
+            echo "the candidate checkout is not at $CANDIDATE" >&2
+            exit 1
+          fi
+      - name: Set up Go from the candidate's tools/go.mod
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        with:
+          go-version-file: candidate/tools/go.mod
+          cache: false
+      - name: Build the pinned tools into bin/
+        working-directory: candidate
+        run: |
+          toolchain="$(awk '$1 == "toolchain" { print $2 }' tools/go.mod)"
+          GOTOOLCHAIN="$toolchain" go -C tools build -o ../bin/ github.com/golangci/golangci-lint/v2/cmd/golangci-lint golang.org/x/vuln/cmd/govulncheck github.com/zricethezav/gitleaks/v8 github.com/google/osv-scanner/v2/cmd/osv-scanner github.com/sqlc-dev/sqlc/cmd/sqlc
+      - name: Generate the throwaway settings
+        run: harness/tools/ci-settings.sh "$GITHUB_WORKSPACE/candidate"
+      - name: Start the Compose services
+        working-directory: candidate
+        run: docker compose up --wait
+      - name: Write the shard's package list
+        env:
+          SHARD: ${{ matrix.shard }}
+          PACKAGES_1: ${{ needs.prepare.outputs.packages-1 }}
+          PACKAGES_2: ${{ needs.prepare.outputs.packages-2 }}
+          PACKAGES_3: ${{ needs.prepare.outputs.packages-3 }}
+        run: |
+          name="PACKAGES_$SHARD"
+          read -r -a packages <<<"${!name}"
+          printf '%s\n' "${packages[@]}" >"$RUNNER_TEMP/shard-packages"
+          echo "shard $SHARD packages: ${packages[*]}"
+      - name: Run the job's entries
+        id: run
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence"
+          status=0
+          env -u GOTOOLCHAIN harness/tools/merge-gate.sh run-job backend-tests --shard "$SHARD/3" --repo "$GITHUB_WORKSPACE/candidate" --packages "$RUNNER_TEMP/shard-packages" 2>&1 | tee "$RUNNER_TEMP/run-job.log" || status=$?
+          echo "status=$status" >>"$GITHUB_OUTPUT"
+          if [[ "$status" -ne 0 ]]; then
+            tail -n 40 "$RUNNER_TEMP/run-job.log" >"$RUNNER_TEMP/evidence/log-tail.txt"
+            read -r -a generated <<<"${CI_GENERATED_SETTING_NAMES:-}"
+            for name in "${generated[@]}"; do
+              if [[ ! "$name" =~ ^OVC_[A-Z0-9_]+$ ]]; then
+                generated=()
+                break
+              fi
+            done
+            if [[ ${#generated[@]} -eq 0 ]]; then
+              rm -rf "$RUNNER_TEMP/evidence"
+              echo "CI_GENERATED_SETTING_NAMES lists no usable setting names, so no evidence is uploaded" >&2
+              exit 1
+            fi
+            for file in "$RUNNER_TEMP"/evidence/*; do
+              content="$(<"$file")"
+              for name in "${generated[@]}"; do
+                if [[ -n "${!name:-}" ]]; then
+                  content="${content//"${!name}"/[redacted]}"
+                fi
+              done
+              printf '%s\n' "$content" >"$file"
+            done
+          fi
+      - name: Upload the redacted evidence
+        if: steps.run.outputs.status != '0'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: evidence-backend-tests-${{ matrix.shard }}
+          path: ${{ runner.temp }}/evidence
+          retention-days: 3
+          if-no-files-found: ignore
+      - name: Report the job's result
+        env:
+          STATUS: ${{ steps.run.outputs.status }}
+        run: |
+          if [[ "$STATUS" != 0 ]]; then
+            echo "run-job exited with status $STATUS" >&2
+            exit 1
+          fi
+
+  backend-checks:
+    needs: prepare
+    if: needs.prepare.outputs.scope == 'full'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    steps:
+      - name: Record the runner image
+        run: echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+      - name: Refuse a ref other than main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" != refs/heads/main ]]; then
+            echo "the gate runs only from refs/heads/main" >&2
+            exit 1
+          fi
+      - name: Check out the harness from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: harness
+          persist-credentials: false
+      - name: Check out the candidate with its history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.candidate }}
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Confirm the candidate commit
+        env:
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+        run: |
+          if [[ "$(git -C candidate rev-parse --verify 'HEAD^{commit}')" != "$CANDIDATE" ]]; then
+            echo "the candidate checkout is not at $CANDIDATE" >&2
+            exit 1
+          fi
+      - name: Set up Go from the candidate's tools/go.mod
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        with:
+          go-version-file: candidate/tools/go.mod
+          cache: false
+      - name: Set up Node from the candidate's frontend/.node-version
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: candidate/frontend/.node-version
+          package-manager-cache: false
+      - name: Install pnpm through the pinned corepack
+        run: |
+          read -r algorithm digest url < <(awk '$1 == "corepack" { print $2, $3, $4 }' harness/tools/ci-tools.sha256)
+          if [[ "$algorithm" != sha512 || "$url" != https://* ]]; then
+            echo "tools/ci-tools.sha256 holds no usable corepack line" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$RUNNER_TEMP/corepack.tgz" "$url"
+          if [[ "$(sha512sum "$RUNNER_TEMP/corepack.tgz" | awk '{ print $1 }')" != "$digest" ]]; then
+            echo "the corepack tarball does not match tools/ci-tools.sha256" >&2
+            exit 1
+          fi
+          npm install --global --ignore-scripts "$RUNNER_TEMP/corepack.tgz"
+          corepack enable
+          pnpm --dir candidate/frontend --version
+      - name: Build the pinned tools into bin/
+        working-directory: candidate
+        run: |
+          toolchain="$(awk '$1 == "toolchain" { print $2 }' tools/go.mod)"
+          GOTOOLCHAIN="$toolchain" go -C tools build -o ../bin/ github.com/golangci/golangci-lint/v2/cmd/golangci-lint golang.org/x/vuln/cmd/govulncheck github.com/zricethezav/gitleaks/v8 github.com/google/osv-scanner/v2/cmd/osv-scanner github.com/sqlc-dev/sqlc/cmd/sqlc
+      - name: Run the job's entries
+        id: run
+        env:
+          MAIN: ${{ needs.prepare.outputs.main }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence"
+          status=0
+          env -u GOTOOLCHAIN harness/tools/merge-gate.sh run-job backend-checks --repo "$GITHUB_WORKSPACE/candidate" --base "$MAIN" 2>&1 | tee "$RUNNER_TEMP/run-job.log" || status=$?
+          echo "status=$status" >>"$GITHUB_OUTPUT"
+          if [[ "$status" -ne 0 ]]; then
+            tail -n 40 "$RUNNER_TEMP/run-job.log" >"$RUNNER_TEMP/evidence/log-tail.txt"
+          fi
+      - name: Upload the redacted evidence
+        if: steps.run.outputs.status != '0'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: evidence-backend-checks
+          path: ${{ runner.temp }}/evidence
+          retention-days: 3
+          if-no-files-found: ignore
+      - name: Report the job's result
+        env:
+          STATUS: ${{ steps.run.outputs.status }}
+        run: |
+          if [[ "$STATUS" != 0 ]]; then
+            echo "run-job exited with status $STATUS" >&2
+            exit 1
+          fi
+
+  frontend-checks:
+    needs: prepare
+    if: needs.prepare.outputs.scope == 'full'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    steps:
+      - name: Record the runner image
+        run: echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+      - name: Refuse a ref other than main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" != refs/heads/main ]]; then
+            echo "the gate runs only from refs/heads/main" >&2
+            exit 1
+          fi
+      - name: Check out the harness from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: harness
+          persist-credentials: false
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.candidate }}
+          path: candidate
+          persist-credentials: false
+      - name: Confirm the candidate commit
+        env:
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+        run: |
+          if [[ "$(git -C candidate rev-parse --verify 'HEAD^{commit}')" != "$CANDIDATE" ]]; then
+            echo "the candidate checkout is not at $CANDIDATE" >&2
+            exit 1
+          fi
+      - name: Set up Go from the candidate's tools/go.mod
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        with:
+          go-version-file: candidate/tools/go.mod
+          cache: false
+      - name: Set up Node from the candidate's frontend/.node-version
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: candidate/frontend/.node-version
+          package-manager-cache: false
+      - name: Install pnpm through the pinned corepack
+        run: |
+          read -r algorithm digest url < <(awk '$1 == "corepack" { print $2, $3, $4 }' harness/tools/ci-tools.sha256)
+          if [[ "$algorithm" != sha512 || "$url" != https://* ]]; then
+            echo "tools/ci-tools.sha256 holds no usable corepack line" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$RUNNER_TEMP/corepack.tgz" "$url"
+          if [[ "$(sha512sum "$RUNNER_TEMP/corepack.tgz" | awk '{ print $1 }')" != "$digest" ]]; then
+            echo "the corepack tarball does not match tools/ci-tools.sha256" >&2
+            exit 1
+          fi
+          npm install --global --ignore-scripts "$RUNNER_TEMP/corepack.tgz"
+          corepack enable
+          pnpm --dir candidate/frontend --version
+      - name: Install the pinned lychee
+        run: |
+          read -r algorithm digest url < <(awk '$1 == "lychee" { print $2, $3, $4 }' harness/tools/ci-tools.sha256)
+          if [[ "$algorithm" != sha256 || "$url" != https://* ]]; then
+            echo "tools/ci-tools.sha256 holds no usable lychee line" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$RUNNER_TEMP/lychee.tar.gz" "$url"
+          if [[ "$(sha256sum "$RUNNER_TEMP/lychee.tar.gz" | awk '{ print $1 }')" != "$digest" ]]; then
+            echo "the lychee archive does not match tools/ci-tools.sha256" >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/lychee" "$RUNNER_TEMP/ci-bin"
+          tar -xzf "$RUNNER_TEMP/lychee.tar.gz" -C "$RUNNER_TEMP/lychee"
+          mapfile -t binaries < <(find "$RUNNER_TEMP/lychee" -type f -name lychee)
+          if [[ "${#binaries[@]}" -ne 1 ]]; then
+            echo "the lychee archive holds ${#binaries[@]} lychee binaries instead of one" >&2
+            exit 1
+          fi
+          install -m 0755 "${binaries[0]}" "$RUNNER_TEMP/ci-bin/lychee"
+          "$RUNNER_TEMP/ci-bin/lychee" --version
+          echo "$RUNNER_TEMP/ci-bin" >>"$GITHUB_PATH"
+      - name: Install the Chromium of the documentation tools
+        run: |
+          pnpm --dir candidate/tools/docs install --frozen-lockfile
+          pnpm --dir candidate/tools/docs exec playwright-core install --with-deps chromium
+      - name: Build the pinned tools into bin/
+        working-directory: candidate
+        run: |
+          toolchain="$(awk '$1 == "toolchain" { print $2 }' tools/go.mod)"
+          GOTOOLCHAIN="$toolchain" go -C tools build -o ../bin/ github.com/golangci/golangci-lint/v2/cmd/golangci-lint golang.org/x/vuln/cmd/govulncheck github.com/zricethezav/gitleaks/v8 github.com/google/osv-scanner/v2/cmd/osv-scanner github.com/sqlc-dev/sqlc/cmd/sqlc
+      - name: Run the job's entries
+        id: run
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence"
+          status=0
+          env -u GOTOOLCHAIN harness/tools/merge-gate.sh run-job frontend-checks --repo "$GITHUB_WORKSPACE/candidate" 2>&1 | tee "$RUNNER_TEMP/run-job.log" || status=$?
+          echo "status=$status" >>"$GITHUB_OUTPUT"
+          if [[ "$status" -ne 0 ]]; then
+            tail -n 40 "$RUNNER_TEMP/run-job.log" >"$RUNNER_TEMP/evidence/log-tail.txt"
+          fi
+      - name: Upload the redacted evidence
+        if: steps.run.outputs.status != '0'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: evidence-frontend-checks
+          path: ${{ runner.temp }}/evidence
+          retention-days: 3
+          if-no-files-found: ignore
+      - name: Report the job's result
+        env:
+          STATUS: ${{ steps.run.outputs.status }}
+        run: |
+          if [[ "$STATUS" != 0 ]]; then
+            echo "run-job exited with status $STATUS" >&2
+            exit 1
+          fi
+
+  e2e:
+    needs: prepare
+    if: needs.prepare.outputs.scope == 'full'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+    steps:
+      - name: Record the runner image
+        run: echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+      - name: Refuse a ref other than main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" != refs/heads/main ]]; then
+            echo "the gate runs only from refs/heads/main" >&2
+            exit 1
+          fi
+      - name: Check out the harness from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: harness
+          persist-credentials: false
+      - name: Check out the candidate
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.candidate }}
+          path: candidate
+          persist-credentials: false
+      - name: Confirm the candidate commit
+        env:
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+        run: |
+          if [[ "$(git -C candidate rev-parse --verify 'HEAD^{commit}')" != "$CANDIDATE" ]]; then
+            echo "the candidate checkout is not at $CANDIDATE" >&2
+            exit 1
+          fi
+      - name: Set up Go from the candidate's tools/go.mod
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        with:
+          go-version-file: candidate/tools/go.mod
+          cache: false
+      - name: Set up Node from the candidate's frontend/.node-version
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: candidate/frontend/.node-version
+          package-manager-cache: false
+      - name: Install pnpm through the pinned corepack
+        run: |
+          read -r algorithm digest url < <(awk '$1 == "corepack" { print $2, $3, $4 }' harness/tools/ci-tools.sha256)
+          if [[ "$algorithm" != sha512 || "$url" != https://* ]]; then
+            echo "tools/ci-tools.sha256 holds no usable corepack line" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$RUNNER_TEMP/corepack.tgz" "$url"
+          if [[ "$(sha512sum "$RUNNER_TEMP/corepack.tgz" | awk '{ print $1 }')" != "$digest" ]]; then
+            echo "the corepack tarball does not match tools/ci-tools.sha256" >&2
+            exit 1
+          fi
+          npm install --global --ignore-scripts "$RUNNER_TEMP/corepack.tgz"
+          corepack enable
+          pnpm --dir candidate/frontend --version
+      - name: Install the frontend dependencies and the Playwright browsers
+        run: |
+          pnpm --dir candidate/frontend install --frozen-lockfile
+          pnpm --dir candidate/frontend exec playwright install --with-deps
+      - name: Generate the throwaway settings
+        run: harness/tools/ci-settings.sh "$GITHUB_WORKSPACE/candidate"
+      - name: Start the Compose services
+        working-directory: candidate
+        run: docker compose up --wait
+      - name: Run the job's entries
+        id: run
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence"
+          status=0
+          env -u GOTOOLCHAIN harness/tools/merge-gate.sh run-job e2e --shard "$SHARD/12" --repo "$GITHUB_WORKSPACE/candidate" 2>&1 | tee "$RUNNER_TEMP/run-job.log" || status=$?
+          echo "status=$status" >>"$GITHUB_OUTPUT"
+          if [[ "$status" -ne 0 ]]; then
+            tail -n 40 "$RUNNER_TEMP/run-job.log" >"$RUNNER_TEMP/evidence/log-tail.txt"
+            count=0
+            while IFS= read -r -d '' diagnostics; do
+              count=$((count + 1))
+              cp "$diagnostics" "$RUNNER_TEMP/evidence/browser-diagnostics-$count.json"
+            done < <(find candidate/frontend/test-results/playwright -type f -name browser-diagnostics.json -print0 2>/dev/null)
+            read -r -a generated <<<"${CI_GENERATED_SETTING_NAMES:-}"
+            for name in "${generated[@]}"; do
+              if [[ ! "$name" =~ ^OVC_[A-Z0-9_]+$ ]]; then
+                generated=()
+                break
+              fi
+            done
+            if [[ ${#generated[@]} -eq 0 ]]; then
+              rm -rf "$RUNNER_TEMP/evidence"
+              echo "CI_GENERATED_SETTING_NAMES lists no usable setting names, so no evidence is uploaded" >&2
+              exit 1
+            fi
+            for file in "$RUNNER_TEMP"/evidence/*; do
+              content="$(<"$file")"
+              for name in "${generated[@]}"; do
+                if [[ -n "${!name:-}" ]]; then
+                  content="${content//"${!name}"/[redacted]}"
+                fi
+              done
+              printf '%s\n' "$content" >"$file"
+            done
+          fi
+      - name: Upload the redacted evidence
+        if: steps.run.outputs.status != '0'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: evidence-e2e-${{ matrix.shard }}
+          path: ${{ runner.temp }}/evidence
+          retention-days: 3
+          if-no-files-found: ignore
+      - name: Report the job's result
+        env:
+          STATUS: ${{ steps.run.outputs.status }}
+        run: |
+          if [[ "$STATUS" != 0 ]]; then
+            echo "run-job exited with status $STATUS" >&2
+            exit 1
+          fi
+
+  docs-checks:
+    needs: prepare
+    if: needs.prepare.outputs.scope == 'docs'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    steps:
+      - name: Record the runner image
+        run: echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+      - name: Refuse a ref other than main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" != refs/heads/main ]]; then
+            echo "the gate runs only from refs/heads/main" >&2
+            exit 1
+          fi
+      - name: Check out the harness from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: harness
+          persist-credentials: false
+      - name: Check out the candidate with its history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.candidate }}
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Confirm the candidate commit
+        env:
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+        run: |
+          if [[ "$(git -C candidate rev-parse --verify 'HEAD^{commit}')" != "$CANDIDATE" ]]; then
+            echo "the candidate checkout is not at $CANDIDATE" >&2
+            exit 1
+          fi
+      - name: Set up Go from the candidate's tools/go.mod
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        with:
+          go-version-file: candidate/tools/go.mod
+          cache: false
+      - name: Set up Node from the candidate's frontend/.node-version
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: candidate/frontend/.node-version
+          package-manager-cache: false
+      - name: Install pnpm through the pinned corepack
+        run: |
+          read -r algorithm digest url < <(awk '$1 == "corepack" { print $2, $3, $4 }' harness/tools/ci-tools.sha256)
+          if [[ "$algorithm" != sha512 || "$url" != https://* ]]; then
+            echo "tools/ci-tools.sha256 holds no usable corepack line" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$RUNNER_TEMP/corepack.tgz" "$url"
+          if [[ "$(sha512sum "$RUNNER_TEMP/corepack.tgz" | awk '{ print $1 }')" != "$digest" ]]; then
+            echo "the corepack tarball does not match tools/ci-tools.sha256" >&2
+            exit 1
+          fi
+          npm install --global --ignore-scripts "$RUNNER_TEMP/corepack.tgz"
+          corepack enable
+          pnpm --dir candidate/tools/docs --version
+      - name: Install the pinned lychee
+        run: |
+          read -r algorithm digest url < <(awk '$1 == "lychee" { print $2, $3, $4 }' harness/tools/ci-tools.sha256)
+          if [[ "$algorithm" != sha256 || "$url" != https://* ]]; then
+            echo "tools/ci-tools.sha256 holds no usable lychee line" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$RUNNER_TEMP/lychee.tar.gz" "$url"
+          if [[ "$(sha256sum "$RUNNER_TEMP/lychee.tar.gz" | awk '{ print $1 }')" != "$digest" ]]; then
+            echo "the lychee archive does not match tools/ci-tools.sha256" >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/lychee" "$RUNNER_TEMP/ci-bin"
+          tar -xzf "$RUNNER_TEMP/lychee.tar.gz" -C "$RUNNER_TEMP/lychee"
+          mapfile -t binaries < <(find "$RUNNER_TEMP/lychee" -type f -name lychee)
+          if [[ "${#binaries[@]}" -ne 1 ]]; then
+            echo "the lychee archive holds ${#binaries[@]} lychee binaries instead of one" >&2
+            exit 1
+          fi
+          install -m 0755 "${binaries[0]}" "$RUNNER_TEMP/ci-bin/lychee"
+          "$RUNNER_TEMP/ci-bin/lychee" --version
+          echo "$RUNNER_TEMP/ci-bin" >>"$GITHUB_PATH"
+      - name: Install the Chromium of the documentation tools
+        run: |
+          pnpm --dir candidate/tools/docs install --frozen-lockfile
+          pnpm --dir candidate/tools/docs exec playwright-core install --with-deps chromium
+      - name: Build the pinned tools into bin/
+        working-directory: candidate
+        run: |
+          toolchain="$(awk '$1 == "toolchain" { print $2 }' tools/go.mod)"
+          GOTOOLCHAIN="$toolchain" go -C tools build -o ../bin/ github.com/golangci/golangci-lint/v2/cmd/golangci-lint golang.org/x/vuln/cmd/govulncheck github.com/zricethezav/gitleaks/v8 github.com/google/osv-scanner/v2/cmd/osv-scanner github.com/sqlc-dev/sqlc/cmd/sqlc
+      - name: Run the job's entries
+        id: run
+        env:
+          MAIN: ${{ needs.prepare.outputs.main }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence"
+          status=0
+          env -u GOTOOLCHAIN harness/tools/merge-gate.sh run-job docs-checks --repo "$GITHUB_WORKSPACE/candidate" --base "$MAIN" 2>&1 | tee "$RUNNER_TEMP/run-job.log" || status=$?
+          echo "status=$status" >>"$GITHUB_OUTPUT"
+          if [[ "$status" -ne 0 ]]; then
+            tail -n 40 "$RUNNER_TEMP/run-job.log" >"$RUNNER_TEMP/evidence/log-tail.txt"
+          fi
+      - name: Upload the redacted evidence
+        if: steps.run.outputs.status != '0'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: evidence-docs-checks
+          path: ${{ runner.temp }}/evidence
+          retention-days: 3
+          if-no-files-found: ignore
+      - name: Report the job's result
+        env:
+          STATUS: ${{ steps.run.outputs.status }}
+        run: |
+          if [[ "$STATUS" != 0 ]]; then
+            echo "run-job exited with status $STATUS" >&2
+            exit 1
+          fi
+
+  gate:
+    needs: [validate, prepare, backend-tests, backend-checks, frontend-checks, e2e, docs-checks]
+    if: always()
+    runs-on: ubuntu-24.04
+    permissions:
+      statuses: write
+    timeout-minutes: 5
+    steps:
+      - name: Require every job of the scope to succeed and post the commit status
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          JOBS: ${{ needs.prepare.outputs.jobs }}
+          SCOPE: ${{ needs.prepare.outputs.scope }}
+          CLASSIFICATION: ${{ needs.prepare.outputs.classification }}
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+          TREE: ${{ needs.prepare.outputs.tree }}
+          MAIN: ${{ needs.prepare.outputs.main }}
+          PACKAGES_1: ${{ needs.prepare.outputs.packages-1 }}
+          PACKAGES_2: ${{ needs.prepare.outputs.packages-2 }}
+          PACKAGES_3: ${{ needs.prepare.outputs.packages-3 }}
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          verdict=success
+          problems=()
+          required=" validate prepare $JOBS "
+          if [[ -z "$JOBS" ]]; then
+            verdict=failure
+            problems+=("prepare named no jobs for the scope")
+          fi
+          while read -r job result; do
+            if [[ "$required" == *" $job "* ]]; then
+              if [[ "$result" != success ]]; then
+                verdict=failure
+                problems+=("$job: $result")
+              fi
+            elif [[ "$result" != skipped ]]; then
+              verdict=failure
+              problems+=("$job ran outside the scope: $result")
+            fi
+          done < <(jq -r 'to_entries[] | "\(.key) \(.value.result)"' <<<"$NEEDS")
+          for job in validate prepare $JOBS; do
+            if ! jq -e --arg job "$job" 'has($job)' <<<"$NEEDS" >/dev/null; then
+              verdict=failure
+              problems+=("$job is not a dependency of the gate job")
+            fi
+          done
+          {
+            echo "## gate ${SCOPE:-unknown}: $verdict"
+            echo
+            echo "- candidate C: ${CANDIDATE:-unknown}"
+            echo "- tree T: ${TREE:-unknown}"
+            echo "- main M: ${MAIN:-unknown}"
+            echo "- classification: ${CLASSIFICATION:-unknown}"
+            echo "- jobs: ${JOBS:-none}"
+            echo "- backend-tests shard 1: ${PACKAGES_1:-none}"
+            echo "- backend-tests shard 2: ${PACKAGES_2:-none}"
+            echo "- backend-tests shard 3: ${PACKAGES_3:-none}"
+            for problem in ${problems[@]+"${problems[@]}"}; do
+              echo "- problem: $problem"
+            done
+          } >>"$GITHUB_STEP_SUMMARY"
+          for problem in ${problems[@]+"${problems[@]}"}; do
+            echo "gate: $problem" >&2
+          done
+          if [[ "$CANDIDATE" =~ ^[0-9a-f]{40}$ && ( "$SCOPE" == full || "$SCOPE" == docs ) ]]; then
+            gh api --method POST "repos/$REPOSITORY/statuses/$CANDIDATE" -f state="$verdict" -f context="ovc-gate/$SCOPE" -f target_url="$RUN_URL" -f description="Shadow gate run, display only" >/dev/null
+          fi
+          if [[ "$verdict" != success ]]; then
+            exit 1
+          fi
+          echo "gate $SCOPE passed for $CANDIDATE"
