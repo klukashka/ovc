@@ -14,6 +14,7 @@ import {
 import {
   accountId,
   closeSockets,
+  expectLinuxWebKitToRefuseServiceRestart,
   expectRefetchedAfterTheSocketIsReady,
   firstPageSocketClosed,
   trafficAfterReady,
@@ -505,7 +506,10 @@ test.describe('the lesson room through a new tab', () => {
     page,
     deployment,
     control,
+    diagnostics,
+    browserName,
   }) => {
+    expectLinuxWebKitToRefuseServiceRestart(diagnostics, browserName, deployment.origin);
     const seed = await seedLesson(deployment, control);
     const socketClosed = firstPageSocketClosed(page);
     await openLesson(page, seed.student, seed.lessonId, control);

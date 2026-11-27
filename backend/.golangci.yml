@@ -88,6 +88,13 @@ linters:
           deny:
             - pkg: golang.org/x/text
               desc: text normalisation belongs to internal/domain
+        socketoptions:
+          files:
+            - $all
+            - "!**/internal/adapters/listener/**"
+          deny:
+            - pkg: golang.org/x/sys
+              desc: socket options belong to internal/adapters/listener
         huma:
           files:
             - $all

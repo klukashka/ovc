@@ -521,6 +521,24 @@ export function firstPageFrameReceived(page: Page, type: ServerFrame['type']): P
   });
 }
 
+interface ConsoleErrorExpectation {
+  readonly expectConsoleError: (text: string) => void;
+}
+
+export function expectLinuxWebKitToRefuseServiceRestart(
+  diagnostics: ConsoleErrorExpectation,
+  browserName: string,
+  origin: string,
+): void {
+  if (browserName !== 'webkit' || process.platform !== 'linux') {
+    return;
+  }
+  const address = new URL(realtimePath, origin.replace(/^https:/, 'wss:')).toString();
+  diagnostics.expectConsoleError(
+    `WebSocket connection to '${address}' failed: Received invalid WebSocket response from the server`,
+  );
+}
+
 export function firstPageSocketClosed(page: Page): Promise<void> {
   return new Promise((resolve) => {
     page.on('websocket', (socket) => {
