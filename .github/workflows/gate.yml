@@ -1,5 +1,5 @@
 name: gate
-run-name: gate ${{ inputs.scope }} ${{ inputs.sha }}
+run-name: gate ${{ inputs.scope }} ${{ inputs.sha }}${{ inputs.scope == 'evidence' && format(' {0}', inputs.series) || '' }}
 
 on:
   workflow_dispatch:
@@ -15,6 +15,58 @@ on:
         options:
           - full
           - docs
+          - change
+          - evidence
+      jobs:
+        description: The change scope's comma-separated CI jobs, with a shard after a colon for a sharded job
+        required: false
+        type: string
+        default: ''
+      kind:
+        description: The evidence scope's kind of selection
+        required: false
+        type: choice
+        default: none
+        options:
+          - none
+          - go
+          - playwright
+          - check
+      package:
+        description: The Go package of a go evidence selection
+        required: false
+        type: string
+        default: ''
+      test:
+        description: The Go test of a go evidence selection
+        required: false
+        type: string
+        default: ''
+      project:
+        description: The Playwright project of a playwright evidence selection
+        required: false
+        type: string
+        default: ''
+      title:
+        description: The Playwright test title of a playwright evidence selection
+        required: false
+        type: string
+        default: ''
+      entry:
+        description: The gate entry of a check evidence selection, as job:index of merge-gate.sh list --job
+        required: false
+        type: string
+        default: ''
+      series:
+        description: The evidence series
+        required: false
+        type: choice
+        default: none
+        options:
+          - none
+          - before-first
+          - before-rest
+          - after
 
 permissions: {}
 
@@ -35,20 +87,80 @@ jobs:
         env:
           CANDIDATE: ${{ inputs.sha }}
           SCOPE: ${{ inputs.scope }}
+          JOBS: ${{ inputs.jobs }}
+          KIND: ${{ inputs.kind }}
+          PACKAGE: ${{ inputs.package }}
+          TEST: ${{ inputs.test }}
+          PROJECT: ${{ inputs.project }}
+          TITLE: ${{ inputs.title }}
+          ENTRY: ${{ inputs.entry }}
+          SERIES: ${{ inputs.series }}
           REF: ${{ github.ref }}
         run: |
-          if [[ "$REF" != refs/heads/main ]]; then
-            echo "the gate runs only from refs/heads/main" >&2
+          refuse() {
+            echo "$1" >&2
             exit 1
-          fi
-          if [[ ! "$CANDIDATE" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "sha must be a full lower-case commit hash of 40 characters" >&2
-            exit 1
-          fi
-          if [[ "$SCOPE" != full && "$SCOPE" != docs ]]; then
-            echo "scope must be full or docs" >&2
-            exit 1
-          fi
+          }
+          require_empty() {
+            local name
+            for name in "$@"; do
+              [[ -z "${!name}" ]] || refuse "the input ${name,,} is not used by the $SCOPE selection and must be empty"
+            done
+          }
+          [[ "$REF" == refs/heads/main ]] || refuse "the gate runs only from refs/heads/main"
+          [[ "$CANDIDATE" =~ ^[0-9a-f]{40}$ ]] || refuse "sha must be a full lower-case commit hash of 40 characters"
+          case "$SCOPE" in
+            full | docs | change)
+              [[ "$KIND" == none && "$SERIES" == none ]] || refuse "kind and series must be none outside the evidence scope"
+              require_empty PACKAGE TEST PROJECT TITLE ENTRY
+              if [[ "$SCOPE" == change ]]; then
+                [[ "${#JOBS}" -le 300 && "$JOBS" =~ ^[a-z][a-z0-9-]*(:[1-9][0-9]?)?(,[a-z][a-z0-9-]*(:[1-9][0-9]?)?)*$ ]] ||
+                  refuse "jobs must be a comma-separated list of CI job names of at most 300 characters, with a shard after a colon for a sharded job"
+              else
+                require_empty JOBS
+              fi
+              ;;
+            evidence)
+              require_empty JOBS
+              case "$SERIES" in
+                before-first | before-rest | after) ;;
+                *) refuse "series must be before-first, before-rest or after in the evidence scope" ;;
+              esac
+              case "$KIND" in
+                go)
+                  require_empty PROJECT TITLE ENTRY
+                  [[ "${#PACKAGE}" -le 200 && "$PACKAGE" =~ ^[A-Za-z0-9_./-]+$ && "$PACKAGE" != -* ]] ||
+                    refuse "package must match ^[A-Za-z0-9_./-]+$, must not start with -, and holds at most 200 characters"
+                  [[ "${#TEST}" -le 200 && "$TEST" =~ ^Test[A-Za-z0-9_/]+$ && "$TEST" != *//* && "$TEST" != */ ]] ||
+                    refuse "test must match ^Test[A-Za-z0-9_/]+$ with no empty subtest name, and holds at most 200 characters"
+                  ;;
+                playwright)
+                  require_empty PACKAGE TEST ENTRY
+                  [[ "$PROJECT" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$ ]] ||
+                    refuse "project must match ^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"
+                  python3 -I -c '
+          import os
+          import sys
+          title = os.environ["TITLE"]
+          title_limit = 200
+          allowed = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ,-:._()/@+?")
+          allowed |= set("›’×–…»«“”")
+          valid = 0 < len(title) <= title_limit and title[0].isascii() and title[0].isalnum()
+          valid = valid and title == title.strip() and set(title) <= allowed
+          sys.exit(0 if valid else 1)
+          ' || refuse "title must start with a letter or digit, use only the allowed characters and hold at most 200 characters"
+                  ;;
+                check)
+                  require_empty PACKAGE TEST PROJECT TITLE
+                  [[ "$ENTRY" =~ ^(backend-checks|frontend-checks|docs-checks):[1-9][0-9]{0,2}$ ]] ||
+                    refuse "entry must be backend-checks, frontend-checks or docs-checks, a colon and the entry's line number in merge-gate.sh list --job"
+                  ;;
+                *) refuse "kind must be go, playwright or check in the evidence scope" ;;
+              esac
+              ;;
+            *) refuse "scope must be full, docs, change or evidence" ;;
+          esac
+          echo "the inputs of the $SCOPE scope are valid"
 
   prepare:
     needs: validate
@@ -62,7 +174,9 @@ jobs:
       main: ${{ steps.commits.outputs.main }}
       scope: ${{ steps.classify.outputs.scope }}
       classification: ${{ steps.classify.outputs.classification }}
-      jobs: ${{ steps.classify.outputs.jobs }}
+      jobs: ${{ steps.matrix.outputs.jobs }}
+      backend-tests-shards: ${{ steps.matrix.outputs.backend-tests-shards }}
+      e2e-shards: ${{ steps.matrix.outputs.e2e-shards }}
       packages-1: ${{ steps.packages.outputs.packages-1 }}
       packages-2: ${{ steps.packages.outputs.packages-2 }}
       packages-3: ${{ steps.packages.outputs.packages-3 }}
@@ -112,7 +226,7 @@ jobs:
             echo "tree=$tree"
             echo "main=$MAIN"
           } >>"$GITHUB_OUTPUT"
-      - name: Classify the candidate and choose the jobs of the scope
+      - name: Classify the candidate
         id: classify
         env:
           SCOPE: ${{ inputs.scope }}
@@ -120,8 +234,7 @@ jobs:
         run: |
           classification="$(harness/tools/merge-gate.sh classify --repo "$GITHUB_WORKSPACE/candidate" --base "$MAIN")"
           case "$SCOPE:$classification" in
-            full:full | full:docs-only) jobs="backend-tests backend-checks frontend-checks e2e" ;;
-            docs:docs-only) jobs="docs-checks" ;;
+            full:full | full:docs-only | docs:docs-only | change:full | change:docs-only | evidence:full | evidence:docs-only) ;;
             docs:full)
               echo "the candidate changes more than the Markdown-only list covers; dispatch the full scope" >&2
               exit 1
@@ -134,17 +247,62 @@ jobs:
           {
             echo "scope=$SCOPE"
             echo "classification=$classification"
+          } >>"$GITHUB_OUTPUT"
+          echo "scope $SCOPE, classification $classification"
+      - name: Choose the jobs and shards of the scope from main's table
+        id: matrix
+        env:
+          SCOPE: ${{ steps.classify.outputs.scope }}
+          JOBS: ${{ inputs.jobs }}
+        run: |
+          refuse() {
+            echo "$1" >&2
+            exit 1
+          }
+          case "$SCOPE" in
+            full | docs) matrix="$(harness/tools/merge-gate.sh ci-matrix --scope "$SCOPE")" ;;
+            change) matrix="$(harness/tools/merge-gate.sh ci-matrix --scope change --jobs "$JOBS")" ;;
+            evidence) matrix='{"backend-tests":[],"e2e":[],"jobs":[]}' ;;
+            *) refuse "unexpected scope $SCOPE" ;;
+          esac
+          jq -e '
+            type == "object"
+            and (keys == ["backend-tests", "e2e", "jobs"])
+            and (.["backend-tests"] | type == "array" and length == (unique | length) and all(.[]; type == "number" and . == floor and . >= 1 and . <= 3))
+            and (.e2e | type == "array" and length == (unique | length) and all(.[]; type == "number" and . == floor and . >= 1 and . <= 12))
+            and (.jobs | type == "array" and length == (unique | length) and all(.[]; . == "backend-checks" or . == "frontend-checks" or . == "docs-checks"))
+          ' <<<"$matrix" >/dev/null || refuse "merge-gate.sh ci-matrix printed no valid selection: $matrix"
+          backend_tests="$(jq -c '.["backend-tests"]' <<<"$matrix")"
+          e2e="$(jq -c '.e2e' <<<"$matrix")"
+          jobs="$(jq -c '.jobs' <<<"$matrix")"
+          case "$SCOPE" in
+            full)
+              [[ "$backend_tests" != '[]' && "$e2e" != '[]' && "$jobs" != *docs-checks* ]] ||
+                refuse "the full scope must select every backend-tests and e2e shard and no docs-checks: $matrix"
+              ;;
+            docs)
+              [[ "$backend_tests" == '[]' && "$e2e" == '[]' && "$jobs" == '["docs-checks"]' ]] ||
+                refuse "the docs scope must select docs-checks only: $matrix"
+              ;;
+            change)
+              [[ "$backend_tests" != '[]' || "$e2e" != '[]' || "$jobs" != '[]' ]] ||
+                refuse "the change scope selected no job: $matrix"
+              ;;
+          esac
+          {
+            echo "backend-tests-shards=$backend_tests"
+            echo "e2e-shards=$e2e"
             echo "jobs=$jobs"
           } >>"$GITHUB_OUTPUT"
-          echo "scope $SCOPE, classification $classification, jobs $jobs"
+          echo "scope $SCOPE: backend-tests shards $backend_tests, e2e shards $e2e, jobs $jobs"
       - name: Set up Go from the candidate's tools/go.mod
-        if: steps.classify.outputs.scope == 'full'
+        if: steps.matrix.outputs.backend-tests-shards != '[]'
         uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
         with:
           go-version-file: candidate/tools/go.mod
           cache: false
       - name: Assign the backend packages to the test shards
-        if: steps.classify.outputs.scope == 'full'
+        if: steps.matrix.outputs.backend-tests-shards != '[]'
         id: packages
         working-directory: candidate/backend
         env:
@@ -180,7 +338,7 @@ jobs:
 
   backend-tests:
     needs: prepare
-    if: needs.prepare.outputs.scope == 'full'
+    if: needs.prepare.outputs.backend-tests-shards != '' && needs.prepare.outputs.backend-tests-shards != '[]'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -188,7 +346,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: ${{ fromJSON(needs.prepare.outputs.backend-tests-shards) }}
     steps:
       - name: Record the runner image
         run: echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
@@ -298,7 +456,7 @@ jobs:
 
   backend-checks:
     needs: prepare
-    if: needs.prepare.outputs.scope == 'full'
+    if: contains(fromJSON(needs.prepare.outputs.jobs), 'backend-checks')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -361,6 +519,12 @@ jobs:
           fi
           npm install --global --ignore-scripts "$RUNNER_TEMP/corepack.tgz"
           corepack enable
+          package_manager="$(jq -r '.packageManager // empty' candidate/frontend/package.json)"
+          if [[ ! "$package_manager" =~ ^pnpm@[0-9]+[.][0-9]+[.][0-9]+[+]sha512[.][0-9a-f]{128}$ ]]; then
+            echo "candidate/frontend/package.json names no packageManager of the form pnpm@<version>+sha512.<hex>" >&2
+            exit 1
+          fi
+          corepack install --global "$package_manager"
           pnpm --dir candidate/frontend --version
       - name: Build the pinned tools into bin/
         working-directory: candidate
@@ -398,7 +562,7 @@ jobs:
 
   frontend-checks:
     needs: prepare
-    if: needs.prepare.outputs.scope == 'full'
+    if: contains(fromJSON(needs.prepare.outputs.jobs), 'frontend-checks')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -460,6 +624,12 @@ jobs:
           fi
           npm install --global --ignore-scripts "$RUNNER_TEMP/corepack.tgz"
           corepack enable
+          package_manager="$(jq -r '.packageManager // empty' candidate/frontend/package.json)"
+          if [[ ! "$package_manager" =~ ^pnpm@[0-9]+[.][0-9]+[.][0-9]+[+]sha512[.][0-9a-f]{128}$ ]]; then
+            echo "candidate/frontend/package.json names no packageManager of the form pnpm@<version>+sha512.<hex>" >&2
+            exit 1
+          fi
+          corepack install --global "$package_manager"
           pnpm --dir candidate/frontend --version
       - name: Install the pinned lychee
         run: |
@@ -521,7 +691,7 @@ jobs:
 
   e2e:
     needs: prepare
-    if: needs.prepare.outputs.scope == 'full'
+    if: needs.prepare.outputs.e2e-shards != '' && needs.prepare.outputs.e2e-shards != '[]'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -531,7 +701,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        shard: ${{ fromJSON(needs.prepare.outputs.e2e-shards) }}
     steps:
       - name: Record the runner image
         run: echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
@@ -587,6 +757,12 @@ jobs:
           fi
           npm install --global --ignore-scripts "$RUNNER_TEMP/corepack.tgz"
           corepack enable
+          package_manager="$(jq -r '.packageManager // empty' candidate/frontend/package.json)"
+          if [[ ! "$package_manager" =~ ^pnpm@[0-9]+[.][0-9]+[.][0-9]+[+]sha512[.][0-9a-f]{128}$ ]]; then
+            echo "candidate/frontend/package.json names no packageManager of the form pnpm@<version>+sha512.<hex>" >&2
+            exit 1
+          fi
+          corepack install --global "$package_manager"
           pnpm --dir candidate/frontend --version
       - name: Install the frontend dependencies and the Playwright browsers
         run: |
@@ -654,7 +830,7 @@ jobs:
 
   docs-checks:
     needs: prepare
-    if: needs.prepare.outputs.scope == 'docs'
+    if: contains(fromJSON(needs.prepare.outputs.jobs), 'docs-checks')
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -717,6 +893,12 @@ jobs:
           fi
           npm install --global --ignore-scripts "$RUNNER_TEMP/corepack.tgz"
           corepack enable
+          package_manager="$(jq -r '.packageManager // empty' candidate/frontend/package.json)"
+          if [[ ! "$package_manager" =~ ^pnpm@[0-9]+[.][0-9]+[.][0-9]+[+]sha512[.][0-9a-f]{128}$ ]]; then
+            echo "candidate/frontend/package.json names no packageManager of the form pnpm@<version>+sha512.<hex>" >&2
+            exit 1
+          fi
+          corepack install --global "$package_manager"
           pnpm --dir candidate/tools/docs --version
       - name: Install the pinned lychee
         run: |
@@ -778,18 +960,294 @@ jobs:
             exit 1
           fi
 
+  evidence:
+    needs: prepare
+    if: needs.prepare.outputs.scope == 'evidence'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 240
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+    steps:
+      - name: Record the runner image
+        run: echo "ImageOS=$ImageOS ImageVersion=$ImageVersion"
+      - name: Refuse a ref other than main
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          if [[ "$REF" != refs/heads/main ]]; then
+            echo "the gate runs only from refs/heads/main" >&2
+            exit 1
+          fi
+      - name: Check out the harness from main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          path: harness
+          persist-credentials: false
+      - name: Check out the candidate with its history
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.prepare.outputs.candidate }}
+          path: candidate
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Confirm the candidate commit
+        env:
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+        run: |
+          if [[ "$(git -C candidate rev-parse --verify 'HEAD^{commit}')" != "$CANDIDATE" ]]; then
+            echo "the candidate checkout is not at $CANDIDATE" >&2
+            exit 1
+          fi
+      - name: Set up Go from the candidate's tools/go.mod
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5
+        with:
+          go-version-file: candidate/tools/go.mod
+          cache: false
+      - name: Set up Node from the candidate's frontend/.node-version
+        if: inputs.kind != 'go'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version-file: candidate/frontend/.node-version
+          package-manager-cache: false
+      - name: Install pnpm through the pinned corepack
+        if: inputs.kind != 'go'
+        run: |
+          read -r algorithm digest url < <(awk '$1 == "corepack" { print $2, $3, $4 }' harness/tools/ci-tools.sha256)
+          if [[ "$algorithm" != sha512 || "$url" != https://* ]]; then
+            echo "tools/ci-tools.sha256 holds no usable corepack line" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$RUNNER_TEMP/corepack.tgz" "$url"
+          if [[ "$(sha512sum "$RUNNER_TEMP/corepack.tgz" | awk '{ print $1 }')" != "$digest" ]]; then
+            echo "the corepack tarball does not match tools/ci-tools.sha256" >&2
+            exit 1
+          fi
+          npm install --global --ignore-scripts "$RUNNER_TEMP/corepack.tgz"
+          corepack enable
+          package_manager="$(jq -r '.packageManager // empty' candidate/frontend/package.json)"
+          if [[ ! "$package_manager" =~ ^pnpm@[0-9]+[.][0-9]+[.][0-9]+[+]sha512[.][0-9a-f]{128}$ ]]; then
+            echo "candidate/frontend/package.json names no packageManager of the form pnpm@<version>+sha512.<hex>" >&2
+            exit 1
+          fi
+          corepack install --global "$package_manager"
+          pnpm --dir candidate/frontend --version
+      - name: Install the pinned lychee
+        if: inputs.kind == 'check'
+        run: |
+          read -r algorithm digest url < <(awk '$1 == "lychee" { print $2, $3, $4 }' harness/tools/ci-tools.sha256)
+          if [[ "$algorithm" != sha256 || "$url" != https://* ]]; then
+            echo "tools/ci-tools.sha256 holds no usable lychee line" >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --output "$RUNNER_TEMP/lychee.tar.gz" "$url"
+          if [[ "$(sha256sum "$RUNNER_TEMP/lychee.tar.gz" | awk '{ print $1 }')" != "$digest" ]]; then
+            echo "the lychee archive does not match tools/ci-tools.sha256" >&2
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/lychee" "$RUNNER_TEMP/ci-bin"
+          tar -xzf "$RUNNER_TEMP/lychee.tar.gz" -C "$RUNNER_TEMP/lychee"
+          mapfile -t binaries < <(find "$RUNNER_TEMP/lychee" -type f -name lychee)
+          if [[ "${#binaries[@]}" -ne 1 ]]; then
+            echo "the lychee archive holds ${#binaries[@]} lychee binaries instead of one" >&2
+            exit 1
+          fi
+          install -m 0755 "${binaries[0]}" "$RUNNER_TEMP/ci-bin/lychee"
+          "$RUNNER_TEMP/ci-bin/lychee" --version
+          echo "$RUNNER_TEMP/ci-bin" >>"$GITHUB_PATH"
+      - name: Install the Chromium of the documentation tools
+        if: inputs.kind == 'check'
+        run: |
+          pnpm --dir candidate/tools/docs install --frozen-lockfile
+          pnpm --dir candidate/tools/docs exec playwright-core install --with-deps chromium
+      - name: Install the frontend dependencies and the Playwright browsers
+        if: inputs.kind == 'playwright'
+        run: |
+          pnpm --dir candidate/frontend install --frozen-lockfile
+          pnpm --dir candidate/frontend exec playwright install --with-deps
+      - name: Build the pinned tools into bin/
+        working-directory: candidate
+        run: |
+          toolchain="$(awk '$1 == "toolchain" { print $2 }' tools/go.mod)"
+          GOTOOLCHAIN="$toolchain" go -C tools build -o ../bin/ github.com/golangci/golangci-lint/v2/cmd/golangci-lint golang.org/x/vuln/cmd/govulncheck github.com/zricethezav/gitleaks/v8 github.com/google/osv-scanner/v2/cmd/osv-scanner github.com/sqlc-dev/sqlc/cmd/sqlc
+      - name: Generate the throwaway settings
+        if: inputs.kind != 'check'
+        run: harness/tools/ci-settings.sh "$GITHUB_WORKSPACE/candidate"
+      - name: Start the Compose services
+        if: inputs.kind != 'check'
+        working-directory: candidate
+        run: docker compose up --wait
+      - name: Run the evidence series one run after another
+        env:
+          KIND: ${{ inputs.kind }}
+          PACKAGE: ${{ inputs.package }}
+          TEST: ${{ inputs.test }}
+          PROJECT: ${{ inputs.project }}
+          TITLE: ${{ inputs.title }}
+          ENTRY: ${{ inputs.entry }}
+          SERIES: ${{ inputs.series }}
+          CANDIDATE: ${{ needs.prepare.outputs.candidate }}
+          MAIN: ${{ needs.prepare.outputs.main }}
+        run: |
+          refuse() {
+            echo "evidence: $1" >&2
+            exit 1
+          }
+          gate_entry() {
+            local job="$1" lines
+            lines="$(harness/tools/merge-gate.sh list --job "$job" | awk -F '|' -v job="$job" '$1 == job')"
+            [[ -n "$lines" && "$lines" != *$'\n'* ]] || refuse "main's gate list maps no single entry to $job"
+            entry_directory="$(cut -d '|' -f 3 <<<"$lines")"
+            entry_command="$(cut -d '|' -f 4- <<<"$lines")"
+            [[ "$entry_directory" =~ ^(\.|backend|frontend)$ ]] || refuse "the $job entry runs in the unexpected folder $entry_directory"
+          }
+          redact() {
+            local file="$1" content name
+            local generated=()
+            read -r -a generated <<<"${CI_GENERATED_SETTING_NAMES:-}"
+            content="$(<"$file")"
+            for name in ${generated[@]+"${generated[@]}"}; do
+              [[ "$name" =~ ^OVC_[A-Z0-9_]+$ ]] || refuse "CI_GENERATED_SETTING_NAMES holds the unusable name $name"
+              if [[ -n "${!name:-}" ]]; then
+                content="${content//"${!name}"/[redacted]}"
+              fi
+            done
+            printf '%s\n' "$content" >"$file"
+          }
+          case "$SERIES" in
+            before-first) runs=1 ;;
+            before-rest) runs=9 ;;
+            after) runs=10 ;;
+            *) refuse "series must be before-first, before-rest or after" ;;
+          esac
+          arguments=()
+          case "$KIND" in
+            go)
+              gate_entry backend-tests
+              [[ "$entry_command" == *" go test "* && "$entry_command" == *" -count=1 "* && "$entry_command" == *" ./..." ]] ||
+                refuse "the backend-tests entry of main's gate is not a go test with -count=1 over ./..."
+              entry_command="${entry_command% ./...}"
+              (cd "candidate/$entry_directory" && env -u GOTOOLCHAIN go list ./...) >"$RUNNER_TEMP/packages"
+              grep -qxF -- "$PACKAGE" "$RUNNER_TEMP/packages" || refuse "the package $PACKAGE is not listed by go list ./... in the candidate"
+              IFS='/' read -r -a test_levels <<<"$TEST"
+              run_pattern=""
+              for level in "${test_levels[@]}"; do
+                run_pattern="$run_pattern${run_pattern:+/}^$level\$"
+              done
+              arguments=(-v -run "$run_pattern" "$PACKAGE")
+              record_pattern='^[[:space:]]*--- (PASS|FAIL|SKIP): |^(ok|FAIL)[[:space:]]|^testing: warning: no tests to run'
+              test_pattern="^[[:space:]]*--- (PASS|FAIL): $TEST \\("
+              ;;
+            playwright)
+              gate_entry e2e
+              [[ "$entry_command" == *" pnpm e2e "* && "$entry_command" == *" --trace=off"* ]] ||
+                refuse "the e2e entry of main's gate is not pnpm e2e with --trace=off"
+              (cd "candidate/$entry_directory" && pnpm exec playwright test --list --reporter=json) >"$RUNNER_TEMP/playwright-list.json"
+              python3 -I -c '
+          import json
+          import sys
+          report = json.load(sys.stdin)
+          for project in report["config"]["projects"]:
+              print(project["name"])
+          ' <"$RUNNER_TEMP/playwright-list.json" >"$RUNNER_TEMP/projects" || refuse "the Playwright list of the candidate names no projects"
+              grep -qxF -- "$PROJECT" "$RUNNER_TEMP/projects" || refuse "the project $PROJECT is not a Playwright project of the candidate"
+              title_pattern="$(python3 -I -c '
+          import os
+          import re
+          print(re.sub(r"([\\^$.*+?()\[\]{}|/])", r"\\\1", os.environ["TITLE"]))
+          ')"
+              project_pattern="${PROJECT//./[.]}"
+              arguments=(--workers=1 --retries=0 --project "$PROJECT" -g "(^| )$title_pattern( @[^ ]+)*\$" --reporter=list)
+              record_pattern="^[[:space:]]*[0-9]+ (passed|failed|flaky|skipped|interrupted|did not run)|No tests found|\\[$project_pattern\\] › "
+              test_pattern="\\[$project_pattern\\] › "
+              ;;
+            check)
+              entry_job="${ENTRY%%:*}"
+              entry_index="${ENTRY#*:}"
+              harness/tools/merge-gate.sh list --job "$entry_job" >"$RUNNER_TEMP/entries"
+              entry_count="$(wc -l <"$RUNNER_TEMP/entries" | tr -d ' ')"
+              [[ "$entry_index" -le "$entry_count" ]] || refuse "the $entry_job job of main's gate holds $entry_count entries, not $entry_index"
+              entry_line="$(sed -n "${entry_index}p" "$RUNNER_TEMP/entries")"
+              echo "entry $ENTRY: $entry_line"
+              arguments=(run-job "$entry_job" --entry "$entry_index" --repo "$GITHUB_WORKSPACE/candidate")
+              if [[ "$(cut -d '|' -f 2 <<<"$entry_line")" == history-range ]]; then
+                arguments+=(--base "$MAIN")
+              fi
+              record_pattern=''
+              test_pattern=''
+              ;;
+            *) refuse "kind must be go, playwright or check" ;;
+          esac
+          title_sha256=""
+          if [[ -n "$TITLE" ]]; then
+            title_sha256="$(printf '%s' "$TITLE" | sha256sum | cut -d ' ' -f 1)"
+          fi
+          echo "evidence selection: kind:$KIND|package:$PACKAGE|test:$TEST|project:$PROJECT|title-sha256:$title_sha256|entry:$ENTRY"
+          echo "evidence series $SERIES of candidate $CANDIDATE: $runs runs of the $KIND selection"
+          passed=0
+          failed=0
+          no_test=0
+          run=1
+          while [[ "$run" -le "$runs" ]]; do
+            output="$RUNNER_TEMP/evidence-run-$run.log"
+            status=0
+            case "$KIND" in
+              go | playwright)
+                (cd "candidate/$entry_directory" && exec env -u GOTOOLCHAIN bash -c "$entry_command \"\$@\"" evidence "${arguments[@]}") </dev/null >"$output" 2>&1 || status=$?
+                ;;
+              check)
+                env -u GOTOOLCHAIN harness/tools/merge-gate.sh "${arguments[@]}" </dev/null >"$output" 2>&1 || status=$?
+                ;;
+            esac
+            redact "$output"
+            token="$(openssl rand -hex 16)"
+            echo "evidence run $run/$runs nonce: $token"
+            echo "::group::evidence run $run/$runs output"
+            echo "::stop-commands::$token"
+            cat "$output"
+            echo "::$token::"
+            echo "::endgroup::"
+            echo "::stop-commands::$token"
+            echo "evidence run $run/$runs recorded lines:"
+            if [[ -n "$record_pattern" ]]; then
+              grep -E -- "$record_pattern" "$output" || true
+            else
+              tail -n 20 "$output"
+            fi
+            echo "::$token::"
+            if [[ -n "$test_pattern" ]] && ! grep -qE -- "$test_pattern" "$output"; then
+              no_test=$((no_test + 1))
+              echo "evidence result: run=$run/$runs outcome=no-test nonce=$token"
+            elif [[ "$status" -eq 0 ]]; then
+              passed=$((passed + 1))
+              echo "evidence result: run=$run/$runs outcome=passed nonce=$token"
+            else
+              failed=$((failed + 1))
+              echo "evidence result: run=$run/$runs outcome=failed nonce=$token"
+            fi
+            run=$((run + 1))
+          done
+          echo "evidence series $SERIES: $runs runs, $passed passed, $failed failed, $no_test ran no test"
+          if [[ "$failed" -ne 0 || "$no_test" -ne 0 ]]; then
+            exit 1
+          fi
+
   gate:
-    needs: [validate, prepare, backend-tests, backend-checks, frontend-checks, e2e, docs-checks]
+    needs: [validate, prepare, backend-tests, backend-checks, frontend-checks, e2e, docs-checks, evidence]
     if: always()
     runs-on: ubuntu-24.04
     permissions:
       statuses: write
     timeout-minutes: 5
     steps:
-      - name: Require every job of the scope to succeed and post the commit status
+      - name: Require every job of the selection to succeed and post the commit status of a gate scope
         env:
           NEEDS: ${{ toJSON(needs) }}
           JOBS: ${{ needs.prepare.outputs.jobs }}
+          BACKEND_TESTS_SHARDS: ${{ needs.prepare.outputs.backend-tests-shards }}
+          E2E_SHARDS: ${{ needs.prepare.outputs.e2e-shards }}
           SCOPE: ${{ needs.prepare.outputs.scope }}
           CLASSIFICATION: ${{ needs.prepare.outputs.classification }}
           CANDIDATE: ${{ needs.prepare.outputs.candidate }}
@@ -804,10 +1262,33 @@ jobs:
         run: |
           verdict=success
           problems=()
-          required=" validate prepare $JOBS "
-          if [[ -z "$JOBS" ]]; then
+          required=" validate prepare "
+          case "$SCOPE" in
+            evidence) required="$required""evidence " ;;
+            full | docs | change)
+              if selected="$(jq -r 'if type == "array" then .[] else error("not an array") end' <<<"${JOBS:-null}" 2>/dev/null)"; then
+                for job in $selected; do
+                  required="$required$job "
+                done
+              else
+                verdict=failure
+                problems+=("prepare produced no job list")
+              fi
+              if [[ "$BACKEND_TESTS_SHARDS" != '[]' ]]; then
+                required="$required""backend-tests "
+              fi
+              if [[ "$E2E_SHARDS" != '[]' ]]; then
+                required="$required""e2e "
+              fi
+              ;;
+            *)
+              verdict=failure
+              problems+=("prepare named no scope")
+              ;;
+          esac
+          if [[ "$required" == " validate prepare " ]]; then
             verdict=failure
-            problems+=("prepare named no jobs for the scope")
+            problems+=("prepare selected no job")
           fi
           while read -r job result; do
             if [[ "$required" == *" $job "* ]]; then
@@ -817,10 +1298,10 @@ jobs:
               fi
             elif [[ "$result" != skipped ]]; then
               verdict=failure
-              problems+=("$job ran outside the scope: $result")
+              problems+=("$job ran outside the selection: $result")
             fi
           done < <(jq -r 'to_entries[] | "\(.key) \(.value.result)"' <<<"$NEEDS")
-          for job in validate prepare $JOBS; do
+          for job in $required; do
             if ! jq -e --arg job "$job" 'has($job)' <<<"$NEEDS" >/dev/null; then
               verdict=failure
               problems+=("$job is not a dependency of the gate job")
@@ -833,7 +1314,9 @@ jobs:
             echo "- tree T: ${TREE:-unknown}"
             echo "- main M: ${MAIN:-unknown}"
             echo "- classification: ${CLASSIFICATION:-unknown}"
-            echo "- jobs: ${JOBS:-none}"
+            echo "- required jobs:${required}"
+            echo "- backend-tests shards: ${BACKEND_TESTS_SHARDS:-none}"
+            echo "- e2e shards: ${E2E_SHARDS:-none}"
             echo "- backend-tests shard 1: ${PACKAGES_1:-none}"
             echo "- backend-tests shard 2: ${PACKAGES_2:-none}"
             echo "- backend-tests shard 3: ${PACKAGES_3:-none}"
@@ -845,7 +1328,7 @@ jobs:
             echo "gate: $problem" >&2
           done
           if [[ "$CANDIDATE" =~ ^[0-9a-f]{40}$ && ( "$SCOPE" == full || "$SCOPE" == docs ) ]]; then
-            gh api --method POST "repos/$REPOSITORY/statuses/$CANDIDATE" -f state="$verdict" -f context="ovc-gate/$SCOPE" -f target_url="$RUN_URL" -f description="Shadow gate run, display only" >/dev/null
+            gh api --method POST "repos/$REPOSITORY/statuses/$CANDIDATE" -f state="$verdict" -f context=ovc-gate -f target_url="$RUN_URL" -f description="gate $SCOPE" >/dev/null
           fi
           if [[ "$verdict" != success ]]; then
             exit 1

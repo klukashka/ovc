@@ -37,16 +37,34 @@ read_repository() {
   printf '%s\n' "$repository"
 }
 
+optional_answers=" collaborators keys hooks secrets variables environments "
+
 fetch() {
   local repository="$1" folder="$2" name="$3" path="$4"
   local endpoint="repos/$repository"
   if [[ -n "$path" ]]; then
     endpoint="$endpoint/$path"
   fi
-  if ! gh api --hostname github.com --method GET "$endpoint" >"$folder/$name.json"; then
-    echo "could not read $endpoint" >&2
-    exit 1
+  if gh api --hostname github.com --method GET "$endpoint" >"$folder/$name.json" 2>"$folder/$name.error"; then
+    rm -f "$folder/$name.error"
+    return 0
   fi
+  if [[ "$optional_answers" == *" $name "* ]] && grep -q 'HTTP 403' "$folder/$name.error"; then
+    rm -f "$folder/$name.json" "$folder/$name.error"
+    : >"$folder/$name.unverified"
+    return 0
+  fi
+  echo "could not read $endpoint" >&2
+  exit 1
+}
+
+neutral_answer() {
+  case "$1" in
+    collaborators | keys | hooks) printf '[]' ;;
+    secrets) jq '{total_count: .stored_settings.secrets}' "$settings" ;;
+    variables) jq '{total_count: .stored_settings.variables}' "$settings" ;;
+    environments) jq '{total_count: .stored_settings.environments}' "$settings" ;;
+  esac
 }
 
 fetch_all() {
@@ -78,8 +96,13 @@ fetch_all() {
 required_answers=(repo actions-permissions selected-actions workflow-permissions fork-approval retention vulnerability-reporting labels collaborators keys hooks secrets variables environments rulesets)
 
 compare() {
-  local folder="$1" name details
+  local folder="$1" name details unverified=""
   for name in "${required_answers[@]}"; do
+    if [[ ! -f "$folder/$name.json" && -f "$folder/$name.unverified" && "$optional_answers" == *" $name "* ]]; then
+      neutral_answer "$name" >"$work/neutral-$name.json"
+      unverified="$unverified $name"
+      continue
+    fi
     if [[ ! -f "$folder/$name.json" ]]; then
       echo "mismatch: answers: $name.json is missing from $folder"
       return 1
@@ -105,12 +128,12 @@ compare() {
     --slurpfile retention "$folder/retention.json" \
     --slurpfile reporting "$folder/vulnerability-reporting.json" \
     --slurpfile labels "$folder/labels.json" \
-    --slurpfile collaborators "$folder/collaborators.json" \
-    --slurpfile keys "$folder/keys.json" \
-    --slurpfile hooks "$folder/hooks.json" \
-    --slurpfile secrets "$folder/secrets.json" \
-    --slurpfile variables "$folder/variables.json" \
-    --slurpfile environments "$folder/environments.json" \
+    --slurpfile collaborators "$(answer_file "$folder" collaborators)" \
+    --slurpfile keys "$(answer_file "$folder" keys)" \
+    --slurpfile hooks "$(answer_file "$folder" hooks)" \
+    --slurpfile secrets "$(answer_file "$folder" secrets)" \
+    --slurpfile variables "$(answer_file "$folder" variables)" \
+    --slurpfile environments "$(answer_file "$folder" environments)" \
     --slurpfile rulesets "$details" '
     def fields($group; $want; $have):
       $want | to_entries[] | select($have[.key] != .value)
@@ -159,9 +182,24 @@ compare() {
     while IFS= read -r name; do
       printf 'mismatch: %s\n' "$name"
     done <<<"$problems"
+    if [[ -n "$unverified" ]]; then
+      printf 'unverified (no read permission):%s\n' "$unverified"
+    fi
     return 1
   fi
+  if [[ -n "$unverified" ]]; then
+    printf 'settings match where readable; unverified (no read permission):%s\n' "$unverified"
+    return 0
+  fi
   echo "settings match tools/github-settings.json"
+}
+
+answer_file() {
+  if [[ -f "$1/$2.json" ]]; then
+    printf '%s' "$1/$2.json"
+  else
+    printf '%s' "$work/neutral-$2.json"
+  fi
 }
 
 compare_folder=""
@@ -181,7 +219,7 @@ done
 if [[ -n "$compare_folder" ]]; then
   read_repository >/dev/null
   compare "$compare_folder"
-  exit 0
+  exit $?
 fi
 
 refuse_github_environment

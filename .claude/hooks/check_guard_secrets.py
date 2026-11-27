@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import hashlib
+import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -167,17 +170,13 @@ allowed = [
     'git commit -m "Fix checks\n\nenv and printenv are refused"',
     "git commit -q -F - <<'EOF'\nSubject\n\nexport and env are refused\nEOF",
     "cat > notes.txt <<EOF\nenv\nEOF",
-    "pnpm --dir frontend test",
     "ps aux",
     "ps -ef",
-    "go test ./...",
     "ps -p 1234 -o etime=",
     "ps -o pid,user,state",
     "ps -eo pid,comm",
     "git commit -am \"Refuse cat /proc/1/environ\"",
     "python3 - <<'EOF'\nprint('environment notes')\nEOF",
-    "timeout 60 go test ./...",
-    "env -C backend go test ./...",
     "docker compose config --quiet",
     "docker compose exec -T postgres pg_isready",
     "git commit -m 'Refuse `env` and `printenv` in the guard'",
@@ -188,35 +187,104 @@ allowed = [
     "docker volume inspect ovc_pgdata",
     "docker network inspect ovc_default",
     "command -v env",
-    "tools/dev-env.sh go -C backend test ./...",
     "tools/dev-env.sh pnpm --dir frontend dev",
-    "tools/dev-env.sh go -C backend test -v ./internal/core/",
-    "bash tools/dev-env.sh go -C backend test ./...",
-    "tools/dev-env.sh bash tools/check-dev-env.sh",
     "tools/dev-env.sh bash -o pipefail scripts/run.sh",
     "tools/dev-env.sh bash -c 'set -e; go version'",
     "bash -n tools/dev-env.sh",
     "tools/dev-env.sh bash -c 'echo use set -x to debug'",
     "tools/dev-env.sh bash -c 'set -euo pipefail; go version'",
     "pnpm exec prettier --write src",
+    "pnpm exec prettier --write src e2e playwright.config.ts",
+]
+local_checks = [
+    "pnpm --dir frontend test",
+    "go test ./...",
+    "timeout 60 go test ./...",
+    "env -C backend go test ./...",
+    "tools/dev-env.sh go -C backend test ./...",
+    "tools/dev-env.sh go -C backend test -v ./internal/core/",
+    "bash tools/dev-env.sh go -C backend test ./...",
+    "tools/dev-env.sh bash tools/check-dev-env.sh",
     "pnpm -s exec vitest run src/lib/api",
     "tools/dev-env.sh pnpm exec playwright test e2e/smoke.spec.ts",
     "npx playwright test",
+    "npx vitest run",
+    "pnpm dlx prettier@3 --check .",
+    "pnpm --dir frontend exec playwright test --project chromium",
     "pnpm --dir frontend exec tsc -b",
     "pnpm -s audit --audit-level high",
     "pnpm --filter frontend test",
     "tools/dev-env.sh pnpm e2e",
     "npm exec -- prettier --check .",
-    "pnpm exec prettier --write src e2e playwright.config.ts",
+    "go vet ./...",
+    "go -C backend vet ./...",
+    "cd backend && go test -race -count=1 ./internal/api",
+    "bash -c 'go test ./...'",
+    "../bin/golangci-lint run ./...",
+    "../bin/govulncheck ./...",
+    "pnpm lint",
+    "pnpm typecheck",
+    "pnpm --dir frontend e2e --max-failures=10",
+    "pnpm -C frontend check:classes",
+    "pnpm run format:check",
+    "pnpm --dir frontend api:check",
+    "pnpm exec prettier --check .",
+    "pnpm exec eslint .",
+    "playwright test --project chromium",
+    "unformatted=x gofmt -l .",
+    "../bin/sqlc -f sqlc.yaml diff",
+    "tools/docs/check-docs.sh",
+    "bash tools/check-merge-gate.sh",
+    "tools/check-workflows.sh",
+    "tools/ci-settings-test.sh",
+    "python3 .claude/hooks/check_guard_secrets.py",
+    ".claude/hooks/check_guard_secrets.py",
+    "bin/gitleaks git --redact --no-banner --config .gitleaks.toml .",
+    "bin/osv-scanner scan source --lockfile=frontend/pnpm-lock.yaml",
+    "tools/merge-gate.sh gate --ff-only --change feat/x",
+    "bash /private/tmp/scratch/merge-gate.sh gate --squash --change feat/x",
+    "./merge-gate.sh --repo . gate --ff-only",
+    "tools/merge-gate.sh run-job e2e --shard 1/12 --repo .",
+    "echo \"$(go test ./...)\"",
 ]
+file_writers = [
+    "gofmt -w internal",
+    "gofmt -l -w .",
+    "pnpm exec prettier --write src",
+    "pnpm --dir frontend format",
+    "../bin/sqlc generate",
+    "../bin/sqlc -f sqlc.yaml generate",
+    "pnpm api:generate",
+    "pnpm --dir frontend api:generate",
+    "go -C backend get golang.org/x/text@v0.20.0",
+    "go mod tidy",
+    "go -C backend mod tidy",
+    "pnpm install",
+    "pnpm --dir frontend install --frozen-lockfile",
+    "pnpm add -D vitest",
+    "docker compose up -d",
+    "tools/dev-env.sh pnpm --dir frontend dev",
+    "pnpm build",
+    "pnpm --dir frontend preview",
+    "tools/merge-gate.sh finish",
+    "tools/merge-gate.sh list --scope full",
+    "tools/merge-gate.sh claim --ff-only --change feat/x --change-id feat/x",
+    "python3 -m py_compile .claude/hooks/check_guard_secrets.py",
+    "cat tools/check-workflows.sh",
+    "grep -n 'go test' AGENTS.md",
+    "git commit -m 'Ask before go test and pnpm lint'",
+    "echo pnpm test",
+]
+lock_scratch = tempfile.TemporaryDirectory()
+empty_lock_dir = lock_scratch.name
 failed = 0
 for command, expected in [(command, 2) for command in refused] + [(command, 0) for command in allowed]:
     payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}})
-    code = subprocess.run([sys.executable, hook], input=payload, text=True, capture_output=True).returncode
+    code = subprocess.run([sys.executable, hook, "--lock-dir", empty_lock_dir], input=payload, text=True, capture_output=True).returncode
     if code != expected:
         failed += 1
         print("FAIL", code, repr(command))
-malformed = subprocess.run([sys.executable, hook], input=json.dumps({"tool_name": "Bash", "tool_input": {"command": 5}}), text=True, capture_output=True).returncode
+malformed = subprocess.run([sys.executable, hook, "--lock-dir", empty_lock_dir], input=json.dumps({"tool_name": "Bash", "tool_input": {"command": 5}}), text=True, capture_output=True).returncode
 if malformed != 2:
     failed += 1
     print("FAIL non-string command allowed")
@@ -263,9 +331,9 @@ def branch_from_main(root: str, branch: str, changes: list[tuple[str, str]]) -> 
     git(root, "switch", "-q", "main")
 
 
-def decision(command: str, cwd: str) -> tuple[str, str]:
+def decision(command: str, cwd: str, lock_dir: str = empty_lock_dir) -> tuple[str, str]:
     payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": command}, "cwd": cwd})
-    result = subprocess.run([sys.executable, hook], input=payload, text=True, capture_output=True)
+    result = subprocess.run([sys.executable, hook, "--lock-dir", lock_dir], input=payload, text=True, capture_output=True)
     if result.returncode == 2:
         return "deny", result.stderr
     if result.returncode != 0:
@@ -278,8 +346,57 @@ def decision(command: str, cwd: str) -> tuple[str, str]:
 
 def file_decision(tool: str, key: str, path: str) -> str:
     payload = json.dumps({"tool_name": tool, "tool_input": {key: path}})
-    result = subprocess.run([sys.executable, hook], input=payload, text=True, capture_output=True)
+    result = subprocess.run([sys.executable, hook, "--lock-dir", empty_lock_dir], input=payload, text=True, capture_output=True)
     return "deny" if result.returncode == 2 else "allow"
+
+
+lock_folders = os.path.join(empty_lock_dir, "folders")
+
+
+def lock_folder(lock: dict[str, str] | None, log: list[str] | None = None) -> str:
+    folder = os.path.join(lock_folders, str(len(os.listdir(lock_folders)) if os.path.isdir(lock_folders) else 0))
+    os.makedirs(folder, mode=0o700)
+    if lock is not None:
+        with open(os.path.join(folder, "merge-gate.lock"), "w", encoding="utf-8") as handle:
+            handle.write("".join(f"{key}={value}\n" for key, value in lock.items()))
+    if log is not None:
+        with open(os.path.join(folder, "merge-gate.log"), "w", encoding="utf-8") as handle:
+            handle.write("".join(f"{line}\n" for line in log))
+    return folder
+
+
+def claim_lock(root: str, state: str, **fields: str) -> dict[str, str]:
+    common_dir = git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    lock = {"pid": "4242", "started_at": "2026-11-27T00:00:00Z", "checkout": root, "common_dir": common_dir, "state": state}
+    lock.update(fields)
+    return lock
+
+
+def dispatched_lock(root: str, head: str, change_id: str, **fields: str) -> str:
+    tree = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{head}^{{tree}}"], cwd=root, env=git_environment, capture_output=True, text=True).stdout.strip()
+    base = git(root, "rev-parse", "refs/heads/main")
+    lock = claim_lock(root, "dispatched", kind="gate", change_id=change_id, head=head, tree=tree, base=base)
+    lock.update(fields)
+    return lock_folder(lock)
+
+
+def finish_line(head: str, tree: str, record: str, result: str = "passed", extra: str = "") -> str:
+    return f"finish: record={record} head={head} tree={tree} result={result}{extra}"
+
+
+def commit_with(root: str, name: str, content: str, message: str, email: str = "synthetic@example.invalid") -> None:
+    path = os.path.join(root, name)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(content)
+    git(root, "add", name)
+    git(root, "-c", f"user.email={email}", "commit", "-q", "-m", message)
+
+
+def branch_with_commit(root: str, branch: str, message: str, email: str = "synthetic@example.invalid") -> None:
+    git(root, "switch", "-q", "-c", branch, "main")
+    commit_with(root, f"notes/{branch.replace('/', '-')}.txt", f"{branch}\n", message, email)
+    git(root, "switch", "-q", "main")
 
 
 github_cases = 1
@@ -301,6 +418,27 @@ with tempfile.TemporaryDirectory() as scratch:
     branch_from_main(ready, "feat/two-commits", [("notes/one.txt", "one\n"), ("notes/two.txt", "two\n")])
     branch_from_main(ready, "feat/workflow-change", [(".github/workflows/gate.yml", "name: changed\n")])
     branch_from_main(ready, "wip/other-name", [("notes/wip.txt", "wip\n")])
+    branch_from_main(ready, "feat/gate-change", [("notes/gate.txt", "gate change\n")])
+    branch_from_main(ready, "feat/gate-change-r2", [("notes/gate.txt", "gate change rebuilt\n")])
+    branch_from_main(ready, "fix/flaky-before", [("notes/flaky.txt", "flaky\n")])
+    branch_from_main(ready, "fix/flaky-after", [("notes/flaky.txt", "flaky fixed\n")])
+    branch_from_main(ready, "fix/flaky-r1-after", [("notes/flaky.txt", "flaky fixed again\n")])
+    branch_from_main(ready, "fix/flaky-rx-after", [("notes/flaky.txt", "flaky fixed a third way\n")])
+    branch_with_commit(ready, "feat/personal-message", "Add a note\n\n- reach the tutor at someone@neutral-mail.ru")
+    branch_with_commit(ready, "feat/personal-author", "Add a note by a real address", "someone@neutral-mail.ru")
+    branch_with_commit(ready, "feat/noreply-author", "Add a note by a noreply address", "1+someone@users.noreply.github.com")
+    branch_from_main(ready, "feat/personal-email", [("notes/contact.txt", "write to someone@neutral-mail.ru\n")])
+    branch_from_main(ready, "feat/personal-phone", [("notes/contact.txt", "call +7 (912) 345-67-89\n")])
+    branch_from_main(ready, "feat/personal-plain-phone", [("notes/contact.txt", "call 89123456789\n")])
+    branch_from_main(
+        ready,
+        "feat/reserved-addresses",
+        [(
+            "notes/contact.txt",
+            "tutor@example.com student@mail.example.org a@school.test b@x.invalid c@app.localhost d@registry.example "
+            "1+someone@users.noreply.github.com run 1234567890123 sha a89123456789b\n",
+        )],
+    )
     git(ready, "config", "alias.publish", "push")
     git(ready, "worktree", "add", "-q", "--detach", linked, "main")
     synthetic_repository(blind_working_tree, with_scanner=True)
@@ -320,6 +458,28 @@ with tempfile.TemporaryDirectory() as scratch:
     branch_from_main(diverged, "side", [("notes/side.txt", "side\n")])
     git(diverged, "update-ref", "refs/remotes/origin/main", "refs/heads/side")
     commit_file(diverged, "notes/main.txt", "main\n")
+    two_ahead = os.path.join(scratch, "two-ahead")
+    synthetic_repository(two_ahead, with_scanner=True)
+    commit_file(two_ahead, "notes/one.txt", "one\n")
+    commit_file(two_ahead, "notes/two.txt", "two\n")
+    catch_up = os.path.join(scratch, "catch-up")
+    synthetic_repository(catch_up, with_scanner=True)
+    commit_file(catch_up, "notes/fallback.txt", "a fallback merge\n")
+    catch_up_personal = os.path.join(scratch, "catch-up-personal")
+    synthetic_repository(catch_up_personal, with_scanner=True)
+    commit_file(catch_up_personal, "notes/fallback.txt", "call +7 912 345 67 89\n")
+    catch_up_far = os.path.join(scratch, "catch-up-far")
+    synthetic_repository(catch_up_far, with_scanner=True)
+    commit_file(catch_up_far, "notes/one.txt", "one\n")
+    commit_file(catch_up_far, "notes/two.txt", "two\n")
+    catch_up_locks: dict[str, str] = {}
+    catch_up_heads: dict[str, str] = {}
+    for root in (catch_up, catch_up_personal, catch_up_far):
+        head = git(root, "rev-parse", "refs/heads/main")
+        git(root, "branch", f"catch-up/{head[:12]}", head)
+        catch_up_heads[root] = head
+        catch_up_locks[root] = dispatched_lock(root, head, "", kind="catch-up", base=git(root, "rev-parse", "refs/remotes/origin/main"))
+    git(catch_up, "branch", "catch-up/000000000000", catch_up_heads[catch_up])
 
     branch_push = "git push origin refs/heads/{0}:refs/heads/{0}"
     main_push = "git push origin refs/heads/main:refs/heads/main"
@@ -334,7 +494,7 @@ with tempfile.TemporaryDirectory() as scratch:
         (ready, branch_push.format("feat/two-commits"), "ask", "one commit"),
         (ready, branch_push.format("feat/workflow-change"), "ask", ".github"),
         (ready, branch_push.format("wip/other-name"), "ask", "names"),
-        (ready, main_push, "allow", ""),
+        (ready, main_push, "ask", "finish line"),
         (linked, branch_push.format("feat/clean-change"), "allow", ""),
         (linked, branch_push.format("feat/leaky-change"), "ask", "did not pass"),
         (blind_working_tree, branch_push.format("feat/leaky-change"), "ask", "did not pass"),
@@ -381,17 +541,17 @@ with tempfile.TemporaryDirectory() as scratch:
         (ready, "git config user.name Other", "ask", ""),
         (ready, "git config --global alias.p push", "ask", ""),
         (ready, "git config --unset user.name", "ask", ""),
-        (ready, f"gh workflow run gate.yml --ref main -f sha={sha} -f scope=full", "allow", ""),
-        (ready, f"gh workflow run gate.yml --ref main -f sha={sha} -f scope=docs", "allow", ""),
+        (ready, f"gh workflow run gate.yml --ref main -f sha={sha} -f scope=full", "ask", "claim"),
+        (ready, f"gh workflow run gate.yml --ref main -f sha={sha} -f scope=docs", "ask", "claim"),
         (ready, f"gh workflow run gate.yml --ref main -f sha={sha} -f scope=other", "ask", ""),
         (ready, "gh workflow run gate.yml --ref main -f sha=abc -f scope=full", "ask", ""),
         (ready, f"gh workflow run gate.yml --ref main --ref feat/x -f sha={sha} -f scope=full", "ask", ""),
         (ready, f"gh workflow run gate.yml --ref main -f sha={sha} -f scope=full -R other/repo", "ask", ""),
         (ready, f"gh workflow run other.yml --ref main -f sha={sha} -f scope=full", "ask", ""),
-        (ready, f"gh workflow run gate.yml --ref main -f sha={main_sha} -f scope=full", "ask", "only parent"),
-        (ready, f"gh workflow run gate.yml --ref main -f sha={two_commits_sha} -f scope=full", "ask", "only parent"),
-        (ready, f"gh workflow run gate.yml --ref main -f sha={other_name_sha} -f scope=full", "ask", "tip of a local"),
-        (ready, f"gh workflow run gate.yml --ref main -f sha={other_sha} -f scope=full", "ask", "only parent"),
+        (ready, f"gh workflow run gate.yml --ref main -f sha={main_sha} -f scope=full", "ask", "claim"),
+        (ready, f"gh workflow run gate.yml --ref main -f sha={two_commits_sha} -f scope=full", "ask", "claim"),
+        (ready, f"gh workflow run gate.yml --ref main -f sha={other_name_sha} -f scope=full", "ask", "claim"),
+        (ready, f"gh workflow run gate.yml --ref main -f sha={other_sha} -f scope=full", "ask", "claim"),
         (ready, "gh workflow enable gate.yml", "ask", ""),
         (ready, "gh workflow disable gate.yml", "ask", ""),
         (ready, "gh run list --workflow gate.yml --limit 5", "allow", ""),
@@ -489,9 +649,163 @@ with tempfile.TemporaryDirectory() as scratch:
         (ready, "bash <<'EOF'\ngit push origin main\nEOF", "ask", ""),
         (ready, "bash <<'EOF'\necho git push\nEOF", "allow", ""),
     ]
-    for cwd, command, expected, fragment in cases:
+    dispatch = "gh workflow run gate.yml --ref main -f sha={0} -f scope={1}"
+    gate_sha = git(ready, "rev-parse", "refs/heads/feat/gate-change")
+    rebuild_sha = git(ready, "rev-parse", "refs/heads/feat/gate-change-r2")
+    before_sha = git(ready, "rev-parse", "refs/heads/fix/flaky-before")
+    after_sha = git(ready, "rev-parse", "refs/heads/fix/flaky-after")
+    main_tree = git(ready, "rev-parse", "refs/heads/main^{tree}")
+    before_tree = git(ready, "rev-parse", "refs/heads/fix/flaky-before^{tree}")
+    gate_lock = dispatched_lock(ready, gate_sha, "feat/gate-change")
+    symlinked_lock = lock_folder(None)
+    os.symlink(os.path.join(gate_lock, "merge-gate.lock"), os.path.join(symlinked_lock, "merge-gate.lock"))
+    unreadable_lock = lock_folder(None)
+    with open(os.path.join(unreadable_lock, "merge-gate.lock"), "w", encoding="utf-8") as handle:
+        handle.write("state=dispatched\nnot a lock line\n")
+    passed_lock = lock_folder(claim_lock(ready, "passed", head=gate_sha))
+    r1_after_sha = git(ready, "rev-parse", "refs/heads/fix/flaky-r1-after")
+    rx_after_sha = git(ready, "rev-parse", "refs/heads/fix/flaky-rx-after")
+    playwright_title = "pilot-1 › step 2 shows the lesson (desktop)"
+    go_selection = "kind:go|package:./internal/api|test:TestChatSearchTimeout|project:|title-sha256:|entry:"
+    subtest_selection = "kind:go|package:./internal/api|test:TestChatSearch/Timeout|project:|title-sha256:|entry:"
+    playwright_selection = f"kind:playwright|package:|test:|project:chromium|title-sha256:{hashlib.sha256(playwright_title.encode('utf-8')).hexdigest()}|entry:"
+    check_selection = "kind:check|package:|test:|project:|title-sha256:|entry:frontend-checks:3"
+    evidence_fields = {"change_id": "fix/flaky", "base": main_sha, "before_tree": before_tree, "failed_run": "https://github.com/klukashka/ovc/actions/runs/1", "selection": go_selection}
+
+    def evidence_lock(pending: str, **fields: str) -> str:
+        lock = claim_lock(ready, "evidence", pending=pending, **evidence_fields)
+        lock.update(fields)
+        return lock_folder(lock)
+
+    go_evidence = "gh workflow run gate.yml --ref main -f sha={0} -f scope=evidence -f kind=go -f package=./internal/api -f test=TestChatSearchTimeout -f series={1}"
+    playwright_evidence = "gh workflow run gate.yml --ref main -f sha={0} -f scope=evidence -f kind=playwright -f project=chromium -f 'title=" + playwright_title + "' -f series={1}"
+    check_evidence = "gh workflow run gate.yml --ref main -f sha={0} -f scope=evidence -f kind=check -f entry=frontend-checks:3 -f series={1}"
+    change = "gh workflow run gate.yml --ref main -f sha={0} -f scope=change -f jobs={1}"
+    ci_log = lock_folder(None, [finish_line(main_sha, main_tree, "ci")])
+    catch_up_log = lock_folder(None, [finish_line(main_sha, main_tree, "ci-catch-up")])
+    gate_log = lock_folder(None, [finish_line(main_sha, main_tree, "gate")])
+    later_gate_log = lock_folder(None, [finish_line(main_sha, main_tree, "ci"), finish_line(main_sha, main_tree, "gate")])
+    stale_log = lock_folder(None, [finish_line(other_sha, main_tree, "ci")])
+    failed_log = lock_folder(None, [finish_line(main_sha, main_tree, "ci", "failed")])
+    extra_key_log = lock_folder(None, [finish_line(main_sha, main_tree, "ci", extra=" record=ci")])
+    unprefixed_log = lock_folder(None, [finish_line(main_sha, main_tree, "ci")[len("finish: ") :]])
+    attempt_only_log = lock_folder(None, [f"time=2026-11-27T00:00:00Z base={main_sha} tree={main_tree} checks=full scope=full result=passed"])
+    two_ahead_log = lock_folder(None, [finish_line(git(two_ahead, "rev-parse", "refs/heads/main"), git(two_ahead, "rev-parse", "refs/heads/main^{tree}"), "ci")])
+    catch_up_push = branch_push.format(f"catch-up/{catch_up_heads[catch_up][:12]}")
+    locked_cases = [
+        (ready, dispatch.format(gate_sha, "full"), "allow", "", gate_lock),
+        (ready, dispatch.format(gate_sha, "docs"), "allow", "", gate_lock),
+        (ready, dispatch.format(gate_sha, "full"), "allow", "", dispatched_lock(ready, gate_sha, "feat/gate-change", kind="after-fix")),
+        (ready, dispatch.format(rebuild_sha, "full"), "allow", "", dispatched_lock(ready, rebuild_sha, "feat/gate-change")),
+        (ready, dispatch.format(gate_sha, "full"), "ask", "claim", passed_lock),
+        (ready, dispatch.format(gate_sha, "full"), "ask", "claim", dispatched_lock(ready, sha, "feat/clean-change")),
+        (ready, dispatch.format(gate_sha, "full"), "ask", "claim", symlinked_lock),
+        (ready, dispatch.format(gate_sha, "full"), "ask", "claim", unreadable_lock),
+        (ready, dispatch.format(gate_sha, "full"), "ask", "tip of a local", dispatched_lock(ready, gate_sha, "feat/other-change")),
+        (ready, dispatch.format(gate_sha, "full"), "ask", "unknown kind", dispatched_lock(ready, gate_sha, "feat/gate-change", kind="other")),
+        (ready, dispatch.format(gate_sha, "full"), "ask", "tree", dispatched_lock(ready, gate_sha, "feat/gate-change", tree=main_tree)),
+        (ready, dispatch.format(gate_sha, "full"), "ask", "only parent", dispatched_lock(ready, gate_sha, "feat/gate-change", base=other_sha)),
+        (ready, dispatch.format(gate_sha, "full"), "ask", "another repository", dispatched_lock(ready, gate_sha, "feat/gate-change", common_dir="/nonexistent/.git")),
+        (ready, dispatch.format(gate_sha, "full"), "ask", "only parent", dispatched_lock(ready, gate_sha, "feat/gate-change", kind="catch-up")),
+        (ready, dispatch.format(main_sha, "full"), "ask", "only parent", dispatched_lock(ready, main_sha, "feat/gate-change")),
+        (ready, dispatch.format(two_commits_sha, "full"), "ask", "only parent", dispatched_lock(ready, two_commits_sha, "feat/two-commits")),
+        (ready, dispatch.format(other_name_sha, "full"), "ask", "tip of a local", dispatched_lock(ready, other_name_sha, "wip/other-name")),
+        (ready, dispatch.format(before_sha, "full"), "ask", "tip of a local", dispatched_lock(ready, before_sha, "fix/flaky-before")),
+        (ready, dispatch.format(other_sha, "full"), "ask", "tree", dispatched_lock(ready, other_sha, "feat/gate-change")),
+        (ready, f"gh workflow run gate.yml --ref main -f sha={gate_sha} -f scope=full -f jobs=e2e", "ask", "exact", gate_lock),
+        (ready, f"gh workflow run gate.yml --ref main -f scope=full -f sha={gate_sha}", "allow", "", gate_lock),
+        (ready, f"gh workflow run gate.yml --ref main -f sha={gate_sha} -f sha={gate_sha} -f scope=full", "ask", "exact", gate_lock),
+        (ready, change.format(sha, "backend-checks,e2e:3"), "allow", "", empty_lock_dir),
+        (ready, change.format(sha, "backend-tests:2,frontend-checks,docs-checks,e2e"), "allow", "", passed_lock),
+        (ready, change.format(rebuild_sha, "e2e:12"), "allow", "", evidence_lock(f"before-first,{before_sha}")),
+        (ready, change.format(sha, "backend-checks"), "ask", "claimed", gate_lock),
+        (ready, change.format(sha, "backend-checks"), "ask", "could not be read", unreadable_lock),
+        (ready, change.format(sha, "e2e:13"), "ask", "jobs", empty_lock_dir),
+        (ready, change.format(sha, "backend-checks:1"), "ask", "jobs", empty_lock_dir),
+        (ready, change.format(sha, "e2e:03"), "ask", "jobs", empty_lock_dir),
+        (ready, change.format(sha, "unknown"), "ask", "jobs", empty_lock_dir),
+        (ready, change.format(sha, "e2e:3,e2e:3"), "ask", "jobs", empty_lock_dir),
+        (ready, change.format(sha, "e2e:3,"), "ask", "jobs", empty_lock_dir),
+        (ready, f"gh workflow run gate.yml --ref main -f sha={sha} -f scope=change -f jobs=", "ask", "exact", empty_lock_dir),
+        (ready, f"gh workflow run gate.yml --ref main -f sha={sha} -f scope=change", "ask", "jobs", empty_lock_dir),
+        (ready, f"gh workflow run gate.yml --ref main -f sha={sha} -f scope=change -f jobs=e2e -f title=x", "ask", "jobs", empty_lock_dir),
+        (ready, change.format(before_sha, "e2e:1"), "ask", "named", empty_lock_dir),
+        (ready, change.format(other_name_sha, "e2e:1"), "ask", "named", empty_lock_dir),
+        (ready, change.format(two_commits_sha, "e2e:1"), "ask", "only parent", empty_lock_dir),
+        (ready, change.format(main_sha, "e2e:1"), "ask", "only parent", empty_lock_dir),
+        (ready, go_evidence.format(before_sha, "before-first"), "allow", "", evidence_lock(f"before-first,{before_sha}")),
+        (ready, playwright_evidence.format(before_sha, "before-rest"), "allow", "", evidence_lock(f"before-rest,{before_sha}", selection=playwright_selection)),
+        (ready, check_evidence.format(after_sha, "after"), "allow", "", evidence_lock(f"after,{after_sha}", selection=check_selection)),
+        (ready, check_evidence.format(r1_after_sha, "after"), "allow", "", evidence_lock(f"after,{r1_after_sha}", selection=check_selection)),
+        (ready, check_evidence.format(rx_after_sha, "after"), "ask", "local branch", evidence_lock(f"after,{rx_after_sha}", selection=check_selection)),
+        (ready, go_evidence.format(before_sha, "before-first"), "ask", "selection inputs differ", evidence_lock(f"before-first,{before_sha}", selection=subtest_selection)),
+        (ready, go_evidence.format(before_sha, "before-first"), "ask", "selection inputs differ", evidence_lock(f"before-first,{before_sha}", selection="")),
+        (ready, playwright_evidence.format(before_sha, "before-rest").replace("step 2", "step 3"), "ask", "selection inputs differ", evidence_lock(f"before-rest,{before_sha}", selection=playwright_selection)),
+        (ready, check_evidence.format(after_sha, "after").replace("frontend-checks:3", "frontend-checks:4"), "ask", "selection inputs differ", evidence_lock(f"after,{after_sha}", selection=check_selection)),
+        (ready, go_evidence.format(before_sha, "before-first"), "ask", "pending", evidence_lock(f"before-rest,{before_sha}")),
+        (ready, go_evidence.format(before_sha, "before-first"), "ask", "pending", evidence_lock("")),
+        (ready, go_evidence.format(after_sha, "after"), "ask", "pending", evidence_lock(f"before-first,{before_sha}")),
+        (ready, go_evidence.format(after_sha, "before-first"), "ask", "before tree", evidence_lock(f"before-first,{after_sha}")),
+        (ready, go_evidence.format(before_sha, "after"), "ask", "local branch", evidence_lock(f"after,{before_sha}")),
+        (ready, go_evidence.format(before_sha, "before-first"), "ask", "series base", evidence_lock(f"before-first,{before_sha}", base=other_sha)),
+        (ready, go_evidence.format(before_sha, "before-first"), "ask", "local branch", evidence_lock(f"before-first,{before_sha}", change_id="fix/other")),
+        (ready, go_evidence.format(before_sha, "before-first"), "ask", "another repository", evidence_lock(f"before-first,{before_sha}", common_dir="/nonexistent/.git")),
+        (ready, go_evidence.format(before_sha, "before-first"), "ask", "open evidence series", dispatched_lock(ready, before_sha, "fix/flaky", pending=f"before-first,{before_sha}")),
+        (ready, go_evidence.format(before_sha, "before-first"), "ask", "open evidence series", empty_lock_dir),
+        (ready, go_evidence.format(before_sha, "before-first"), "ask", "open evidence series", passed_lock),
+        (ready, go_evidence.format(before_sha, "before-first").replace("test=TestChatSearchTimeout", "test=ChatSearch"), "ask", "allowed characters", evidence_lock(f"before-first,{before_sha}")),
+        (ready, go_evidence.format(before_sha, "before-first").replace("package=./internal/api", "package=-race"), "ask", "allowed characters", evidence_lock(f"before-first,{before_sha}")),
+        (ready, playwright_evidence.format(before_sha, "before-rest").replace("pilot-1", "a" * 200), "ask", "allowed characters", evidence_lock(f"before-rest,{before_sha}")),
+        (ready, playwright_evidence.format(before_sha, "before-rest").replace("project=chromium", "project=-x"), "ask", "allowed characters", evidence_lock(f"before-rest,{before_sha}")),
+        (ready, playwright_evidence.format(before_sha, "before-rest").replace("title=pilot-1", "title=pilot-1 ; rm"), "ask", "allowed characters", evidence_lock(f"before-rest,{before_sha}")),
+        (ready, go_evidence.format(before_sha, "before-first") + " -f title=x", "ask", "selection", evidence_lock(f"before-first,{before_sha}")),
+        (ready, check_evidence.format(after_sha, "after").replace("frontend-checks:3", "e2e:3"), "ask", "allowed characters", evidence_lock(f"after,{after_sha}")),
+        (ready, go_evidence.format(before_sha, "before-first").replace("TestChatSearchTimeout", "TestChatSearch//Timeout"), "ask", "allowed characters", evidence_lock(f"before-first,{before_sha}")),
+        (ready, go_evidence.format(before_sha, "before-first").replace("TestChatSearchTimeout", "TestChatSearch/Timeout"), "allow", "", evidence_lock(f"before-first,{before_sha}", selection=subtest_selection)),
+        (ready, playwright_evidence.format(before_sha, "before-rest").replace("title=pilot-1", "title= pilot-1"), "ask", "allowed characters", evidence_lock(f"before-rest,{before_sha}")),
+        (ready, go_evidence.format(before_sha, "before-first").replace(" -f test=TestChatSearchTimeout", ""), "ask", "selection", evidence_lock(f"before-first,{before_sha}")),
+        (ready, go_evidence.format(before_sha, "before-second"), "ask", "series", evidence_lock(f"before-second,{before_sha}")),
+        (ready, go_evidence.format(before_sha, "before-first").replace("kind=go", "kind=shell"), "ask", "kinds", evidence_lock(f"before-first,{before_sha}")),
+        (catch_up, catch_up_push, "allow", "", catch_up_locks[catch_up]),
+        (catch_up, dispatch.format(catch_up_heads[catch_up], "full"), "allow", "", catch_up_locks[catch_up]),
+        (catch_up, dispatch.format(catch_up_heads[catch_up], "docs"), "ask", "full run", catch_up_locks[catch_up]),
+        (catch_up, catch_up_push, "ask", "catch-up claim", empty_lock_dir),
+        (catch_up, catch_up_push, "ask", "catch-up claim", dispatched_lock(catch_up, catch_up_heads[catch_up], "feat/x")),
+        (catch_up, catch_up_push, "ask", "first 12", dispatched_lock(catch_up, other_sha, "", kind="catch-up")),
+        (catch_up, catch_up_push, "ask", "another repository", dispatched_lock(catch_up, catch_up_heads[catch_up], "", kind="catch-up", common_dir="/nonexistent/.git")),
+        (catch_up, branch_push.format("catch-up/000000000000"), "ask", "first 12", catch_up_locks[catch_up]),
+        (catch_up, branch_push.format("catch-up/ABCDEF012345"), "ask", "names", catch_up_locks[catch_up]),
+        (catch_up, dispatch.format(catch_up_heads[catch_up], "full"), "ask", "only parent", dispatched_lock(catch_up, catch_up_heads[catch_up], "feat/x")),
+        (catch_up_personal, branch_push.format(f"catch-up/{catch_up_heads[catch_up_personal][:12]}"), "ask", "personal-data", catch_up_locks[catch_up_personal]),
+        (catch_up_far, branch_push.format(f"catch-up/{catch_up_heads[catch_up_far][:12]}"), "ask", "only parent", catch_up_locks[catch_up_far]),
+        (catch_up_far, dispatch.format(catch_up_heads[catch_up_far], "full"), "ask", "only parent", catch_up_locks[catch_up_far]),
+        (ready, branch_push.format("feat/personal-email"), "ask", "personal-data", empty_lock_dir),
+        (ready, branch_push.format("feat/personal-phone"), "ask", "personal-data", empty_lock_dir),
+        (ready, branch_push.format("feat/personal-plain-phone"), "ask", "personal-data", empty_lock_dir),
+        (ready, branch_push.format("feat/reserved-addresses"), "allow", "", empty_lock_dir),
+        (ready, branch_push.format("feat/personal-message"), "ask", "personal-data", empty_lock_dir),
+        (ready, branch_push.format("feat/personal-author"), "allow", "", empty_lock_dir),
+        (ready, branch_push.format("feat/noreply-author"), "allow", "", empty_lock_dir),
+        (ready, branch_push.format("feat/gate-change-r2"), "allow", "", empty_lock_dir),
+        (ready, branch_push.format("fix/flaky-before"), "allow", "", empty_lock_dir),
+        (ready, main_push, "allow", "", ci_log),
+        (ready, main_push, "allow", "", catch_up_log),
+        (ready, main_push, "ask", "not a ci", gate_log),
+        (ready, main_push, "ask", "not a ci", later_gate_log),
+        (ready, main_push, "ask", "does not name", stale_log),
+        (ready, main_push, "ask", "result=passed", failed_log),
+        (ready, main_push, "ask", "result=passed", extra_key_log),
+        (ready, main_push, "ask", "finish line", unprefixed_log),
+        (ready, main_push, "ask", "finish line", attempt_only_log),
+        (two_ahead, main_push, "ask", "one finished merge", two_ahead_log),
+        (workflow_main, main_push, "ask", ".github", ci_log),
+        (diverged, main_push, "ask", "ancestor", ci_log),
+    ]
+    locked_cases.extend((ready, command, "ask", "runs in CI", empty_lock_dir) for command in local_checks)
+    locked_cases.extend((ready, command, "allow", "", empty_lock_dir) for command in file_writers)
+    for cwd, command, expected, fragment, lock_dir in [(*case, empty_lock_dir) for case in cases] + locked_cases:
         github_cases += 1
-        outcome, reason = decision(command, cwd)
+        outcome, reason = decision(command, cwd, lock_dir)
         if outcome != expected or fragment not in reason:
             failed += 1
             print("FAIL", outcome, repr(command), reason.strip())
@@ -501,6 +815,38 @@ with tempfile.TemporaryDirectory() as scratch:
             failed += 1
             print("FAIL credential file not denied", tool, path)
 
-total = len(refused) + len(allowed) + 1 + github_cases
+def hook_constants() -> tuple[dict[str, int], str]:
+    specification = importlib.util.spec_from_file_location("guard_secrets_constants", hook)
+    if specification is None or specification.loader is None:
+        raise RuntimeError("the hook could not be loaded")
+    module = importlib.util.module_from_spec(specification)
+    specification.loader.exec_module(module)
+    return dict(module.CI_JOB_SHARDS), module.EVIDENCE_VALUES["entry"].pattern
+
+
+def merge_gate_job_shards() -> tuple[dict[str, int], set[str]]:
+    gate = os.path.join(repository, "tools", "merge-gate.sh")
+    shards: dict[str, int] = {}
+    for scope in ("full", "docs"):
+        matrix = json.loads(subprocess.run(["bash", gate, "ci-matrix", "--scope", scope], capture_output=True, text=True, check=True).stdout)
+        for name, value in matrix.items():
+            if name == "jobs":
+                shards.update({job: 0 for job in value})
+            elif value:
+                shards[name] = len(value)
+    listed = set(subprocess.run(["bash", gate, "ci-jobs"], capture_output=True, text=True, check=True).stdout.split())
+    return shards, listed
+
+
+hook_shards, entry_pattern = hook_constants()
+gate_shards, gate_jobs = merge_gate_job_shards()
+entry_jobs = set(re.findall(r"[a-z][a-z-]+", entry_pattern.split(")", 1)[0]))
+unsharded_jobs = {name for name, count in gate_shards.items() if count == 0}
+if hook_shards != gate_shards or not set(hook_shards) <= gate_jobs or entry_jobs != unsharded_jobs:
+    failed += 1
+    print("FAIL the hook's CI_JOB_SHARDS", hook_shards, "or entry jobs", sorted(entry_jobs), "differ from merge-gate.sh", gate_shards, sorted(gate_jobs))
+
+total = len(refused) + len(allowed) + 2 + github_cases
 print(f"{total - failed} passed, {failed} failed")
+lock_scratch.cleanup()
 sys.exit(failed)

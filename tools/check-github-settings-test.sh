@@ -83,6 +83,40 @@ expect_refused_variable() {
   fi
 }
 
+expect_unverified() {
+  local folder="$work/unverified" output status
+  prepare_answers "$folder"
+  rm -f "$folder/hooks.json" "$folder/secrets.json"
+  : >"$folder/hooks.unverified"
+  : >"$folder/secrets.unverified"
+
+  status=0
+  output="$(bash "$script" --compare "$folder" 2>&1)" || status=$?
+
+  cases=$((cases + 1))
+  if [[ "$status" -ne 0 || "$output" != "settings match where readable; unverified (no read permission): hooks secrets" ]]; then
+    record_failure "answers the token may not read are reported as unverified and the rest still matches: status $status, output [$output]"
+  fi
+}
+
+expect_unverified_with_mismatch() {
+  local folder="$work/unverified-mismatch" output status
+  prepare_answers "$folder"
+  rm -f "$folder/hooks.json"
+  : >"$folder/hooks.unverified"
+  mutate "$folder" repo.json '.has_wiki = true'
+
+  status=0
+  output="$(bash "$script" --compare "$folder" 2>&1)" || status=$?
+
+  cases=$((cases + 1))
+  if [[ "$status" -eq 0 || "$output" != *"unverified (no read permission): hooks"* || "$output" != *"mismatch: repository"* ]]; then
+    record_failure "an unverified answer does not hide a real mismatch: status $status, output [$output]"
+  fi
+}
+
+expect_unverified
+expect_unverified_with_mismatch
 expect_match
 expect_mismatch repository repo.json '.has_wiki = true'
 expect_mismatch repository repo.json '.has_discussions = true'

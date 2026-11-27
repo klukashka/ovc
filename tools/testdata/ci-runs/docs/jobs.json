@@ -1,0 +1,185 @@
+{
+  "jobs": [
+    {
+      "completed_at": "2026-11-27T09:00:15Z",
+      "conclusion": "success",
+      "created_at": "2026-11-27T09:00:03Z",
+      "head_branch": "main",
+      "head_sha": "@MAIN@",
+      "html_url": "https://github.com/klukashka/ovc/actions/runs/@RUN_ID@/job/50000000001",
+      "id": 50000000001,
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "name": "validate",
+      "run_attempt": 1,
+      "run_id": @RUN_ID@,
+      "runner_group_name": "GitHub Actions",
+      "runner_name": "GitHub Actions 1001",
+      "started_at": "2026-11-27T09:00:07Z",
+      "status": "completed",
+      "workflow_name": "gate"
+    },
+    {
+      "completed_at": "2026-11-27T09:01:01Z",
+      "conclusion": "success",
+      "created_at": "2026-11-27T09:00:17Z",
+      "head_branch": "main",
+      "head_sha": "@MAIN@",
+      "html_url": "https://github.com/klukashka/ovc/actions/runs/@RUN_ID@/job/50000000002",
+      "id": 50000000002,
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "name": "prepare",
+      "run_attempt": 1,
+      "run_id": @RUN_ID@,
+      "runner_group_name": "GitHub Actions",
+      "runner_name": "GitHub Actions 1002",
+      "started_at": "2026-11-27T09:00:21Z",
+      "status": "completed",
+      "workflow_name": "gate"
+    },
+    {
+      "completed_at": "2026-11-27T09:01:02Z",
+      "conclusion": "skipped",
+      "created_at": "2026-11-27T09:00:58Z",
+      "head_branch": "main",
+      "head_sha": "@MAIN@",
+      "html_url": "https://github.com/klukashka/ovc/actions/runs/@RUN_ID@/job/50000000003",
+      "id": 50000000003,
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "name": "backend-tests",
+      "run_attempt": 1,
+      "run_id": @RUN_ID@,
+      "runner_group_name": null,
+      "runner_name": null,
+      "started_at": "2026-11-27T09:01:02Z",
+      "status": "completed",
+      "workflow_name": "gate"
+    },
+    {
+      "completed_at": "2026-11-27T09:01:02Z",
+      "conclusion": "skipped",
+      "created_at": "2026-11-27T09:00:58Z",
+      "head_branch": "main",
+      "head_sha": "@MAIN@",
+      "html_url": "https://github.com/klukashka/ovc/actions/runs/@RUN_ID@/job/50000000004",
+      "id": 50000000004,
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "name": "backend-checks",
+      "run_attempt": 1,
+      "run_id": @RUN_ID@,
+      "runner_group_name": null,
+      "runner_name": null,
+      "started_at": "2026-11-27T09:01:02Z",
+      "status": "completed",
+      "workflow_name": "gate"
+    },
+    {
+      "completed_at": "2026-11-27T09:01:02Z",
+      "conclusion": "skipped",
+      "created_at": "2026-11-27T09:00:58Z",
+      "head_branch": "main",
+      "head_sha": "@MAIN@",
+      "html_url": "https://github.com/klukashka/ovc/actions/runs/@RUN_ID@/job/50000000005",
+      "id": 50000000005,
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "name": "frontend-checks",
+      "run_attempt": 1,
+      "run_id": @RUN_ID@,
+      "runner_group_name": null,
+      "runner_name": null,
+      "started_at": "2026-11-27T09:01:02Z",
+      "status": "completed",
+      "workflow_name": "gate"
+    },
+    {
+      "completed_at": "2026-11-27T09:01:02Z",
+      "conclusion": "skipped",
+      "created_at": "2026-11-27T09:00:58Z",
+      "head_branch": "main",
+      "head_sha": "@MAIN@",
+      "html_url": "https://github.com/klukashka/ovc/actions/runs/@RUN_ID@/job/50000000006",
+      "id": 50000000006,
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "name": "e2e",
+      "run_attempt": 1,
+      "run_id": @RUN_ID@,
+      "runner_group_name": null,
+      "runner_name": null,
+      "started_at": "2026-11-27T09:01:02Z",
+      "status": "completed",
+      "workflow_name": "gate"
+    },
+    {
+      "completed_at": "2026-11-27T09:03:01Z",
+      "conclusion": "success",
+      "created_at": "2026-11-27T09:01:02Z",
+      "head_branch": "main",
+      "head_sha": "@MAIN@",
+      "html_url": "https://github.com/klukashka/ovc/actions/runs/@RUN_ID@/job/50000000007",
+      "id": 50000000007,
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "name": "docs-checks",
+      "run_attempt": 1,
+      "run_id": @RUN_ID@,
+      "runner_group_name": "GitHub Actions",
+      "runner_name": "GitHub Actions 1007",
+      "started_at": "2026-11-27T09:01:06Z",
+      "status": "completed",
+      "workflow_name": "gate"
+    },
+    {
+      "completed_at": "2026-11-27T09:01:02Z",
+      "conclusion": "skipped",
+      "created_at": "2026-11-27T09:00:58Z",
+      "head_branch": "main",
+      "head_sha": "@MAIN@",
+      "html_url": "https://github.com/klukashka/ovc/actions/runs/@RUN_ID@/job/50000000008",
+      "id": 50000000008,
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "name": "evidence",
+      "run_attempt": 1,
+      "run_id": @RUN_ID@,
+      "runner_group_name": null,
+      "runner_name": null,
+      "started_at": "2026-11-27T09:01:02Z",
+      "status": "completed",
+      "workflow_name": "gate"
+    },
+    {
+      "completed_at": "2026-11-27T09:03:12Z",
+      "conclusion": "success",
+      "created_at": "2026-11-27T09:03:03Z",
+      "head_branch": "main",
+      "head_sha": "@MAIN@",
+      "html_url": "https://github.com/klukashka/ovc/actions/runs/@RUN_ID@/job/50000000009",
+      "id": 50000000009,
+      "labels": [
+        "ubuntu-24.04"
+      ],
+      "name": "gate",
+      "run_attempt": 1,
+      "run_id": @RUN_ID@,
+      "runner_group_name": "GitHub Actions",
+      "runner_name": "GitHub Actions 1009",
+      "started_at": "2026-11-27T09:03:07Z",
+      "status": "completed",
+      "workflow_name": "gate"
+    }
+  ],
+  "total_count": 9
+}

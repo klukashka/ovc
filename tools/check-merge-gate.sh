@@ -1302,7 +1302,7 @@ full_range_rewrite="$(rewritten_with_gate full "" "" "$range_base" history-range
 docs_range_rewrite="$(rewritten_with_gate docs "" "" "$range_base" history-range)"
 e2e_rewrites=""
 for shard in 1 2 3 4 5 6 7 8 9 10 11 12; do
-  e2e_rewrites="$e2e_rewrites$(rewritten_with_gate full "$shard" "" "" e2e-projects)"$'\n'
+  e2e_rewrites="$e2e_rewrites$(rewritten_with_gate full "$shard" "" "" e2e-shard)"$'\n'
 done
 
 check "$go_rewrite" "../tools/dev-env.sh go test -race -count=1 ovc/backend/internal/api ovc/backend/internal/core" \
@@ -1310,44 +1310,17 @@ check "$go_rewrite" "../tools/dev-env.sh go test -race -count=1 ovc/backend/inte
 check "$full_range_rewrite" "bin/gitleaks git --log-opts=$range_base..HEAD --redact --no-banner --config .gitleaks.toml ." \
   "the staged Gitleaks scan of the full scope becomes a scan of the base..HEAD range"
 check "$docs_range_rewrite" "$full_range_rewrite" "the staged Gitleaks scan of the docs scope becomes the same range scan"
-check "$(printf '%s' "$e2e_rewrites" | sed 's|^\.\./tools/dev-env\.sh pnpm e2e --max-failures=10 --trace=off --workers=2 ||')" "$(
-  cat <<'SHARDS'
---project firefox-1
---project firefox-2
---project firefox-3
---project firefox-4
---project webkit-1
---project webkit-2
---project webkit-3
---project webkit-4
---project chromium --shard=1/4
---project chromium --shard=2/4
---project chromium --shard=3/4
---project chromium --shard=4/4
-SHARDS
-)" "the twelve end-to-end shards run the end-to-end entry with two workers for each Firefox and WebKit group and a quarter of Chromium"
+expected_e2e_rewrites=""
+for shard in 1 2 3 4 5 6 7 8 9 10 11 12; do
+  expected_e2e_rewrites="$expected_e2e_rewrites../tools/dev-env.sh pnpm e2e --max-failures=10 --trace=off --workers=2 --shard=$shard/12"$'\n'
+done
 
-playwright_config="$own_repo/frontend/playwright.config.ts"
-spec_group_count="$(sed -n 's/^const specGroupCount = \([0-9][0-9]*\);$/\1/p' "$playwright_config")"
-config_projects="$(
-  {
-    grep -o "{ name: '[a-z0-9-]*'" "$playwright_config" | sed "s/^{ name: '\\(.*\\)'\$/\\1/"
-    for engine in $(grep -o "specGroupProjects('[a-z]*'" "$playwright_config" | sed "s/^specGroupProjects('\\(.*\\)'\$/\\1/"); do
-      group=1
-      while [[ "$group" -le "$spec_group_count" ]]; do
-        printf '%s-%s\n' "$engine" "$group"
-        group=$((group + 1))
-      done
-    done
-  } | LC_ALL=C sort
-)"
-
-harness_projects="$(parse_with_gate e2e_project_names | LC_ALL=C sort)"
-shard_projects="$(printf '%s' "$e2e_rewrites" | sed -n 's/.* --project \([^ ]*\).*/\1/p' | LC_ALL=C sort -u)"
-
-check "$harness_projects" "$config_projects" "the harness's end-to-end project set equals the projects of the current Playwright configuration"
-check "$shard_projects" "$config_projects" "the end-to-end shards together cover every project of the current Playwright configuration"
-check "$(parse_with_gate e2e_shard_total)" "12" "the end-to-end job has twelve shards"
+check "$e2e_rewrites" "$expected_e2e_rewrites" \
+  "the twelve end-to-end shards run the end-to-end entry with two workers and Playwright's own --shard=k/12 over every project"
+check "$(printf '%s' "$e2e_rewrites" | grep -c -e '--project' || true)" "0" \
+  "no end-to-end shard names a project, so a project or spec group a candidate adds is still covered"
+check "$(parse_with_gate ci_job_shards e2e)|$(parse_with_gate ci_job_shards backend-tests)" "12|3" \
+  "the end-to-end job has twelve shards and the backend test job three, from the CI job table"
 
 candidate="$work/candidate"
 calls="$work/dev-env-calls"
@@ -1385,7 +1358,9 @@ printf '%s\n' '#!/usr/bin/env bash' \
   >"$candidate/tools/dev-env.sh"
 printf '#!/usr/bin/env bash\n[[ ! -e "%s" ]]\n' "$tool_binaries_failure" >"$candidate/tools/check-tool-binaries.sh"
 printf '{\n  "name": "candidate",\n  "private": true,\n  "packageManager": "%s"\n}\n' "$repository_package_manager" >"$candidate/frontend/package.json"
-chmod +x "$candidate/tools/dev-env.sh" "$candidate/tools/check-tool-binaries.sh"
+mkdir -p "$candidate/bin"
+printf '%s\n' '#!/usr/bin/env bash' "printf 'gitleaks %s\\n' \"\$*\" >>\"$calls\"" >"$candidate/bin/gitleaks"
+chmod +x "$candidate/tools/dev-env.sh" "$candidate/tools/check-tool-binaries.sh" "$candidate/bin/gitleaks"
 printf 'go.work\n' >"$candidate/.gitignore"
 pnpm --dir "$candidate/frontend" --version >/dev/null
 pnpm --dir "$candidate/frontend" config list --json >/dev/null
@@ -1493,3 +1468,1003 @@ run_candidate_job -- backend-tests --shard 1/3 --packages "$shard_packages_file"
 check "$status" "1" "run-job refuses a package list that names a package go list does not list"
 contains "$output" "which go list ./... does not list" "the refusal names the unlisted package"
 check "$(cat "$calls")" "" "a job refused for its package list runs no entry"
+
+run_candidate_job -- backend-tests --entry 1
+
+check "$status" "0" "run-job --entry 1 of backend-tests runs only the pinned-tool check, without a shard"
+check "$(count_matching '^exit [0-9]+: ')" "1" "run-job --entry runs exactly the selected entry"
+contains "$output" "entry: 1" "run-job names the selected entry"
+
+run_candidate_job -- backend-tests --entry 2 --packages "$shard_packages_file"
+
+check "$status" "1" "run-job --entry 2 of backend-tests still needs its shard"
+contains "$output" "needs --shard N/3" "the refusal names the missing shard"
+
+: >"$calls"
+
+run_candidate_job -- backend-checks --entry 2
+
+check "$status" "0" "run-job --entry 2 of backend-checks runs the plain Gitleaks scan without a base"
+check "$(cat "$calls")" "gitleaks git --redact --no-banner --config .gitleaks.toml ." \
+  "run-job --entry 2 of backend-checks runs only the plain Gitleaks scan after the pinned-tool check"
+
+: >"$calls"
+
+run_candidate_job -- backend-checks --entry 2 --base "$candidate_base"
+
+check "$status" "1" "run-job refuses --base for a selected entry without a range scan"
+contains "$output" "takes no --base" "the refusal names the base the entry does not use"
+check "$(cat "$calls")" "" "a job refused for an unused base runs no entry"
+
+run_candidate_job -- docs-checks --entry 6 --base "$candidate_base"
+
+check "$status" "1" "run-job refuses an entry beyond the job's list"
+contains "$output" "--entry needs N from 1 to 5" "the refusal names the entries of the job"
+
+fixtures="$own_repo/tools/testdata/ci-runs"
+ci_repo="$work/ci-repo"
+ci_lock="$work/ci-lock"
+ci_lock_file="$ci_lock/merge-gate.lock"
+ci_log="$ci_lock/merge-gate.log"
+run_url="https://github.com/klukashka/ovc/actions/runs/"
+runs_count=0
+
+ci_git() {
+  git -C "$ci_repo" "$@"
+}
+
+run_ci_gate() {
+  set +e
+  output="$(env -u XDG_CONFIG_HOME bash "$gate_script" "$@" --repo "$ci_repo" --lock-dir "$ci_lock" 2>&1)"
+  status=$?
+  set -e
+}
+
+ci_lock_field() {
+  sed -n "s/^$1=//p" "$ci_lock_file"
+}
+
+ci_lock_state() {
+  if [[ -e "$ci_lock_file" ]]; then
+    ci_lock_field state
+  else
+    echo released
+  fi
+}
+
+set_ci_lock_field() {
+  awk -v key="$1" -v value="$2" -F= '$1 == key { print key "=" value; next } { print }' "$ci_lock_file" >"$ci_lock/rewritten"
+  chmod 600 "$ci_lock/rewritten"
+  mv "$ci_lock/rewritten" "$ci_lock_file"
+}
+
+ci_commit_file() {
+  mkdir -p "$(dirname "$ci_repo/$1")"
+  printf '%s\n' "$2" >"$ci_repo/$1"
+  ci_git add -- "$1"
+  ci_git commit --quiet -m "$3"
+}
+
+ci_branch() {
+  ci_git switch --quiet main
+  ci_git switch --quiet -c "$1" "${2:-main}"
+}
+
+edit_json() {
+  python3 -I -c '
+import json
+import sys
+
+path = sys.argv[1]
+with open(path, encoding="utf-8") as handle:
+    data = json.load(handle)
+extra = json.loads(sys.argv[3]) if len(sys.argv) > 3 else None
+exec(sys.argv[2])
+with open(path, "w", encoding="utf-8") as handle:
+    json.dump(data, handle)
+' "$@"
+}
+
+history_entry() {
+  python3 -I -c '
+import json
+import sys
+
+attempt = int(sys.argv[5])
+conclusion = None if sys.argv[4] == "null" else sys.argv[4]
+print(json.dumps({"id": int(sys.argv[1]), "display_title": sys.argv[2], "status": sys.argv[3], "conclusion": conclusion,
+                  "run_attempt": attempt, "head_sha": sys.argv[6], "event": "workflow_dispatch", "path": ".github/workflows/gate.yml",
+                  "repository": {"full_name": "klukashka/ovc"}}))
+' "$@"
+}
+
+seal_runs() {
+  parse_with_gate ci_python sums folder="$1" >/dev/null
+}
+
+new_runs_folder() {
+  runs_count=$((runs_count + 1))
+  runs="$work/runs-$runs_count"
+  mkdir -p "$runs"
+}
+
+fill_runs() {
+  local kind="$1" id="$2" commit="$3" head_sha="$4" series="${5:-}" name
+  for name in run jobs; do
+    sed -e "s/@RUN_ID@/$id/g" -e "s/@CANDIDATE@/$commit/g" -e "s/@MAIN@/$head_sha/g" -e "s/@SERIES@/$series/g" \
+      "$fixtures/$kind/$name.json" >"$runs/$name.json"
+  done
+  python3 -I -c '
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    run = json.load(handle)
+with open(sys.argv[2], "w", encoding="utf-8") as handle:
+    json.dump({"total_count": 1, "workflow_runs": [run]}, handle)
+' "$runs/run.json" "$runs/history.json"
+  printf 'run=%s\ncommit=%s\nhead_sha=%s\nlogs=no\ntime=2026-11-27T09:20:00Z\n' "$id" "$commit" "$head_sha" >"$runs/fetch.txt"
+}
+
+make_runs() {
+  new_runs_folder
+  fill_runs "$@"
+  seal_runs "$runs"
+}
+
+add_history() {
+  edit_json "$runs/history.json" 'data["workflow_runs"].append(extra); data["total_count"] += 1' "$1"
+}
+
+add_claimed_run() {
+  mkdir -p "$runs/claims"
+  printf '%s\n' "$2" >"$runs/claims/run-$1.json"
+}
+
+add_base_history() {
+  local base="$1" entry entries=""
+  shift
+  for entry in "$@"; do
+    entries="$entries${entries:+, }$entry"
+  done
+  mkdir -p "$runs/bases"
+  printf '{"total_count": %s, "workflow_runs": [%s]}\n' "$#" "$entries" >"$runs/bases/$base.json"
+}
+
+ci_refuses() {
+  local label="$1" wanted="$2" file="$3" code="$4"
+  make_runs full 6100 "$ci_candidate" "$ci_main"
+  edit_json "$runs/$file" "$code"
+  seal_runs "$runs"
+
+  run_ci_gate ci --ff-only --change fix/ci-full --runs "$runs"
+
+  check "$status|$(ci_lock_state)" "1|dispatched" "ci refuses $label and leaves the claim held"
+  contains "$output" "$wanted" "the refusal of $label names it"
+}
+
+remove_log_lines() {
+  grep -v -F -e "$1" "$ci_log" >"$ci_lock/log-rewritten" || true
+  chmod 600 "$ci_lock/log-rewritten"
+  mv "$ci_lock/log-rewritten" "$ci_log"
+}
+
+mkdir -p "$ci_repo"
+ci_git init --quiet -b main
+ci_git config user.name "Merge gate check"
+ci_git config user.email "merge-gate-check@example.invalid"
+ci_git config commit.gpgsign false
+ci_commit_file tools/run.sh "echo run" "Add a script"
+ci_old_main="$(ci_git rev-parse HEAD)"
+ci_commit_file docs/guide.md "guide" "Add the guide"
+ci_main="$(ci_git rev-parse HEAD)"
+ci_git update-ref refs/remotes/origin/main "$ci_main"
+
+check "$(parse_with_gate ci_jobs | tr '\n' ' ')" "validate prepare backend-tests backend-checks frontend-checks e2e docs-checks evidence gate " \
+  "ci-jobs lists every job key of gate.yml from the CI job table"
+
+for scope in full docs; do
+  fixture_jobs="$(python3 -I -c '
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as handle:
+    jobs = json.loads(handle.read().replace("@RUN_ID@", "1"))["jobs"]
+print("\n".join(sorted(job["name"] + "|" + job["conclusion"] for job in jobs)))
+' "$fixtures/$scope/jobs.json")"
+  check "$fixture_jobs" "$(parse_with_gate ci_expected_jobs "$scope" | LC_ALL=C sort)" \
+    "the expected $scope job set equals the names and conclusions of the committed $scope-run fixture"
+done
+check "$(parse_with_gate ci_expected_jobs full | awk 'END { print NR }')|$(parse_with_gate ci_expected_jobs full | grep -c '|success$')" "22|20" \
+  "a full run lists 22 jobs and executes 20"
+
+run_unchecked bash "$gate_script" ci-matrix --scope full
+
+check "$status|$output" '0|{"backend-tests":[1,2,3],"e2e":[1,2,3,4,5,6,7,8,9,10,11,12],"jobs":["backend-checks","frontend-checks"]}' \
+  "ci-matrix prints the full scope's shards and unsharded jobs as compact JSON"
+
+run_unchecked bash "$gate_script" ci-matrix --scope docs
+
+check "$status|$output" '0|{"backend-tests":[],"e2e":[],"jobs":["docs-checks"]}' "ci-matrix prints the docs scope"
+
+run_unchecked bash "$gate_script" ci-matrix --scope change --jobs e2e:3,backend-checks,backend-tests,e2e:11
+
+check "$status|$output" '0|{"backend-tests":[1,2,3],"e2e":[3,11],"jobs":["backend-checks"]}' \
+  "ci-matrix filters the change scope by --jobs, a sharded name alone meaning all its shards"
+
+for jobs in e2e:13 nope backend-checks:1 e2e,e2e:2 e2e:2,e2e:2 'e2e;x' validate; do
+  run_unchecked bash "$gate_script" ci-matrix --scope change --jobs "$jobs"
+
+  check "$status" "1" "ci-matrix refuses the --jobs list $jobs"
+done
+
+run_unchecked bash "$gate_script" ci-matrix --scope change
+
+check "$status" "1" "ci-matrix refuses the change scope without --jobs"
+
+matrix_shards="$(bash "$gate_script" ci-matrix --scope full | python3 -I -c '
+import json
+import sys
+
+matrix = json.load(sys.stdin)
+print(" ".join(name + " (" + str(shard) + ")" for name in ("backend-tests", "e2e") for shard in matrix[name]))
+')"
+expected_shards="$(parse_with_gate ci_expected_jobs full | sed -n 's/^\(.* ([0-9]*)\)|success$/\1/p' | paste -sd ' ' -)"
+
+check "$matrix_shards" "$expected_shards" "ci-matrix and the expected full job set share their shard constants"
+
+fetch_out="$work/fetch-out"
+fake_commit="0123456789abcdef0123456789abcdef01234567"
+gh_variables="GH_TOKEN GH_HOST GH_REPO GH_CONFIG_DIR GH_ENTERPRISE_TOKEN GH_DEBUG GITHUB_TOKEN GITHUB_ENTERPRISE_TOKEN XDG_CONFIG_HOME"
+without_gh_variables=()
+for name in $gh_variables; do
+  without_gh_variables+=(-u "$name")
+done
+for name in $gh_variables; do
+  run_unchecked env "${without_gh_variables[@]}" PATH=/usr/bin:/bin "$name=x" bash "$gate_script" ci-fetch --run 1 --commit "$fake_commit" --out "$fetch_out"
+
+  check "$status" "1" "ci-fetch refuses $name in its environment"
+  contains "$output" "$name set in the environment would change which host" "the refusal names $name before gh is resolved"
+  check "$(test -e "$fetch_out" && echo created || echo absent)" "absent" "ci-fetch refused for $name creates no folder"
+done
+
+run_unchecked env "${without_gh_variables[@]}" PATH=/usr/bin:/bin bash "$gate_script" ci-fetch --run 12a --commit "$fake_commit" --out "$fetch_out"
+
+check "$status" "1" "ci-fetch refuses a run ID that is not digits"
+contains "$output" "is not a run ID" "the refusal names the run ID"
+
+run_unchecked env "${without_gh_variables[@]}" PATH=/usr/bin:/bin bash "$gate_script" ci-fetch --run 1 --commit ABC --out "$fetch_out"
+
+check "$status" "1" "ci-fetch refuses a commit that is not a full lower-case hash"
+contains "$output" "is not a full lower-case commit hash" "the refusal names the commit"
+
+mkdir -p "$fetch_out"
+printf 'kept\n' >"$fetch_out/kept.txt"
+
+run_unchecked env "${without_gh_variables[@]}" PATH=/usr/bin:/bin bash "$gate_script" ci-fetch --run 1 --commit "$fake_commit" --out "$fetch_out"
+
+check "$status" "1" "ci-fetch refuses an output folder that is not empty"
+contains "$output" "is not empty" "the refusal names the non-empty folder"
+
+ln -s "$work/elsewhere" "$work/fetch-link"
+
+run_unchecked env "${without_gh_variables[@]}" PATH=/usr/bin:/bin bash "$gate_script" ci-fetch --run 1 --commit "$fake_commit" --out "$work/fetch-link"
+
+check "$status" "1" "ci-fetch refuses an output folder that is a link"
+contains "$output" "is a link" "the refusal names the linked folder"
+
+mkdir -p "$work/zip-source"
+python3 -I -c '
+import sys
+import zipfile
+
+with zipfile.ZipFile(sys.argv[1], "w") as archive:
+    archive.writestr("1_evidence.txt", "line\n")
+    archive.writestr("../escape.txt", "outside\n")
+' "$work/zip-source/unsafe.zip"
+
+run_unchecked parse_with_gate ci_python extract zip="$work/zip-source/unsafe.zip" destination="$work/zip-out"
+
+check "$status" "1" "the log extraction refuses an archive with a .. path"
+contains "$output" "unsafe path" "the refusal names the unsafe path"
+check "$(test -e "$work/escape.txt" && echo written || echo absent)" "absent" "nothing is written outside the extraction folder"
+
+ci_branch fix/ci-two
+ci_commit_file tools/run.sh "echo two" "First of two commits"
+ci_commit_file tools/run.sh "echo two again" "Second of two commits"
+ci_git switch --quiet main
+
+run_ci_gate claim --ff-only --change fix/ci-two --change-id fix/ci-two
+
+check "$status|$(ci_lock_state)" "1|released" "claim refuses a two-commit branch and takes no lock"
+contains "$output" "more than one commit beyond" "the refusal names the extra commit"
+
+ci_branch fix/ci-old "$ci_old_main"
+ci_commit_file tools/run.sh "echo old" "Change the script on the old main"
+ci_git switch --quiet main
+
+run_ci_gate claim --ff-only --change fix/ci-old --change-id fix/ci-old
+
+check "$status|$(ci_lock_state)" "1|released" "claim refuses a branch whose parent is not main"
+contains "$output" "is not based on $ci_main" "the refusal names main's tip"
+
+run_ci_gate claim --ff-only --change fix/ci-old --change-id fix/other
+
+check "$status" "1" "claim refuses a branch that is neither the change ID nor a rebuild of it"
+
+ci_branch fix/ci-full
+mkdir -p "$ci_repo/knowledge/reviews"
+ci_git rm --quiet tools/run.sh
+printf '| row | after-fix | %s7001 failed once |\n' "$run_url" >"$ci_repo/knowledge/reviews/slice-10-known-limitations.md"
+mkdir -p "$ci_repo/tools"
+printf 'echo full\n' >"$ci_repo/tools/run.sh"
+ci_git add -A
+ci_git commit --quiet -m "Change the script with a known-limitations row"
+ci_candidate="$(ci_git rev-parse HEAD)"
+ci_tree="$(ci_git rev-parse 'HEAD^{tree}')"
+ci_git switch --quiet main
+ci_git update-ref refs/remotes/origin/main "$ci_old_main"
+
+run_ci_gate claim --ff-only --change fix/ci-full --change-id fix/ci-full
+
+check "$status|$(ci_lock_state)" "1|released" "claim refuses while origin/main differs from main"
+contains "$output" "origin/main (as last fetched) is $ci_old_main" "the refusal names origin/main"
+
+ci_git update-ref refs/remotes/origin/main "$ci_main"
+
+run_ci_gate claim --ff-only --change fix/ci-full --change-id fix/ci-full
+
+check "$status" "0" "claim takes the lock for a one-commit candidate on main"
+check "$(ci_lock_state)|$(ci_lock_field kind)|$(ci_lock_field change_id)|$(ci_lock_field head)|$(ci_lock_field tree)|$(ci_lock_field base)" \
+  "dispatched|gate|fix/ci-full|$ci_candidate|$ci_tree|$ci_main" "claim writes state=dispatched with the change ID, kind, head, tree and base"
+check "$(ci_lock_field common_dir)" "$(ci_git rev-parse --path-format=absolute --git-common-dir)" "the claimed lock names the repository's common folder"
+check "$(file_mode "$ci_lock_file")" "600" "the claimed lock is readable only by the owner"
+claim_line="$(grep '^claim: ' "$ci_log" | tail -n 1)"
+contains "$claim_line" "change_id=fix/ci-full change=fix/ci-full kind=gate head=$ci_candidate tree=$ci_tree base=$ci_main patch_id=" \
+  "claim appends a claim line with the change, the commits and the patch-id"
+check "${claim_line##* }" "run=open" "a new claim line is open"
+
+run_ci_gate claim --ff-only --change fix/ci-full --change-id fix/ci-full
+
+check "$status" "1" "a second claim is refused while a claim is held"
+contains "$output" "a claimed CI gate run of fix/ci-full" "the refusal names the claimed dispatch"
+check "$(placement "$output" "*release it with merge-gate.sh release*")" "outside" "the refusal of a durable state does not suggest a plain release"
+
+run_ci_gate release
+
+check "$status|$(ci_lock_state)" "1|dispatched" "a plain release refuses a claimed dispatch"
+
+for case_spec in \
+  'repository.full_name|data["repository"]["full_name"] = "someone/ovc"' \
+  'head_repository.full_name|data["head_repository"]["full_name"] = "fork/ovc"' \
+  'path|data["path"] = ".github/workflows/other.yml"' \
+  'event|data["event"] = "push"' \
+  'head_branch|data["head_branch"] = "other"' \
+  'head_sha|data["head_sha"] = "1111111111111111111111111111111111111111"' \
+  'display_title|data["display_title"] = "gate full 2222222222222222222222222222222222222222"' \
+  'triggering_actor.login|data["triggering_actor"]["login"] = "someone"'; do
+  ci_refuses "a run whose ${case_spec%%|*} does not match" "has ${case_spec%%|*} " run.json "${case_spec#*|}"
+done
+ci_refuses "a run that is not completed" 'is "in_progress", not completed' run.json 'data["status"] = "in_progress"'
+ci_refuses "a run at attempt 2" "it was re-run" run.json 'data["run_attempt"] = 2'
+ci_refuses "a run that did not succeed" 'concluded "failure", not success' run.json 'data["conclusion"] = "failure"'
+ci_refuses "a change run" "a change or evidence run is never a gate" run.json "data[\"display_title\"] = \"gate change $ci_candidate\""
+ci_refuses "an evidence run" "a change or evidence run is never a gate" run.json "data[\"display_title\"] = \"gate evidence $ci_candidate after\""
+ci_refuses "a docs run for a full-scope candidate" "has display_title \"gate docs $ci_candidate\", not \"gate full $ci_candidate\"" run.json \
+  "data[\"display_title\"] = \"gate docs $ci_candidate\""
+ci_refuses "a run with a missing job" "lacks the expected jobs e2e (3)" jobs.json \
+  'data["jobs"] = [job for job in data["jobs"] if job["name"] != "e2e (3)"]; data["total_count"] -= 1'
+ci_refuses "a run whose job set lacks the skipped evidence job" "lacks the expected jobs evidence" jobs.json \
+  'data["jobs"] = [job for job in data["jobs"] if job["name"] != "evidence"]; data["total_count"] -= 1'
+ci_refuses "a run with an extra job" "does not expect: extra" jobs.json \
+  'data["jobs"].append(dict(data["jobs"][0], name="extra", id=1)); data["total_count"] += 1'
+ci_refuses "a run whose skipped job ran" "docs-checks of the run" jobs.json \
+  'next(job for job in data["jobs"] if job["name"] == "docs-checks")["conclusion"] = "success"'
+ci_refuses "a run with a retried job" "it was retried" jobs.json \
+  'next(job for job in data["jobs"] if job["name"] == "e2e (2)")["run_attempt"] = 2'
+ci_refuses "a run with a job that did not succeed" 'e2e (3) of the run' jobs.json \
+  'next(job for job in data["jobs"] if job["name"] == "e2e (3)")["conclusion"] = "failure"'
+ci_refuses "a jobs list that is not completely read" "not completely read" jobs.json 'data["total_count"] += 1'
+ci_refuses "attempt history that is not completely read" "not completely read" history.json 'data["total_count"] = 3'
+ci_refuses "an earlier failed attempt without a row" "the earlier attempt ${run_url}7002 ended" history.json \
+  "data[\"workflow_runs\"].append(dict(data[\"workflow_runs\"][0], id=7002, conclusion=\"failure\")); data[\"total_count\"] += 1"
+ci_refuses "an earlier attempt still in progress" "the earlier attempt ${run_url}7003 is still \"in_progress\"" history.json \
+  "data[\"workflow_runs\"].append(dict(data[\"workflow_runs\"][0], id=7003, status=\"in_progress\", conclusion=None)); data[\"total_count\"] += 1"
+ci_refuses "an earlier attempt that names an unknown commit" "the earlier attempt ${run_url}7007 ended" history.json \
+  "data[\"workflow_runs\"].append(dict(data[\"workflow_runs\"][0], id=7007, conclusion=\"cancelled\", display_title=\"gate full 3333333333333333333333333333333333333333\")); data[\"total_count\"] += 1"
+
+make_runs full 6101 "$ci_candidate" "$ci_main"
+printf 'tampered\n' >>"$runs/fetch.txt"
+
+run_ci_gate ci --ff-only --change fix/ci-full --runs "$runs"
+
+check "$status" "1" "ci refuses a fetched folder whose files differ from its SHA256SUMS"
+contains "$output" "differs from its SHA256SUMS line" "the refusal names the changed file"
+
+ci_patch="$(ci_git diff-tree -p "$ci_candidate^" "$ci_candidate" | ci_git patch-id --stable | awk '{ print $1 }')"
+printf 'claim: time=2026-11-26T10:00:00Z change_id=fix/someone-else change=fix/someone-else kind=gate head=4444444444444444444444444444444444444444 tree=5555555555555555555555555555555555555555 base=%s patch_id=%s run=7004 ended=release\n' \
+  "$ci_old_main" "$ci_patch" >>"$ci_log"
+make_runs full 6102 "$ci_candidate" "$ci_main"
+seal_runs "$runs"
+
+run_ci_gate ci --ff-only --change fix/ci-full --runs "$runs"
+
+check "$status" "1" "ci refuses when the run of an earlier claim with the same patch-id was not fetched"
+contains "$output" "claims/run-7004.json of the fetched runs folder" "the refusal names the missing claimed run"
+check "$(parse_with_gate ci_python claimed log="$ci_log" candidate="$ci_candidate" base="$ci_main" | paste -sd ' ' -)" "run 7004 base $ci_old_main" \
+  "ci-fetch's claim lookup finds the earlier run and the base history of a claim matched only by patch-id"
+
+add_claimed_run 7004 "$(history_entry 7004 "gate full 4444444444444444444444444444444444444444" completed failure 1 "$ci_old_main")"
+add_base_history "$ci_old_main"
+seal_runs "$runs"
+
+run_ci_gate ci --ff-only --change fix/ci-full --runs "$runs"
+
+check "$status" "1" "ci counts a failed attempt matched only by patch-id"
+contains "$output" "the earlier attempt ${run_url}7004 ended" "the refusal names the patch-id attempt"
+
+remove_log_lines "run=7004 ended=release"
+printf 'claim: time=2026-11-26T11:00:00Z change_id=fix/ci-full change=fix/ci-full kind=gate head=6666666666666666666666666666666666666666 tree=7777777777777777777777777777777777777777 base=%s patch_id=0000000000000000000000000000000000000000 run=7005 ended=release\n' \
+  "$ci_old_main" >>"$ci_log"
+make_runs full 6103 "$ci_candidate" "$ci_main"
+add_claimed_run 7005 "$(history_entry 7005 "gate full 6666666666666666666666666666666666666666" completed failure 1 "$ci_old_main")"
+add_base_history "$ci_old_main"
+seal_runs "$runs"
+
+run_ci_gate ci --ff-only --change fix/ci-full --runs "$runs"
+
+check "$status" "1" "ci counts a failed run on an earlier base found through its claim line"
+contains "$output" "the earlier attempt ${run_url}7005 ended" "a changed-diff rebuild on an earlier base is found by its change ID"
+
+make_runs full 6106 "$ci_candidate" "$ci_main"
+add_claimed_run 7005 "$(history_entry 7005 "gate full 4444444444444444444444444444444444444444" completed success 1 "$ci_old_main")"
+add_base_history "$ci_old_main"
+seal_runs "$runs"
+
+run_ci_gate ci --ff-only --change fix/ci-full --runs "$runs"
+
+check "$status|$(ci_lock_state)" "1|dispatched" "ci refuses a claim whose recorded run ID names another head's run"
+contains "$output" "recorded for the claim of 6666666666666666666666666666666666666666" "the refusal names the claim the mistyped run ID was recorded for"
+
+make_runs full 6107 "$ci_candidate" "$ci_main"
+add_claimed_run 7005 "$(history_entry 7005 "gate full 6666666666666666666666666666666666666666" completed success 1 "$ci_main")"
+add_base_history "$ci_old_main"
+seal_runs "$runs"
+
+run_ci_gate ci --ff-only --change fix/ci-full --runs "$runs"
+
+check "$status|$(ci_lock_state)" "1|dispatched" "ci refuses a claim whose recorded run ran on another base"
+contains "$output" "has head_sha \"$ci_main\", not \"$ci_old_main\"" "the refusal names the base of the recorded run"
+
+make_runs full 6108 "$ci_candidate" "$ci_main"
+add_claimed_run 7005 "$(history_entry 7005 "gate full 6666666666666666666666666666666666666666" completed success 1 "$ci_old_main")"
+add_base_history "$ci_old_main" \
+  "$(history_entry 7005 "gate full 6666666666666666666666666666666666666666" completed success 1 "$ci_old_main")" \
+  "$(history_entry 7009 "gate full 6666666666666666666666666666666666666666" completed failure 1 "$ci_old_main")"
+seal_runs "$runs"
+
+run_ci_gate ci --ff-only --change fix/ci-full --runs "$runs"
+
+check "$status|$(ci_lock_state)" "1|dispatched" "ci counts a second run of an earlier claim on an old base although the claim recorded only one run"
+contains "$output" "the earlier attempt ${run_url}7009 ended" "the refusal names the unrecorded run found in the old-base history"
+
+remove_log_lines "run=7005 ended=release"
+printf 'claim: time=2026-11-26T12:00:00Z change_id=fix/ci-full change=fix/ci-full kind=gate head=8888888888888888888888888888888888888888 tree=9999999999999999999999999999999999999999 base=%s patch_id=none run=none ended=release\n' \
+  "$ci_old_main" >>"$ci_log"
+make_runs full 6104 "$ci_candidate" "$ci_main"
+
+run_ci_gate ci --ff-only --change fix/ci-full --runs "$runs"
+
+check "$status" "1" "ci refuses when the old-base history of a claim without a run was not fetched"
+contains "$output" "bases/$ci_old_main.json" "the refusal names the missing old-base history"
+check "$(parse_with_gate ci_python claimed log="$ci_log" candidate="$ci_candidate" base="$ci_main")" "base $ci_old_main" \
+  "ci-fetch's claim lookup asks for the old-base history of a claim released without a run"
+
+mkdir -p "$runs/bases"
+printf '{"total_count": 1, "workflow_runs": [%s]}\n' \
+  "$(history_entry 7006 "gate full 8888888888888888888888888888888888888888" completed failure 1 "$ci_old_main")" >"$runs/bases/$ci_old_main.json"
+seal_runs "$runs"
+
+run_ci_gate ci --ff-only --change fix/ci-full --runs "$runs"
+
+check "$status" "1" "ci resolves a released claim without a run ID through its old-base history"
+contains "$output" "the earlier attempt ${run_url}7006 ended" "the refusal names the run found by title on the old base"
+
+remove_log_lines "run=none ended=release"
+make_runs full 6105 "$ci_candidate" "$ci_main"
+add_history "$(history_entry 7001 "gate full $ci_candidate" completed failure 1 "$ci_main")"
+add_history "$(history_entry 7008 "gate full $ci_candidate" completed success 1 "$ci_main")"
+seal_runs "$runs"
+accepted_runs="$runs"
+
+run_ci_gate ci --ff-only --change fix/ci-full --runs "$accepted_runs"
+
+check "$status" "0" "ci accepts a valid full run whose earlier failed attempt a known-limitations row names"
+contains "$output" "earlier attempt: ${run_url}7001: \"completed\", \"failure\", attempt 1, named by a row" "the report names the attempt the row covers"
+contains "$output" "job: e2e (12): success at attempt 1" "the report lists each job's conclusion"
+contains "$output" "execution time: 800 s" "the report gives the execution time from the earliest start to the end of the gate job"
+contains "$output" "queue time: 7 s" "the report gives the queue time before the earliest start"
+check "$(ci_lock_state)|$(ci_lock_field record)|$(ci_lock_field run)|$(ci_lock_field checks)" "passed|ci|6105|ci" \
+  "ci leaves the lock passed with a ci record for finish"
+check "$(grep '^claim: ' "$ci_log" | tail -n 1 | awk '{ print $(NF - 1), $NF }')" "run=6105 ended=ci" "ci appends the run ID to the claim line"
+contains "$(tail -n 1 "$ci_log")" "ci: time=" "ci appends its record to the merge gate log"
+
+ci_git merge --quiet --ff-only fix/ci-full
+
+run_ci_gate finish
+
+check "$status|$(ci_lock_state)" "0|released" "finish accepts a ci record after the fast-forward merge"
+contains "$output" "result: passed; the trees are equal and the lock is released record=ci" "the finish result line names the ci record"
+check "$(tail -n 1 "$ci_log")" "finish: record=ci head=$ci_candidate tree=$ci_tree result=passed" \
+  "finish appends the finish line naming main's tip and tree"
+ci_main="$ci_candidate"
+ci_git update-ref refs/remotes/origin/main "$ci_main"
+
+ci_branch docs/ci-docs
+ci_commit_file docs/ci-docs.md "docs" "Add a document"
+ci_docs="$(ci_git rev-parse HEAD)"
+ci_git switch --quiet main
+
+run_ci_gate claim --ff-only --change docs/ci-docs --change-id docs/ci-docs
+
+check "$status|$(ci_lock_field scope)" "0|docs-only" "claim classifies a Markdown-only candidate as docs-only"
+
+make_runs docs 6200 "$ci_docs" "$ci_main"
+
+run_ci_gate ci --ff-only --change docs/ci-docs --runs "$runs"
+
+check "$status|$(ci_lock_field record)" "0|ci" "ci accepts a valid docs run of a Markdown-only candidate"
+contains "$output" "scope: docs (candidate classified docs-only)" "the report names the docs scope"
+
+run_ci_gate release
+
+check "$status|$(ci_lock_state)" "0|released" "an abandoned ci record is released"
+
+ci_branch fix/ci-shape
+ci_commit_file tools/shape.sh "echo shape" "Add a shape script"
+ci_git switch --quiet main
+
+run_ci_gate claim --ff-only --change fix/ci-shape --change-id fix/ci-shape
+
+ci_shape="$(ci_git rev-parse fix/ci-shape)"
+ci_git update-ref refs/remotes/origin/main "$ci_old_main"
+make_runs full 6300 "$ci_shape" "$ci_main"
+
+run_ci_gate ci --ff-only --change fix/ci-shape --runs "$runs"
+
+check "$status|$(ci_lock_state)" "1|dispatched" "ci refuses while origin/main differs from main"
+contains "$output" "origin/main (as last fetched) is $ci_old_main" "the refusal names origin/main"
+
+ci_git update-ref refs/remotes/origin/main "$ci_main"
+ci_git switch --quiet fix/ci-shape
+ci_commit_file tools/shape.sh "echo shape two" "Add a second commit"
+ci_git switch --quiet main
+set_ci_lock_field head "$(ci_git rev-parse fix/ci-shape)"
+set_ci_lock_field tree "$(ci_git rev-parse 'fix/ci-shape^{tree}')"
+
+run_ci_gate ci --ff-only --change fix/ci-shape --runs "$runs"
+
+check "$status" "1" "ci refuses a two-commit branch"
+contains "$output" "more than one commit beyond" "the refusal names the extra commit"
+
+ci_branch fix/ci-parent "$ci_old_main"
+ci_commit_file tools/parent.sh "echo parent" "Add a script on an old main"
+ci_git switch --quiet main
+set_ci_lock_field change fix/ci-parent
+set_ci_lock_field head "$(ci_git rev-parse fix/ci-parent)"
+set_ci_lock_field tree "$(ci_git rev-parse 'fix/ci-parent^{tree}')"
+
+run_ci_gate ci --ff-only --change fix/ci-parent --runs "$runs"
+
+check "$status" "1" "ci refuses a candidate whose parent is not main"
+contains "$output" "is not based on $ci_main" "the refusal names main's tip"
+
+set_ci_lock_field change fix/ci-shape
+set_ci_lock_field head "$ci_shape"
+set_ci_lock_field tree "$(ci_git rev-parse "$ci_shape^{tree}")"
+
+run_ci_gate release --run 4242
+
+check "$status|$(ci_lock_state)" "0|released" "release --run ends a claim"
+check "$(grep '^claim: ' "$ci_log" | tail -n 1 | awk '{ print $(NF - 1), $NF }')" "run=4242 ended=release" "release --run appends the run ID to the claim line"
+
+ci_git branch --quiet fix/ci-shape-r1 "$ci_shape"
+
+run_ci_gate claim --ff-only --change fix/ci-shape-r1 --change-id fix/ci-shape
+
+check "$status" "0" "a rebuild named <change-id>-r<k> is claimed under the change ID"
+
+run_ci_gate release --no-run
+
+check "$status|$(ci_lock_state)" "0|released" "release --no-run ends a claim"
+check "$(grep '^claim: ' "$ci_log" | tail -n 1 | awk '{ print $(NF - 1), $NF }')" "run=none ended=release" "release --no-run appends none to the claim line"
+
+run_ci_gate release --run 4243
+
+check "$status" "1" "release --run refuses when no claim is held"
+
+ci_branch fix/ev-before
+ci_commit_file tools/ev.sh "echo broken" "Rebuild the failed change"
+ci_before="$(ci_git rev-parse HEAD)"
+ci_before_tree="$(ci_git rev-parse 'HEAD^{tree}')"
+ci_branch fix/ev-after
+ci_commit_file tools/ev.sh "echo fixed" "Rebuild the change with its fix"
+ci_after="$(ci_git rev-parse HEAD)"
+ci_branch fix/ev-wrong
+ci_commit_file tools/ev.sh "echo other" "Another tree"
+ci_wrong="$(ci_git rev-parse HEAD)"
+ci_git switch --quiet main
+ev_go=(--kind go --package ./internal/api --test TestChatSearchTimeout)
+ev_selection="kind:go|package:./internal/api|test:TestChatSearchTimeout|project:|title-sha256:|entry:"
+claim_line_of() {
+  printf 'claim: time=2026-11-27T08:00:00Z change_id=%s change=%s kind=gate head=%s tree=%s base=%s patch_id=none run=%s ended=release\n' \
+    "$1" "$1" "$2" "$3" "$4" "$5" >>"$ci_log"
+}
+claim_line_of fix/other "$ci_wrong" "$(ci_git rev-parse 'fix/ev-wrong^{tree}')" "$ci_main" 7997
+claim_line_of fix/ev "$ci_wrong" "$(ci_git rev-parse 'fix/ev-wrong^{tree}')" "$ci_main" 7998
+
+run_ci_gate claim --evidence --change fix/ev-before --change-id fix/ev --failed-run 7999 "${ev_go[@]}"
+
+check "$status|$(ci_lock_state)" "1|released" "claim --evidence refuses a failed run that no ended claim line names"
+contains "$output" "no ended claim line naming the run 7999" "the refusal names the unknown failed run"
+
+run_ci_gate claim --evidence --change fix/ev-before --change-id fix/ev --failed-run 7997 "${ev_go[@]}"
+
+check "$status|$(ci_lock_state)" "1|released" "claim --evidence refuses a failed run of another change"
+contains "$output" "ended the claim of change fix/other, not of fix/ev" "the refusal names the change of the failed run"
+
+run_ci_gate claim --evidence --change fix/ev-before --change-id fix/ev --failed-run 7998 "${ev_go[@]}"
+
+check "$status|$(ci_lock_state)" "1|released" "claim --evidence refuses a failed run on the current main whose tree is not the before tree"
+contains "$output" "not the before tree $ci_before_tree" "the refusal names the before tree"
+
+claim_line_of fix/ev "$ci_before" "$ci_before_tree" "$ci_main" 8000
+
+run_ci_gate claim --evidence --change fix/ev-before --change-id fix/ev --failed-run 8000 --kind go --package ./internal/api
+
+check "$status|$(ci_lock_state)" "1|released" "claim --evidence refuses a go selection without its test"
+contains "$output" "--test" "the refusal names the missing test"
+
+run_ci_gate claim --evidence --change fix/ev-before --change-id fix/ev --failed-run 8000 "${ev_go[@]}"
+
+check "$status" "0" "claim --evidence opens an evidence series"
+check "$(ci_lock_state)|$(ci_lock_field failed_run)|$(ci_lock_field before_tree)|$(ci_lock_field base)|$(ci_lock_field change_id)" \
+  "evidence|${run_url}8000|$ci_before_tree|$ci_main|fix/ev" "claim --evidence writes state=evidence with the before tree, main and the failed run"
+check "$(ci_lock_field selection)" "$ev_selection" "claim --evidence records the selection in the lock"
+contains "$(tail -n 1 "$ci_log")" "selection=$ev_selection" "the evidence claim line names the selection"
+
+ci_branch fix/ci-during-evidence
+ci_commit_file notes/during.md "during" "Add a change while an evidence series is open"
+ci_git switch --quiet main
+run_ci_gate claim --ff-only --change fix/ci-during-evidence --change-id fix/ci-during-evidence
+
+check "$status|$(ci_lock_state)" "1|evidence" "a claim of another change is refused while an evidence series is open"
+contains "$output" "an evidence series of change fix/ev" "the refusal names the open series"
+
+run_ci_gate ci --ff-only --change fix/ev-before --runs "$runs"
+
+check "$status|$(ci_lock_state)" "1|evidence" "ci is refused while an evidence series is open"
+
+run_ci_gate release
+
+check "$status|$(ci_lock_state)" "1|evidence" "a plain release refuses an evidence series"
+
+run_ci_gate release --evidence
+
+check "$status|$(ci_lock_state)" "1|evidence" "release --evidence refuses a series without a run that ran no test"
+
+run_ci_gate series-open --series before-first --commit "$ci_wrong"
+
+check "$status" "1" "series-open refuses a before-first commit whose tree is not the before tree"
+
+run_ci_gate series-open --series after --commit "$ci_after"
+
+check "$status" "1" "series-open refuses the after series before the before series is complete"
+
+run_ci_gate series-open --series before-first --commit "$ci_before"
+
+check "$status|$(ci_lock_field pending)" "0|before-first,$ci_before" "series-open writes the one pending dispatch into the lock"
+contains "$(tail -n 1 "$ci_log")" "selection=$ev_selection" "the evidence open line names the selection"
+
+run_ci_gate series-open --series before-first --commit "$ci_before"
+
+check "$status" "1" "series-open allows one dispatch until it is recorded"
+contains "$output" "already pending" "the refusal names the pending dispatch"
+
+make_evidence_runs() {
+  local id="$1" commit="$2" series="$3" log_text="$4" conclusion="${5:-success}"
+  new_runs_folder
+  fill_runs evidence "$id" "$commit" "$ci_main" "$series"
+  edit_json "$runs/run.json" 'data["conclusion"] = extra' "\"$conclusion\""
+  edit_json "$runs/jobs.json" 'next(job for job in data["jobs"] if job["name"] == "evidence")["conclusion"] = extra' "\"$conclusion\""
+  sed -i.bak 's/^logs=no$/logs=yes/' "$runs/fetch.txt"
+  rm -f "$runs/fetch.txt.bak"
+  mkdir -p "$runs/logs"
+  python3 -I -c '
+import sys
+import zipfile
+
+with zipfile.ZipFile(sys.argv[1], "w") as archive:
+    archive.writestr("8_evidence.txt", sys.argv[2])
+    archive.writestr("evidence/3_Run the series.txt", sys.argv[2])
+    archive.writestr("1_validate.txt", "evidence result: run=1/1 outcome=failed\n")
+' "$runs/logs/run-$id.zip" "$log_text"
+  parse_with_gate ci_python extract zip="$runs/logs/run-$id.zip" destination="$runs/logs/run-$id"
+  seal_runs "$runs"
+}
+
+series_log() {
+  local series="$1" commit="$2" count="$3" outcome="$4" selection="${5:-$ev_selection}" number=1 nonce passed=0 failed=0
+  printf '2026-11-27T09:00:00.0000000Z evidence selection: %s\n' "$selection"
+  printf '2026-11-27T09:00:01.0000000Z evidence series %s of candidate %s: %s runs of the go selection\n' "$series" "$commit" "$count"
+  while [[ "$number" -le "$count" ]]; do
+    nonce="$(printf '%032x' "$number")"
+    printf '2026-11-27T09:%02d:00.0000000Z evidence run %s/%s nonce: %s\n' "$number" "$number" "$count" "$nonce"
+    printf '2026-11-27T09:%02d:01.0000000Z evidence result: run=%s/%s outcome=failed nonce=%032x\n' "$number" "$number" "$count" 999
+    printf '2026-11-27T09:%02d:02.0000000Z evidence result: run=%s/%s outcome=%s nonce=%s\n' "$number" "$number" "$count" "$outcome" "$nonce"
+    if [[ "$outcome" == passed ]]; then
+      passed=$((passed + 1))
+    else
+      failed=$((failed + 1))
+    fi
+    number=$((number + 1))
+  done
+  printf '2026-11-27T09:59:00.0000000Z evidence series %s: %s runs, %s passed, %s failed, 0 ran no test\n' "$series" "$count" "$passed" "$failed"
+}
+
+make_evidence_runs 8001 "$ci_wrong" before-first "$(series_log before-first "$ci_wrong" 1 passed)"
+
+run_ci_gate evidence-record --run 8001 --runs "$runs" --reproduced no
+
+check "$status" "1" "evidence-record refuses a run fetched for another commit than the pending one"
+
+make_evidence_runs 8001 "$ci_before" before-first "$(series_log before-first "$ci_before" 1 passed)"
+edit_json "$runs/run.json" 'data["display_title"] = data["display_title"].replace("before-first", "after")'
+seal_runs "$runs"
+
+run_ci_gate evidence-record --run 8001 --runs "$runs" --reproduced no
+
+check "$status" "1" "evidence-record refuses a run whose title names another series"
+contains "$output" "has display_title" "the refusal names the title"
+
+make_evidence_runs 8001 "$ci_before" before-first "$(series_log before-first "$ci_before" 1 passed)"
+
+run_ci_gate evidence-record --run 8001 --runs "$runs" --reproduced yes
+
+check "$status|$(ci_lock_field pending)" "1|before-first,$ci_before" "evidence-record refuses a statement the recorded lines contradict"
+contains "$output" "give reproduced=no" "the refusal names the derived outcome"
+
+make_evidence_runs 8001 "$ci_before" before-first \
+  "$(series_log before-first "$ci_before" 1 passed "kind:go|package:./internal/api|test:TestOther|project:|title-sha256:|entry:")"
+
+run_ci_gate evidence-record --run 8001 --runs "$runs" --reproduced no
+
+check "$status|$(ci_lock_field pending)" "1|before-first,$ci_before" "evidence-record refuses a log whose selection line differs from the claimed selection"
+contains "$output" "not the claimed selection $ev_selection" "the refusal names the claimed selection"
+
+make_evidence_runs 8001 "$ci_before" before-first "$(series_log before-first "$ci_before" 1 passed | grep -v ' nonce: ')"
+
+run_ci_gate evidence-record --run 8001 --runs "$runs" --reproduced no
+
+check "$status|$(ci_lock_field pending)" "1|before-first,$ci_before" "evidence-record refuses a result line whose nonce the harness did not print before the run"
+contains "$output" "whose nonce the harness did not print" "the refusal names the missing nonce"
+
+make_evidence_runs 8001 "$ci_before" before-first "$(series_log before-first "$ci_before" 1 passed)" cancelled
+
+run_ci_gate evidence-record --run 8001 --runs "$runs" --reproduced no
+
+check "$status|$(ci_lock_field pending)" "1|before-first,$ci_before" "evidence-record refuses a cancelled run and leaves it to the owner"
+contains "$output" 'concluded "cancelled"; the run is not recorded, report it to the owner' "the refusal names the cancelled conclusion"
+
+make_evidence_runs 8001 "$ci_before" before-first "$(series_log before-first "$ci_before" 1 passed)" failure
+
+run_ci_gate evidence-record --run 8001 --runs "$runs" --reproduced no
+
+check "$status|$(ci_lock_field pending)" "1|before-first,$ci_before" "evidence-record refuses a run whose conclusion contradicts its recorded outcomes"
+contains "$output" "which contradicts the recorded outcomes passed" "the refusal names the contradiction"
+
+make_evidence_runs 8001 "$ci_before" before-first "$(series_log before-first "$ci_before" 1 passed)"
+
+run_ci_gate evidence-record --run 8001 --runs "$runs" --reproduced no
+
+check "$status" "0" "evidence-record stores a checked run and ignores a forged result line inside the output of the run"
+check "$(ci_lock_field runs)|$(ci_lock_field pending)" "before-first:8001:$ci_before:not-reproduced|" \
+  "evidence-record stores the series, run, commit and derived outcome and clears the pending dispatch"
+contains "$(tail -n 1 "$ci_log")" "evidence record: " "evidence-record logs the run"
+contains "$(tail -n 1 "$ci_log")" "selection=$ev_selection" "the evidence record line names the selection"
+
+run_ci_gate claim --after-fix --change fix/ev --change-id fix/ev
+
+check "$status|$(ci_lock_state)" "1|evidence" "claim --after-fix refuses an incomplete after series"
+contains "$output" "is not complete and passing" "the refusal names the incomplete series"
+
+run_ci_gate series-open --series before-rest --commit "$ci_before"
+make_evidence_runs 8002 "$ci_before" before-rest "$(series_log before-rest "$ci_before" 9 passed)"
+run_ci_gate evidence-record --run 8002 --runs "$runs" --reproduced no
+run_ci_gate series-open --series after --commit "$ci_after"
+make_evidence_runs 8003 "$ci_after" after "$(series_log after "$ci_after" 10 passed)"
+
+run_ci_gate evidence-record --run 8003 --runs "$runs" --reproduced no
+
+check "$status|$(ci_lock_field runs)" \
+  "0|before-first:8001:$ci_before:not-reproduced,before-rest:8002:$ci_before:not-reproduced,after:8003:$ci_after:passed" \
+  "the before-rest and after series are recorded once the before-first run did not reproduce"
+
+ci_branch fix/ev-r1 "$ci_old_main"
+ci_commit_file tools/ev.sh "echo fixed" "Rebuild the fix on an old main"
+ci_git switch --quiet main
+
+run_ci_gate claim --after-fix --change fix/ev-r1 --change-id fix/ev
+
+check "$status|$(ci_lock_state)" "1|evidence" "claim --after-fix refuses a candidate whose parent is not the series base"
+
+ci_git branch --quiet -D fix/ev-r1
+ci_git switch --quiet -c fix/ev-r1 "$ci_main"
+ci_git merge --squash --quiet "$ci_after" >/dev/null
+mkdir -p "$ci_repo/knowledge/reviews"
+printf '| after-fix | %s8000 |\n' "$run_url" >>"$ci_repo/knowledge/reviews/slice-10-known-limitations.md"
+printf 'echo more\n' >"$ci_repo/tools/more.sh"
+ci_git add -A
+ci_git commit --quiet -m "Add the fix, the row and an unrelated script"
+ci_git switch --quiet main
+
+run_ci_gate claim --after-fix --change fix/ev-r1 --change-id fix/ev
+
+check "$status|$(ci_lock_state)" "1|evidence" "claim --after-fix refuses a tree beyond the after tree and known-limitations rows"
+contains "$output" "beyond the known-limitations rows, in tools/more.sh" "the refusal names the extra path"
+
+ci_git switch --quiet fix/ev-r1
+ci_git rm --quiet tools/more.sh
+ci_git commit --quiet --amend -m "Add the after-fix row"
+ci_git switch --quiet main
+ci_after_fix="$(ci_git rev-parse fix/ev-r1)"
+
+run_ci_gate claim --after-fix --change fix/ev-r1 --change-id fix/ev
+
+check "$status" "0" "claim --after-fix takes the lock directly from the evidence series"
+check "$(ci_lock_state)|$(ci_lock_field kind)|$(ci_lock_field head)|$(ci_lock_field failed_run)" "dispatched|after-fix|$ci_after_fix|${run_url}8000" \
+  "the after-fix claim is a dispatched claim of kind after-fix that keeps the failed run"
+contains "$(grep '^evidence end: ' "$ci_log" | tail -n 1)" "by=claim-after-fix" "the evidence series ends through the after-fix claim"
+contains "$(grep '^claim: ' "$ci_log" | tail -n 1)" "kind=after-fix head=$ci_after_fix" "the after-fix claim appends its claim line"
+
+run_ci_gate release --no-run
+evidence_claims_before="$(grep -c '^evidence claim: ' "$ci_log")"
+
+run_ci_gate claim --evidence --change fix/ev-before --change-id fix/ev --failed-run 8000 "${ev_go[@]}"
+
+check "$status|$(ci_lock_state)" "1|released" "a second evidence series for the same failed run is refused"
+check "$(grep -c '^evidence claim: ' "$ci_log")" "$evidence_claims_before" "the refused second series writes no evidence claim line"
+contains "$output" "already holds an evidence series for ${run_url}8000" "the refusal names the failed run"
+
+ci_branch fix/nt-before
+ci_commit_file tools/nt.sh "echo broken" "Rebuild another failed change"
+ci_nt_before="$(ci_git rev-parse HEAD)"
+ci_git switch --quiet main
+claim_line_of fix/nt "$ci_nt_before" "$(ci_git rev-parse 'fix/nt-before^{tree}')" "$ci_main" 8100
+run_ci_gate claim --evidence --change fix/nt-before --change-id fix/nt --failed-run 8100 "${ev_go[@]}"
+run_ci_gate series-open --series before-first --commit "$ci_nt_before"
+make_evidence_runs 8101 "$ci_nt_before" before-first "global setup failed" failure
+
+run_ci_gate evidence-record --run 8101 --runs "$runs" --reproduced no
+
+check "$status|$(ci_lock_field runs)" "0|before-first:8101:$ci_nt_before:no-test" "a run with no harness summary line is stored as one that ran no test"
+contains "$output" "no harness summary line, so it ran no test" "the report says the run ran no test"
+
+run_ci_gate series-open --series before-rest --commit "$ci_nt_before"
+
+check "$status" "1" "no further series opens after a run that ran no test"
+
+run_ci_gate release --evidence
+
+check "$status|$(ci_lock_state)" "0|released" "release --evidence ends a series after a run that ran no test"
+contains "$(tail -n 1 "$ci_log")" "by=release-evidence" "the end of the series is logged"
+
+run_ci_gate claim --evidence --change fix/nt-before --change-id fix/nt --failed-run 8100 "${ev_go[@]}"
+
+check "$status|$(ci_lock_state)" "0|evidence" "a new series for the same failed run is allowed after a series that ran no test"
+rm "$ci_lock_file"
+
+ci_branch fix/fb
+ci_commit_file knowledge/reviews/slice-10-known-limitations.md "| fallback | ${run_url}9001 stalled |" "Add the fallback change with its row"
+ci_fb="$(ci_git rev-parse HEAD)"
+ci_git switch --quiet main
+run_ci_gate claim --ff-only --change fix/fb --change-id fix/fb
+
+run_ci_gate fallback --from-claim --reason "GitHub status: Actions degraded record=ci" --stalled-runs 9001
+
+check "$status|$(ci_lock_state)" "1|dispatched" "fallback --from-claim refuses a reason with an equals sign"
+contains "$output" "holds an equals sign" "the refusal names the equals sign"
+
+run_ci_gate fallback --from-claim --reason "GitHub status: Actions degraded" --stalled-runs 9001
+
+check "$status" "0" "fallback --from-claim moves a claimed dispatch to a fallback"
+check "$(ci_lock_state)|$(ci_lock_field stalled_runs)|$(ci_lock_field reason)" "fallback|9001|GitHub status: Actions degraded" \
+  "the fallback lock records the stalled runs and the quoted reason"
+check "$(grep '^claim: ' "$ci_log" | tail -n 1 | awk '{ print $(NF - 1), $NF }')" "run=9001 ended=fallback" "the fallback ends the claim line with the stalled run"
+
+ci_git switch --quiet fix/fb
+
+run_ci_gate gate --ff-only --checks self-test --skip-tool-probes --skip-power-log
+
+check "$status|$(ci_lock_state)" "1|fallback" "a gate without the change ID does not take over the fallback lock"
+contains "$output" "only merge-gate.sh gate --change-id fix/fb takes it over" "the refusal names the takeover"
+
+run_ci_gate gate --ff-only --checks self-test --skip-tool-probes --skip-power-log --change-id fix/fb
+
+check "$status|$(ci_lock_state)|$(ci_lock_field kind)" "0|passed|fallback" "the gate with the change ID takes over the fallback lock and passes"
+
+ci_git switch --quiet main
+ci_git merge --quiet --ff-only fix/fb
+set_ci_lock_field checks full
+
+run_ci_gate finish
+
+check "$status" "0" "finish accepts the fallback gate"
+check "$(tail -n 1 "$ci_log")" "finish: record=gate head=$ci_fb tree=$(ci_git rev-parse 'HEAD^{tree}') result=passed" \
+  "the finish line of a local gate names the gate record"
+
+run_ci_gate claim --catch-up --change-id fix/fb
+
+check "$status|$(ci_lock_field kind)|$(ci_lock_field base)|$(ci_lock_field head)" "0|catch-up|$ci_main|$ci_fb" \
+  "claim --catch-up claims local main's tip on origin/main"
+
+new_runs_folder
+fill_runs full 9100 "$ci_fb" "$ci_main"
+add_history "$(history_entry 9001 "gate full $ci_fb" completed cancelled 1 "$ci_main")"
+add_history "$(history_entry 9002 "gate full $ci_fb" completed cancelled 1 "$ci_main")"
+add_claimed_run 9001 "$(history_entry 9001 "gate full $ci_fb" completed cancelled 1 "$ci_main")"
+seal_runs "$runs"
+
+run_ci_gate ci --catch-up --runs "$runs"
+
+check "$status|$(ci_lock_state)" "1|dispatched" "ci --catch-up refuses a stalled run that no row names"
+contains "$output" "the earlier attempt ${run_url}9002 ended" "the refusal names the unnamed stalled run"
+
+ci_git update-ref refs/remotes/origin/main "$ci_old_main"
+
+run_ci_gate ci --catch-up --runs "$runs"
+
+check "$status" "1" "ci --catch-up refuses a candidate whose parent is not origin/main"
+
+ci_git update-ref refs/remotes/origin/main "$ci_main"
+new_runs_folder
+fill_runs full 9100 "$ci_fb" "$ci_main"
+add_history "$(history_entry 9001 "gate full $ci_fb" completed cancelled 1 "$ci_main")"
+add_claimed_run 9001 "$(history_entry 9001 "gate full $ci_fb" completed cancelled 1 "$ci_main")"
+seal_runs "$runs"
+
+run_ci_gate ci --catch-up --runs "$runs"
+
+check "$status|$(ci_lock_state)|$(ci_lock_field record)" "0|passed|ci-catch-up" "ci --catch-up accepts a valid catch-up run"
+check "$(tail -n 1 "$ci_log")" "finish: record=ci-catch-up head=$ci_fb tree=$(ci_git rev-parse 'HEAD^{tree}') result=passed" \
+  "ci --catch-up writes the finish-equivalent line"
+
+run_ci_gate finish
+
+check "$status" "1" "finish refuses a catch-up record"
+
+run_ci_gate release
+
+check "$status|$(ci_lock_state)" "1|passed" "the catch-up record is released only after the push of main"
+
+ci_git update-ref refs/remotes/origin/main "$ci_fb"
+
+run_ci_gate release
+
+check "$status|$(ci_lock_state)" "0|released" "the catch-up record is released after the push of main"
+
+ci_main="$ci_fb"
+ci_branch fix/ci-tree
+ci_commit_file tools/tree.sh "echo tree" "Add a tree script"
+ci_tree_head="$(ci_git rev-parse HEAD)"
+ci_git switch --quiet main
+run_ci_gate claim --ff-only --change fix/ci-tree --change-id fix/ci-tree
+make_runs full 6400 "$ci_tree_head" "$ci_main"
+run_ci_gate ci --ff-only --change fix/ci-tree --runs "$runs"
+ci_git merge --quiet --ff-only fix/ci-tree
+set_ci_lock_field tree 1234567890123456789012345678901234567890
+
+run_ci_gate finish
+
+check "$status|$(ci_lock_state)" "1|passed" "finish refuses a ci record whose tree differs from main's"
+contains "$output" "differs from the tested tree" "the refusal names the differing tree"

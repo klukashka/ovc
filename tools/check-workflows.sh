@@ -139,13 +139,151 @@ function add_needs(list,   count, parts, i, name) {
 }
 function scalar_item(value, line) {
   if (depth == 1 && is_on_key(keys[1])) check_triggers(value, line)
+  if (depth == 5 && is_on_key(keys[1]) && keys[3] == "inputs" && keys[5] == "options") input_options[keys[4]] = input_options[keys[4]] " " value
   if (job != "" && depth == 3 && keys[3] == "needs") needs[job, value] = 1
+}
+function occurrences(text, part,   count, at) {
+  count = 0
+  while ((at = index(text, part)) > 0) {
+    count++
+    text = substr(text, at + length(part))
+  }
+  return count
+}
+function check_run_name(   rest, name) {
+  rest = run_name
+  while (match(rest, /inputs[.][A-Za-z0-9_-]+/)) {
+    name = substr(rest, RSTART + 7, RLENGTH - 7)
+    if (name != "scope" && name != "sha" && name != "series") {
+      report(run_name_line, "run-name names inputs." name "; it may name only the scope, sha and series inputs, never the title")
+    }
+    rest = substr(rest, RSTART + RLENGTH)
+  }
+  if (index(run_name, "github.event")) report(run_name_line, "run-name must not read github.event; it may name only the scope, sha and series inputs")
+}
+function check_inputs(   i, name, expected_list, count, parts) {
+  expected_list = "sha scope jobs kind package test project title entry series"
+  count = split(expected_list, parts, " ")
+  for (i = 1; i <= count; i++) expected_input[parts[i]] = 1
+  for (i = 1; i <= inputs_count; i++) {
+    name = input_names[i]
+    if (!(name in expected_input)) report(input_line[name], "the input " name " is not one of the gate's inputs (" expected_list ")")
+  }
+  for (i = 1; i <= count; i++) {
+    if (!(parts[i] in input_line)) report(0, "the workflow lacks the input " parts[i])
+  }
+  check_choice("scope", " full docs change evidence")
+  check_choice("kind", " none go playwright check")
+  check_choice("series", " none before-first before-rest after")
+  if (!index(job_text["validate"], "^Test[A-Za-z0-9_/]+$")) {
+    report(job_line["validate"], "the validate job must check the test input against ^Test[A-Za-z0-9_/]+$")
+  }
+  if (!index(job_text["validate"], "title_limit = 200")) {
+    report(job_line["validate"], "the validate job must limit the title input to 200 characters with title_limit = 200")
+  }
+}
+function check_choice(name, options) {
+  if (!(name in input_line)) return
+  if (input_type[name] != "choice" || input_options[name] != options) {
+    report(input_line[name], "the input " name " must be a choice with the options" options)
+  }
+}
+function check_matrix_job(name,   value, output, guard) {
+  if (matrix_count[name] != 1) report(job_line[name], "the matrix of " name " must hold exactly one key")
+  value = matrix_value[name]
+  if (value !~ /^[$][{][{] *fromJSON[(]needs[.]prepare[.]outputs[.][A-Za-z0-9_-]+[)] *[}][}]$/) {
+    report(matrix_line[name], "the matrix of " name " must be ${{ fromJSON(needs.prepare.outputs.<list>) }}, a list the prepare job validated")
+    return
+  }
+  output = value
+  sub(/^[$][{][{] *fromJSON[(]needs[.]prepare[.]outputs[.]/, "", output)
+  sub(/[)] *[}][}]$/, "", output)
+  guard = "needs.prepare.outputs." output " != '' && needs.prepare.outputs." output " != '[]'"
+  if (unquote(job_if[name]) != guard) {
+    report(job_line[name], "the matrix job " name " must have the job-level if: " guard ", so that an empty list never reaches strategy.matrix")
+  }
+}
+function check_selection(   i, name, wanted) {
+  for (i = 1; i <= jobs_count; i++) {
+    name = job_names[i]
+    if (name == "validate" || name == "prepare" || name == "gate") continue
+    if (name != "evidence" && !needs[name, "prepare"]) report(job_line[name], "the job " name " must need the prepare job, whose outputs select it")
+    if (name == "evidence") {
+      wanted = "needs.prepare.outputs.scope == 'evidence'"
+      if (unquote(job_if[name]) != wanted) report(job_line[name], "the evidence job must have the job-level if: " wanted)
+      if (!needs[name, "prepare"]) report(job_line[name], "the job " name " must need the prepare job, whose outputs select it")
+    } else if (matrix_count[name] > 0) {
+      check_matrix_job(name)
+    } else {
+      wanted = "contains(fromJSON(needs.prepare.outputs.jobs), '" name "')"
+      if (unquote(job_if[name]) != wanted) {
+        report(job_line[name], "the job " name " must select itself by exact membership with the job-level if: " wanted)
+      }
+    }
+  }
+}
+function check_shards(name, total,   wanted) {
+  if (!(name in job_line)) return
+  if (matrix_count[name] == 0) report(job_line[name], "the " name " job must be a matrix job over the prepare job's shard list")
+  wanted = "run-job " name " --shard \"$SHARD/" total "\""
+  if (!index(job_text[name], wanted)) report(job_line[name], "the " name " job must run " wanted)
+  if (name == "e2e" && index(job_text[name], "--project")) {
+    report(job_line[name], "the e2e job must not choose Playwright projects; Playwright's own --shard=k/12 covers every project")
+  }
+}
+function check_statuses(   i, name, count, lines, guard, previous, posting, ors) {
+  for (i = 1; i <= jobs_count; i++) {
+    name = job_names[i]
+    if (name != "gate" && index(job_text[name], "/statuses/")) report(job_line[name], "only the gate job posts a commit status")
+  }
+  count = occurrences(job_text["gate"], "/statuses/")
+  if (count == 0) return
+  if (count != 1) report(job_line["gate"], "the gate job must post exactly one commit status")
+  if (!index(job_text["gate"], "SCOPE: ${{ needs.prepare.outputs.scope }}")) {
+    report(job_line["gate"], "the gate job must read SCOPE from needs.prepare.outputs.scope")
+  }
+  count = split(job_text["gate"], lines, "\n")
+  previous = ""
+  for (i = 1; i <= count; i++) {
+    posting = trim(lines[i])
+    if (posting == "") continue
+    if (index(posting, "/statuses/")) {
+      guard = previous
+      ors = occurrences(guard, "||")
+      if (guard !~ /^if \[\[ .*"[$]SCOPE" == full [|][|] "[$]SCOPE" == docs .*\]\]; then$/ || ors != 1 || guard ~ /change|evidence|!/) {
+        report(job_line["gate"], "the gate job may post a commit status only under a guard naming exactly the full and docs scopes; change and evidence runs post none")
+      }
+      if (posting !~ / -f context=ovc-gate( |$)/) report(job_line["gate"], "the gate job must post the single context ovc-gate, with the scope in its description")
+    }
+    previous = posting
+  }
+}
+function check_evidence(   s) {
+  if (!("evidence" in job_line)) return
+  for (s = 1; s <= steps; s++) {
+    if (step_job[s] == "evidence" && step_uses[s] ~ /^actions\/upload-artifact@/) {
+      report(step_uses_line[s], "the evidence job uploads no traces or artifacts")
+    }
+  }
+  if (!index(job_text["evidence"], "--retries=0")) report(job_line["evidence"], "the evidence job must run Playwright with --retries=0")
+}
+function check_title_bindings(   i, name) {
+  for (i = 1; i <= jobs_count; i++) {
+    name = job_names[i]
+    if (name != "validate" && name != "evidence" && index(job_text[name], "inputs.title")) {
+      report(job_line[name], "only the validate and evidence jobs may read inputs.title")
+    }
+  }
 }
 function handle(key, value, line,   first) {
   first = substr(value, 1, 1)
   if (first == "&" || first == "*" || key == "<<") report(line, "YAML anchors, aliases and merge keys are not allowed")
   if (first == "{" && value != "{}") report(line, "flow mappings are not allowed; use block style")
   if (depth == 1) {
+    if (key == "run-name") {
+      run_name = value
+      run_name_line = line
+    }
     if (is_on_key(key)) {
       seen_on = 1
       if (value != "") check_triggers(value, line)
@@ -158,6 +296,15 @@ function handle(key, value, line,   first) {
   }
   if (depth == 2 && is_on_key(keys[1])) {
     if (key != "workflow_dispatch") report(line, "the trigger " key " is not allowed; the only trigger is workflow_dispatch")
+    return
+  }
+  if (is_on_key(keys[1])) {
+    if (depth == 4 && keys[3] == "inputs") {
+      inputs_count++
+      input_names[inputs_count] = key
+      input_line[key] = line
+    }
+    if (depth == 5 && keys[3] == "inputs" && key == "type") input_type[keys[4]] = unquote(value)
     return
   }
   if (keys[1] == "permissions") {
@@ -189,6 +336,16 @@ function handle(key, value, line,   first) {
     if (unquote(value) == "write" && !(job == "gate" && key == "statuses")) {
       report(line, "the job " job " has the write permission " key "; only the gate job may write, and only statuses")
     }
+    return
+  }
+  if (depth == 4 && keys[3] == "strategy" && key == "matrix" && value != "") {
+    report(line, "the matrix of " job " must be a mapping with one key whose value is a fromJSON list of the prepare job")
+    return
+  }
+  if (depth == 5 && keys[3] == "strategy" && keys[4] == "matrix") {
+    matrix_count[job]++
+    matrix_value[job] = value
+    matrix_line[job] = line
     return
   }
   if (in_step && depth == 4) {
@@ -246,6 +403,9 @@ BEGIN {
   if (index(raw, "pull_request_target")) report(NR, "pull_request_target is not allowed")
   if (index(raw, "continue-on-error")) report(NR, "continue-on-error is not allowed")
   if (index(raw, "actions/cache")) report(NR, "actions/cache is not allowed; nothing is cached")
+  if (index(raw, "inputs.title") && raw !~ /^ +[A-Z][A-Z0-9_]*: [$][{][{] inputs[.]title [}][}]$/) {
+    report(NR, "inputs.title may appear only as an env: binding NAME: ${{ inputs.title }}, never in run-name, if: or run:")
+  }
   if (in_block) {
     if (raw ~ /^[ ]*$/) next
     match(raw, /^ */)
@@ -345,6 +505,20 @@ END {
       report(job_line["gate"], "the gate job must check every needs result for success through toJSON(needs)")
     }
   }
+  for (i = 1; i <= jobs_count; i++) {
+    name = job_names[i]
+    if (index(job_text[name], "corepack enable") && !index(job_text[name], "corepack install --global \"$package_manager\"")) {
+      report(job_line[name], "the job " name " runs corepack enable without corepack install --global \"$package_manager\", so corepack would pick its own default pnpm instead of the candidate's pinned packageManager")
+    }
+  }
+  check_run_name()
+  check_inputs()
+  check_selection()
+  check_shards("backend-tests", 3)
+  check_shards("e2e", 12)
+  check_statuses()
+  check_evidence()
+  check_title_bindings()
   exit failed
 }
 AWK

@@ -22,11 +22,33 @@ check() {
 }
 
 run_settings() {
-  local environment_file="$1" debug="$2"
+  local environment_file="$1" debug="$2" candidate="${3:-$root}"
   : >"$environment_file"
   status=0
-  env -u RUNNER_DEBUG GITHUB_ENV="$environment_file" ${debug:+RUNNER_DEBUG="$debug"} bash "$script" "$root" \
+  env -u RUNNER_DEBUG GITHUB_ENV="$environment_file" ${debug:+RUNNER_DEBUG="$debug"} bash "$script" "$candidate" \
     >"$work/stdout" 2>"$work/stderr" || status=$?
+}
+
+new_candidate() {
+  local folder="$work/$1"
+  mkdir -p "$folder/backend"
+  cp "${example_files[0]}" "$folder/.env.example"
+  cp "${example_files[1]}" "$folder/backend/.env.example"
+  printf '%s' "$folder"
+}
+
+replace_example_line() {
+  local file="$1" old="$2" new="$3"
+  awk -v old="$old" -v new="$new" '
+    !done && $0 == old { print new; done = 1; next }
+    { print }
+    END { if (!done) exit 3 }
+  ' "$file" >"$file.next"
+  mv "$file.next" "$file"
+}
+
+generated_names_of() {
+  setting_value "$1" CI_GENERATED_SETTING_NAMES | tr ' ' '\n' | LC_ALL=C sort | paste -sd ' ' -
 }
 
 written_names() {
@@ -124,9 +146,79 @@ test_refuses_step_debugging() {
   check "$(grep -c '^::add-mask::' "$work/stdout" || true)" "0" "ci-settings prints no mask line under step debugging"
 }
 
+test_generates_a_new_placeholder_setting() {
+  local environment_file="$work/placeholder-env" candidate key
+  candidate="$(new_candidate placeholder)"
+  printf 'OVC_NEW_SIGNING_KEY=<signing-key>\n' >>"$candidate/backend/.env.example"
+
+  run_settings "$environment_file" "" "$candidate"
+
+  key="$(setting_value "$environment_file" OVC_NEW_SIGNING_KEY)"
+  check "$status" "0" "ci-settings exits 0 for a candidate that adds a placeholder setting"
+  check "$([[ "$key" =~ ^[0-9a-f]{64}$ ]] && echo hex || echo "$key")" "hex" "ci-settings generates 32 random bytes in hex for a placeholder of an unknown format"
+  check "$(generated_names_of "$environment_file")" "$(printf '%s\n' $expected_generated OVC_NEW_SIGNING_KEY | LC_ALL=C sort | paste -sd ' ' -)" \
+    "ci-settings lists the new generated setting for the evidence redaction"
+  check "$(unmasked_values "$environment_file")" "" "ci-settings masks the new generated setting"
+  check "$(value_lines_before_masks)" "0" "ci-settings prints the new setting's mask before any other output"
+  check "$(printed_values "$environment_file")" "" "ci-settings prints the new generated setting only in its mask line"
+}
+
+test_fills_the_password_placeholder_of_a_new_url() {
+  local environment_file="$work/password-env" candidate
+  candidate="$(new_candidate password)"
+  printf 'OVC_REPLICA_DATABASE_URL=postgres://ovc:<password>@127.0.0.1:55432/ovc_dev\n' >>"$candidate/backend/.env.example"
+
+  run_settings "$environment_file" "" "$candidate"
+
+  check "$status" "0" "ci-settings exits 0 for a candidate that adds a URL with the password placeholder"
+  check "$(setting_value "$environment_file" OVC_REPLICA_DATABASE_URL)" "$(setting_value "$environment_file" OVC_DATABASE_URL)" \
+    "ci-settings fills the password placeholder with the generated database password"
+  check "$(unmasked_values "$environment_file")" "" "ci-settings masks the derived URL"
+}
+
+test_refuses_a_reserved_harness_name() {
+  local environment_file="$work/reserved-env" candidate
+  candidate="$(new_candidate reserved)"
+  printf 'E2E_HARNESS_RUN_OUTPUT=run-1\n' >>"$candidate/backend/.env.example"
+
+  run_settings "$environment_file" "" "$candidate"
+
+  check "$status" "1" "ci-settings refuses an example file that sets a name the harness reserves"
+  check "$(grep -c 'E2E_HARNESS_RUN_OUTPUT, which the CI harness reserves' "$work/stderr" || true)" "1" "ci-settings names the reserved setting"
+  check "$(wc -c <"$environment_file" | tr -d ' ')" "0" "ci-settings writes nothing for a reserved name"
+  check "$(grep -c '^::add-mask::' "$work/stdout" || true)" "0" "ci-settings prints no mask line for a reserved name"
+}
+
+test_refuses_a_changed_test_control_setting() {
+  local environment_file="$work/test-control-env" candidate
+  candidate="$(new_candidate test-control)"
+  replace_example_line "$candidate/backend/.env.example" "OVC_TEST_CONTROL=1" "OVC_TEST_CONTROL=0"
+
+  run_settings "$environment_file" "" "$candidate"
+
+  check "$status" "1" "ci-settings refuses an example file that changes OVC_TEST_CONTROL"
+  check "$(wc -c <"$environment_file" | tr -d ' ')" "0" "ci-settings writes nothing for a changed OVC_TEST_CONTROL"
+}
+
+test_refuses_an_empty_new_setting() {
+  local environment_file="$work/empty-env" candidate
+  candidate="$(new_candidate empty)"
+  printf 'OVC_NEW_REQUIRED_SETTING=\n' >>"$candidate/backend/.env.example"
+
+  run_settings "$environment_file" "" "$candidate"
+
+  check "$status" "1" "ci-settings refuses an empty new setting that is not optional"
+  check "$(grep -c 'write its value as a placeholder' "$work/stderr" || true)" "1" "ci-settings asks for a placeholder instead"
+}
+
 test_writes_every_example_setting
 test_masks_before_printing
 test_refuses_step_debugging
+test_generates_a_new_placeholder_setting
+test_fills_the_password_placeholder_of_a_new_url
+test_refuses_a_reserved_harness_name
+test_refuses_a_changed_test_control_setting
+test_refuses_an_empty_new_setting
 
 echo "$((cases - failures)) passed, $failures failed"
 [[ "$failures" -eq 0 ]]
