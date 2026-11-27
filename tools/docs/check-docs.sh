@@ -23,7 +23,11 @@ xargs -0 lychee --config lychee.toml -- < "$documents"
 
 chromium="$(cd "$tools" && node --input-type=module -e "import { chromium } from 'playwright-core'; process.stdout.write(chromium.executablePath());")"
 test -x "$chromium"
-printf '{"executablePath": "%s", "headless": "shell"}\n' "$chromium" > "$work/puppeteer.json"
+chromium_arguments='[]'
+if [ "$(uname -s)" = Linux ]; then
+  chromium_arguments='["--no-sandbox"]'
+fi
+printf '{"executablePath": "%s", "headless": "shell", "args": %s}\n' "$chromium" "$chromium_arguments" > "$work/puppeteer.json"
 
 parsed=0
 while IFS= read -r -d '' file; do
