@@ -1,5 +1,8 @@
+import type { Locator, Page } from '@playwright/test';
+
 import type { TestAccount } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
+import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { accessToken, callApi } from './tutoring.ts';
 
 export async function channelOf(deployment: Deployment, account: TestAccount, resource: string): Promise<string> {
@@ -61,4 +64,42 @@ export async function channelUnread(deployment: Deployment, account: TestAccount
     throw new Error('the channel has no unread count');
   }
   return body.unread_count;
+}
+
+export function messages(page: Page): Locator {
+  return page.getByRole('list', { name: 'Messages', exact: true }).getByRole('listitem');
+}
+
+function conversationQueryPaths(channel: string): readonly string[] {
+  return [`/api/v1/channels/${channel}`, `/api/v1/channels/${channel}/messages`];
+}
+
+export async function openSettledConversation(
+  page: Page,
+  channel: string,
+  layout: 'with the chat list' | 'conversation only',
+): Promise<void> {
+  const paths = conversationQueryPaths(channel);
+  const traffic = trafficAfterReady(page, layout === 'with the chat list' ? [...paths, '/api/v1/channels'] : paths);
+  await traffic.initialize();
+  await page.goto(`/messages/${channel}`);
+  await expectRefetchedAfterTheSocketIsReady(traffic);
+}
+
+export async function settledComposer(page: Page): Promise<void> {
+  await page.waitForFunction(() => document.querySelector('textarea')?.readOnly === false);
+}
+
+export async function send(page: Page, body: string): Promise<void> {
+  await page.getByRole('textbox', { name: 'Message', exact: true }).fill(body);
+  const saved = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'POST' && /\/channels\/[^/]+\/messages$/.test(new URL(response.url()).pathname),
+  );
+  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  const response = await saved;
+  if (response.status() !== 201) {
+    throw new Error(`sending a message answered ${String(response.status())}`);
+  }
+  await settledComposer(page);
 }

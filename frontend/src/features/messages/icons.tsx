@@ -40,3 +40,11 @@ export function CloseIcon({ size }: { readonly size: number }): ReactElement {
 export function ReadTicksIcon({ read }: { readonly read: boolean }): ReactElement {
   return <Outline size={14} path={read ? 'M1.5 8.5l3 3 6-7M7 11.5l1 0 6-7' : 'M3.5 8.5l3 3 6-7'} />;
 }
+
+export function SendIcon({ size }: { readonly size: number }): ReactElement {
+  return <Outline size={size} path="M2 7.5L14 2l-4.5 12-2-5-5.5-1.5zM7.5 9L14 2" />;
+}
+
+export function EmojiIcon({ size }: { readonly size: number }): ReactElement {
+  return <Outline size={size} path="M8 14a6 6 0 100-12 6 6 0 000 12zM5 9.5c1 2 5 2 6 0M5.5 6h.01M10.5 6h.01" />;
+}

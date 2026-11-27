@@ -3,7 +3,7 @@ import { StrictMode } from 'react';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { I18nextProvider } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, onTestFinished, test } from 'vitest';
 
 import { FollowingQueryClient } from '../../app/queryClient.ts';
 import { SignedInFrame } from '../../components/frame/SignedInFrame.tsx';
@@ -495,43 +495,25 @@ describe('Messages', () => {
   test('menu opens on its first action and Escape returns to its button', async () => {
     await fixture();
     const menu = await screen.findByRole('button', { name: 'Message actions' });
-
     fireEvent.click(menu);
     const reply = screen.getByRole('button', { name: 'Reply' });
-    const focusedFirst = document.activeElement;
+
     fireEvent.keyDown(reply, { key: 'Escape' });
 
-    expect(focusedFirst).toBe(reply);
     expect(document.activeElement).toBe(menu);
     expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
   });
 
-  test('React opens the picker on its first reaction and choosing one shows a marked chip and returns to the actions', async () => {
+  test('choosing a reaction in the row shows a marked chip and returns to the actions', async () => {
     await fixture();
     const menu = await screen.findByRole('button', { name: 'Message actions' });
     fireEvent.click(menu);
 
-    fireEvent.click(screen.getByRole('button', { name: 'React' }));
-    const first = screen.getByRole('button', { name: 'Thumbs up' });
-    const focusedFirst = document.activeElement;
     fireEvent.click(screen.getByRole('button', { name: 'Heart' }));
     const chip = await screen.findByRole('button', { name: /Heart\s*1\s*your reaction/ });
 
-    expect(focusedFirst).toBe(first);
     expect(chip.getAttribute('aria-pressed')).toBe('true');
     expect(document.activeElement).toBe(menu);
-  });
-
-  test('Escape in the reaction picker returns focus to React', async () => {
-    await fixture();
-    fireEvent.click(await screen.findByRole('button', { name: 'Message actions' }));
-    const react = screen.getByRole('button', { name: 'React' });
-    fireEvent.click(react);
-
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Thumbs up' }), { key: 'Escape' });
-
-    expect(document.activeElement).toBe(react);
-    expect(screen.queryByRole('button', { name: 'Thumbs up' })).toBeNull();
   });
 
   test('a chip toggles the caller\u2019s own reaction in a writable chat', async () => {
@@ -551,7 +533,7 @@ describe('Messages', () => {
     expect(await screen.findByRole('button', { name: /^Done\s*1(?!\d)(?!.*your reaction)/ })).toBeTruthy();
   });
 
-  test('React focuses the current reaction and Remove reaction removes the chip and returns to the actions', async () => {
+  test('the row marks the current reaction and Remove reaction removes the chip and returns to the actions', async () => {
     const { server, cache, clock } = await fixture();
     await screen.findByText('Message 1');
     server.chat.memberReact('message-1', tutor.id, 'sad');
@@ -563,16 +545,15 @@ describe('Messages', () => {
     await screen.findByRole('button', { name: /Sad\s*1\s*your reaction/ });
     const menu = screen.getByRole('button', { name: 'Message actions' });
     fireEvent.click(menu);
+    const focusedCurrent = screen.getByRole('button', { name: 'Sad' });
 
-    fireEvent.click(screen.getByRole('button', { name: 'React' }));
-    const focusedCurrent = document.activeElement;
     fireEvent.click(screen.getByRole('button', { name: 'Remove reaction' }));
     await waitFor(() => {
       expect(screen.queryByRole('list', { name: 'Reactions' })).toBeNull();
     });
 
-    expect(focusedCurrent?.getAttribute('aria-label')).toBe('Sad');
-    expect(focusedCurrent?.getAttribute('aria-pressed')).toBe('true');
+    expect(focusedCurrent.getAttribute('aria-label')).toBe('Sad');
+    expect(focusedCurrent.getAttribute('aria-pressed')).toBe('true');
     expect(document.activeElement).toBe(menu);
   });
 
@@ -699,13 +680,12 @@ describe('Messages', () => {
     expect(chip.textContent).toContain('Deleted user');
   });
 
-  test('a read-only chat offers no React and shows plain chips', async () => {
+  test('a read-only chat shows no reaction row and plain chips', async () => {
     const { server, cache, clock } = await fixture();
     await screen.findByText('Message 1');
     server.chat.memberReact('message-1', 'student-1', 'joy');
     server.chat.setWritable(channel.id, false);
     const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
-
     act(() => {
       receive({ kind: 'entity', entity: 'channel', id: channel.id });
       receive({ kind: 'message', change: 'updated', channelId: channel.id, messageId: 'message-1' });
@@ -713,9 +693,11 @@ describe('Messages', () => {
     });
 
     const reactions = await screen.findByRole('list', { name: 'Reactions' });
-    expect(within(reactions).queryByRole('button')).toBeNull();
+
     fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
-    expect(screen.queryByRole('button', { name: 'React' })).toBeNull();
+
+    expect(within(reactions).queryByRole('button')).toBeNull();
+    expect(screen.queryByRole('group', { name: 'Reactions' })).toBeNull();
   });
 
   test('a student\u2019s chip names nobody', async () => {
@@ -2218,24 +2200,29 @@ describe('messenger layout', () => {
       within(rowOf('Other 1'))
         .getAllByRole('button')
         .map((button) => button.textContent),
-    ).toEqual(['', 'Reply', 'React']);
+    ).toEqual(['', '👍', '❤️', '😂', '😮', '😢', '✅', 'Reply', 'Copy text']);
   });
 
-  test('a student sees no message actions on another member’s message in a read-only chat', async () => {
+  test('a student’s menu on another member’s message in a read-only chat holds only Copy text', async () => {
     const { server, cache } = await fixture(0, '/messages/channel-1', true, {
       role: 'student',
       seeds: [fromOther(1, 'Teacher', '2026-11-01T00:00:00Z')],
     });
     await screen.findByText('Other 1');
-
     server.chat.setWritable(channel.id, false);
     await act(async () => {
       await cache.invalidateQueries({ queryKey: channelKey(channel.id) });
     });
 
-    await waitFor(() => {
-      expect(within(rowOf('Other 1')).queryByRole('button', { name: 'Message actions' })).toBeNull();
-    });
+    await screen.findByText('This chat is read-only');
+
+    fireEvent.click(within(rowOf('Other 1')).getByRole('button', { name: 'Message actions' }));
+
+    expect(
+      within(rowOf('Other 1'))
+        .getAllByRole('button')
+        .map((button) => button.textContent),
+    ).toEqual(['', 'Copy text']);
   });
 });
 
@@ -2712,4 +2699,554 @@ describe('chat list filters and rows', () => {
 
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Students' }));
   });
+});
+
+function bubbleOf(text: string): HTMLElement {
+  const bubble = rowOf(text).querySelector<HTMLElement>('[data-bubble]');
+  if (bubble === null) throw new Error('the message has no bubble');
+  return bubble;
+}
+
+function mousePress(
+  bubble: HTMLElement,
+  options: { readonly ctrlKey?: boolean; readonly shiftKey?: boolean } = {},
+): void {
+  fireEvent.pointerDown(bubble, { pointerType: 'mouse', button: options.ctrlKey === true ? 0 : 2, ...options });
+}
+
+function selectText(element: HTMLElement): void {
+  const selection = window.getSelection();
+  if (selection === null) throw new Error('selection is unavailable');
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+async function reactionFixture(): Promise<Awaited<ReturnType<typeof fixture>>> {
+  const setup = await fixture();
+  await screen.findByText('Message 1');
+  setup.server.chat.memberReact('message-1', tutor.id, 'heart');
+  await act(async () => {
+    await setup.cache.invalidateQueries({ queryKey: messagesKey(channel.id) });
+  });
+  await screen.findByRole('button', { name: /Heart\s*1\s*your reaction/ });
+  return setup;
+}
+
+function longPress(clock: ReturnType<typeof manualScheduler>, bubble: HTMLElement): void {
+  fireEvent.pointerDown(bubble, { pointerType: 'touch', pointerId: 1, clientX: 20, clientY: 20 });
+  act(() => {
+    clock.pass(500);
+  });
+  fireEvent.pointerUp(bubble, { pointerType: 'touch', pointerId: 1 });
+}
+
+async function reactionCount(api: ApiClient): Promise<number> {
+  const response = await api.GET('/api/v1/channels/{id}/messages', { params: { path: { id: channel.id } } });
+  if (response.error !== undefined) throw new Error('reading the reaction failed');
+  return response.data.items[0]?.reactions.length ?? 0;
+}
+
+describe('message actions', () => {
+  test('clipboard refusal preserves focus', async () => {
+    await fixture();
+    const field = await typedComposer('Keep this draft');
+    fireEvent.click(await screen.findByRole('button', { name: 'Message actions' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Copy text' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe("Couldn't copy the text. Select it and copy it.");
+    expect(document.activeElement).toBe(alert);
+    expect(field.value).toBe('Keep this draft');
+    expect(screen.getByText('Message 1')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Copy text' })).toBeNull();
+  });
+
+  test('a touch long press on a bubble opens its menu after 500 ms', async () => {
+    const { clock } = await fixture();
+    await screen.findByText('Message 1');
+    fireEvent.pointerDown(bubbleOf('Message 1'), { pointerType: 'touch', pointerId: 1 });
+    act(() => {
+      clock.pass(499);
+    });
+
+    act(() => {
+      clock.pass(1);
+    });
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reply' }));
+  });
+
+  for (const cancellation of [
+    { title: 'a touch press on a bubble that moves more than 10 px opens no menu after 500 ms', kind: 'move' },
+    { title: 'a touch press on a bubble cancelled by the browser opens no menu after 500 ms', kind: 'cancel' },
+    { title: 'a touch press on a bubble released before 500 ms opens no menu', kind: 'up' },
+    { title: 'a scroll of the history during a touch press on a bubble opens no menu after 500 ms', kind: 'scroll' },
+  ] as const) {
+    test(cancellation.title, async () => {
+      const { clock } = await fixture();
+      await screen.findByText('Message 1');
+      const bubble = bubbleOf('Message 1');
+      fireEvent.pointerDown(bubble, { pointerType: 'touch', pointerId: 1, clientX: 20, clientY: 20 });
+      if (cancellation.kind === 'move')
+        fireEvent.pointerMove(bubble, { pointerType: 'touch', pointerId: 1, clientX: 31, clientY: 20 });
+      else if (cancellation.kind === 'cancel') fireEvent.pointerCancel(bubble, { pointerId: 1 });
+      else if (cancellation.kind === 'up') fireEvent.pointerUp(bubble, { pointerId: 1 });
+      else {
+        const pane = bubble.closest('[data-history-pane]');
+        if (pane === null) throw new Error('history pane is missing');
+        fireEvent.scroll(pane);
+      }
+
+      act(() => {
+        clock.pass(500);
+      });
+
+      expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+    });
+  }
+
+  test('a 500 ms touch press on a reaction chip ended by pointerup opens no menu and sends no reaction request', async () => {
+    const { clock, api, server } = await reactionFixture();
+    const chip = screen.getByRole('button', { name: /Heart\s*1\s*your reaction/ });
+
+    longPress(clock, chip);
+
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+    expect(await reactionCount(api)).toBe(1);
+    expect(server.sentAddresses.filter((address) => address.pathname.endsWith('/reaction'))).toHaveLength(0);
+  });
+
+  test('after a touch long press on a bubble released without a click, a tap on a reaction chip in that bubble toggles the reaction', async () => {
+    const { clock, api } = await reactionFixture();
+    longPress(clock, bubbleOf('Message 1'));
+    const chip = screen.getByRole('button', { name: /Heart\s*1\s*your reaction/ });
+
+    fireEvent.pointerDown(chip, { pointerType: 'touch', pointerId: 2 });
+    fireEvent.pointerUp(chip, { pointerType: 'touch', pointerId: 2 });
+    fireEvent.click(chip, { detail: 1 });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Heart\s*1\s*your reaction/ })).toBeNull();
+    });
+    expect(await reactionCount(api)).toBe(0);
+  });
+
+  test("the click that ends a touch long press on a bubble's text does not toggle a reaction chip in that bubble", async () => {
+    const { clock, api, server } = await reactionFixture();
+    longPress(clock, screen.getByText('Message 1'));
+    const chip = screen.getByRole('button', { name: /Heart\s*1\s*your reaction/ });
+
+    fireEvent.click(chip, { detail: 1 });
+
+    expect(screen.getByRole('button', { name: 'Reply' })).toBeTruthy();
+    expect(await reactionCount(api)).toBe(1);
+    expect(server.sentAddresses.filter((address) => address.pathname.endsWith('/reaction'))).toHaveLength(0);
+  });
+
+  test('a keyboard activation of a reaction chip after a touch long press released without a click toggles the reaction', async () => {
+    const { clock, api } = await reactionFixture();
+    longPress(clock, bubbleOf('Message 1'));
+    const chip = screen.getByRole('button', { name: /Heart\s*1\s*your reaction/ });
+    chip.focus();
+
+    fireEvent.keyDown(chip, { key: 'Enter' });
+    fireEvent.click(chip, { detail: 1 });
+
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Heart\s*1\s*your reaction/ })).toBeNull();
+    });
+    expect(await reactionCount(api)).toBe(0);
+  });
+
+  test('a right click on the bubble of the message whose menu is open keeps the menu and focuses its first item again', async () => {
+    await fixture();
+    fireEvent.click(await screen.findByRole('button', { name: 'Message actions' }));
+    const reply = screen.getByRole('button', { name: 'Reply' });
+    screen.getByRole('button', { name: 'Copy text' }).focus();
+    mousePress(bubbleOf('Message 1'));
+
+    fireEvent.contextMenu(bubbleOf('Message 1'));
+
+    expect(document.activeElement).toBe(reply);
+    expect(screen.getByRole('button', { name: 'Reply' })).toBe(reply);
+  });
+
+  test('a right click on a bubble opens its menu while another bubble holds a selection', async () => {
+    await fixture(2);
+    await screen.findByText('Message 2');
+    selectText(screen.getByText('Message 2'));
+    mousePress(bubbleOf('Message 1'));
+
+    const allowed = fireEvent.contextMenu(bubbleOf('Message 1'));
+
+    expect(allowed).toBe(false);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reply' }));
+  });
+
+  test('a Shift+right click on a bubble opens no message menu and is not prevented', async () => {
+    await fixture();
+    await screen.findByText('Message 1');
+    mousePress(bubbleOf('Message 1'), { shiftKey: true });
+
+    const allowed = fireEvent.contextMenu(bubbleOf('Message 1'), { shiftKey: true });
+
+    expect(allowed).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+  });
+
+  test('a right click on a plain reaction chip in a read-only chat opens no message menu and is not prevented', async () => {
+    const { server, cache, clock } = await fixture();
+    await screen.findByText('Message 1');
+    server.chat.memberReact('message-1', 'student-1', 'joy');
+    server.chat.setWritable(channel.id, false);
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+    act(() => {
+      receive({ kind: 'entity', entity: 'channel', id: channel.id });
+      receive({ kind: 'message', change: 'updated', channelId: channel.id, messageId: 'message-1' });
+      clock.pass(1000);
+    });
+    const reactions = await screen.findByRole('list', { name: 'Reactions' });
+    const chip = within(reactions).getByText('1');
+    mousePress(chip);
+
+    const allowed = fireEvent.contextMenu(chip);
+
+    expect(allowed).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Copy text' })).toBeNull();
+  });
+
+  test('a right click on a message row outside its bubble opens no message menu and is not prevented', async () => {
+    await fixture();
+    await screen.findByText('Message 1');
+    const row = rowOf('Message 1');
+    mousePress(row);
+
+    const allowed = fireEvent.contextMenu(row);
+
+    expect(allowed).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Copy text' })).toBeNull();
+  });
+
+  test('a touch contextmenu on a message row outside its bubble is not prevented and opens no menu', async () => {
+    await fixture();
+    await screen.findByText('Message 1');
+    const row = rowOf('Message 1');
+    fireEvent.pointerDown(row, { pointerType: 'touch', pointerId: 1 });
+
+    const allowed = fireEvent.contextMenu(row);
+
+    expect(allowed).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Copy text' })).toBeNull();
+  });
+
+  for (const pointerType of ['mouse', 'touch', 'pen']) {
+    test(`a row contextmenu with pointer type ${pointerType} and no pointerdown opens no menu`, async () => {
+      await fixture();
+      await screen.findByText('Message 1');
+      const row = rowOf('Message 1');
+
+      const allowed = fireEvent(row, new PointerEvent('contextmenu', { bubbles: true, cancelable: true, pointerType }));
+
+      expect(allowed).toBe(true);
+      expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Copy text' })).toBeNull();
+    });
+  }
+
+  test('a keyboard contextmenu on a focused row after a left click on its bubble opens its menu', async () => {
+    await fixture();
+    await screen.findByText('Message 1');
+    const row = rowOf('Message 1');
+    fireEvent.pointerDown(bubbleOf('Message 1'), { pointerType: 'mouse', button: 0 });
+    fireEvent.click(bubbleOf('Message 1'), { detail: 1 });
+    row.focus();
+
+    const allowed = fireEvent.contextMenu(row);
+
+    expect(allowed).toBe(false);
+    expect(screen.getByRole('button', { name: 'Reply' })).toBe(document.activeElement);
+  });
+
+  test('a row contextmenu consumes its pending pointerdown before a later keyboard contextmenu', async () => {
+    await fixture();
+    await screen.findByText('Message 1');
+    const row = rowOf('Message 1');
+    mousePress(row);
+    fireEvent.contextMenu(row);
+    row.focus();
+
+    const allowed = fireEvent.contextMenu(row);
+
+    expect(allowed).toBe(false);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reply' }));
+  });
+
+  test('a contextmenu after a touch pointer down on a bubble is not prevented and opens no menu', async () => {
+    await fixture();
+    await screen.findByText('Message 1');
+    fireEvent.pointerDown(bubbleOf('Message 1'), { pointerType: 'touch', pointerId: 1 });
+
+    const allowed = fireEvent.contextMenu(bubbleOf('Message 1'));
+
+    expect(allowed).toBe(true);
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+  });
+
+  test("a Ctrl+click contextmenu on a bubble's text opens its menu on its first item", async () => {
+    await fixture();
+    await screen.findByText('Message 1');
+    mousePress(bubbleOf('Message 1'), { ctrlKey: true });
+
+    const allowed = fireEvent.contextMenu(bubbleOf('Message 1'), { ctrlKey: true });
+
+    expect(allowed).toBe(false);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reply' }));
+  });
+
+  test('a right click that opens the menu removes a selection added after its pointer down', async () => {
+    await fixture();
+    await screen.findByText('Message 1');
+    window.getSelection()?.removeAllRanges();
+    mousePress(bubbleOf('Message 1'));
+    selectText(screen.getByText('Message 1'));
+
+    fireEvent.contextMenu(bubbleOf('Message 1'));
+
+    expect(window.getSelection()?.isCollapsed).toBe(true);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reply' }));
+  });
+
+  test('a right click after a selection made before its pointer down keeps that selection and opens no menu', async () => {
+    await fixture();
+    await screen.findByText('Message 1');
+    selectText(screen.getByText('Message 1'));
+    mousePress(bubbleOf('Message 1'));
+
+    fireEvent.contextMenu(bubbleOf('Message 1'));
+
+    expect(window.getSelection()?.toString()).toBe('Message 1');
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+  });
+
+  test('a message deleted live while its menu opened by right click holds focus moves focus to its row', async () => {
+    const { api, cache } = await fixture();
+    await screen.findByText('Message 1');
+    const row = rowOf('Message 1');
+    mousePress(bubbleOf('Message 1'));
+    fireEvent.contextMenu(bubbleOf('Message 1'));
+
+    await deleteMessage(api, 'message-1');
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: messagesKey(channel.id) });
+    });
+
+    await screen.findByText('Message deleted');
+    expect(document.activeElement).toBe(row);
+  });
+
+  test('the emoji picker closes onto the composer when the chat becomes read-only', async () => {
+    const { server, cache } = await fixture();
+    const field = await screen.findByRole('textbox', { name: 'Message' });
+    fireEvent.click(screen.getByRole('button', { name: 'Emoji' }));
+
+    server.chat.setWritable(channel.id, false);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelKey(channel.id) });
+    });
+
+    await screen.findByText('This chat is read-only');
+    expect(screen.queryByRole('group', { name: 'Emoji' })).toBeNull();
+    expect(document.activeElement).toBe(field);
+  });
+
+  test("the emoji picker's buttons are unavailable while the conversation is busy and insert nothing", async () => {
+    const { server } = await fixture();
+    const field = await typedComposer('Pending');
+    const pause = server.chat.pauseNextSendResponse();
+    onTestFinished(async () => {
+      await act(async () => {
+        pause.resume();
+        await Promise.resolve();
+      });
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Emoji' }));
+    fireEvent.submit(field.closest('form') ?? field);
+    await pause.answered;
+    const emoji = screen.getByRole('button', { name: 'Grinning face' });
+
+    fireEvent.click(emoji);
+
+    expect(emoji.getAttribute('aria-disabled')).toBe('true');
+    expect(field.value).toBe('Pending');
+    expect(screen.getByRole('group', { name: 'Emoji' })).toBeTruthy();
+  });
+});
+
+describe('message action focus regressions', () => {
+  test('a reaction-only menu focuses its first reaction while editing', async () => {
+    await fixture(1, '/messages/channel-1', true, {
+      role: 'student',
+      seeds: [
+        {
+          ...fromOther(2, 'Teacher', '2026-11-01T00:00:00Z'),
+          body: null,
+          attachments: [
+            {
+              id: 'picture',
+              filename: 'picture.png',
+              media_type: 'image/png',
+              width: 2,
+              height: 2,
+              size_bytes: 24,
+              url: '/api/v1/files/picture?t=test',
+              expires_at: '2026-11-01T00:10:00Z',
+            },
+          ],
+        },
+      ],
+    });
+    await screen.findByText('Message 1');
+    fireEvent.click(within(rowOf('Message 1')).getByRole('button', { name: 'Message actions' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Edit' }));
+    const row = document.querySelector<HTMLElement>('[data-row="message-2"]');
+    if (row === null) throw new Error('the other message is missing');
+
+    fireEvent.click(within(row).getByRole('button', { name: 'Message actions' }));
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Thumbs up' }));
+  });
+
+  test('a read-only transition keeps focus outside an open message menu', async () => {
+    const { server, cache } = await fixture();
+    const field = await screen.findByRole('textbox', { name: 'Message' });
+    fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+    act(() => {
+      field.focus();
+    });
+
+    server.chat.setWritable(channel.id, false);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelKey(channel.id) });
+    });
+
+    await screen.findByText('This chat is read-only');
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Copy text' })).toBeTruthy();
+    expect(document.activeElement).toBe(field);
+  });
+
+  test('a read-only transition keeps focus outside a message menu left through a blur without a related target', async () => {
+    const { server, cache } = await fixture();
+    const field = await screen.findByRole('textbox', { name: 'Message' });
+    fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+    const reply = screen.getByRole('button', { name: 'Reply' });
+    act(() => {
+      reply.blur();
+    });
+    act(() => {
+      field.focus();
+    });
+
+    server.chat.setWritable(channel.id, false);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelKey(channel.id) });
+    });
+
+    await screen.findByText('This chat is read-only');
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Copy text' })).toBeTruthy();
+    expect(document.activeElement).toBe(field);
+  });
+
+  test('a message menu remounted after a read-only transition stays closed and keeps composer focus', async () => {
+    const { server, cache } = await fixture(0, '/messages/channel-1', true, {
+      role: 'student',
+      seeds: [{ ...fromOther(1, 'Teacher', '2026-11-01T00:00:00Z'), body: null }],
+    });
+    const field = await screen.findByRole('textbox', { name: 'Message' });
+    fireEvent.click(screen.getByRole('button', { name: 'Message actions' }));
+    server.chat.setWritable(channel.id, false);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelKey(channel.id) });
+    });
+    await screen.findByText('This chat is read-only');
+    act(() => {
+      field.focus();
+    });
+
+    server.chat.setWritable(channel.id, true);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelKey(channel.id) });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('This chat is read-only')).toBeNull();
+    });
+    expect(screen.getByRole('button', { name: 'Message actions' }).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.queryByRole('button', { name: 'Reply' })).toBeNull();
+    expect(document.activeElement).toBe(field);
+  });
+
+  test('the emoji picker stays closed when a read-only chat becomes writable again', async () => {
+    const { server, cache } = await fixture();
+    const field = await screen.findByRole('textbox', { name: 'Message' });
+    fireEvent.click(screen.getByRole('button', { name: 'Emoji' }));
+    server.chat.setWritable(channel.id, false);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelKey(channel.id) });
+    });
+    await screen.findByText('This chat is read-only');
+
+    server.chat.setWritable(channel.id, true);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelKey(channel.id) });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('This chat is read-only')).toBeNull();
+    });
+    expect(screen.queryByRole('group', { name: 'Emoji' })).toBeNull();
+    expect(document.activeElement).toBe(field);
+  });
+
+  test('Shift+Tab from the emoji picker closes it onto its toggle', async () => {
+    await fixture();
+    const toggle = await screen.findByRole('button', { name: 'Emoji' });
+    fireEvent.click(toggle);
+
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Grinning face' }), { key: 'Tab', shiftKey: true });
+
+    expect(screen.queryByRole('group', { name: 'Emoji' })).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+  });
+
+  test('replacing a selected emoji with the same emoji restores the caret immediately', async () => {
+    await fixture();
+    const field = await typedComposer('😀');
+    field.setSelectionRange(0, 2);
+    fireEvent.click(screen.getByRole('button', { name: 'Emoji' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Grinning face' }));
+
+    expect(field.value).toBe('😀');
+    expect(document.activeElement).toBe(field);
+    expect(field.selectionStart).toBe(2);
+    expect(field.selectionEnd).toBe(2);
+  });
+});
+
+test('opening Message actions focuses Reply after the reaction row', async () => {
+  await fixture();
+  const opener = await screen.findByRole('button', { name: 'Message actions' });
+
+  fireEvent.click(opener);
+
+  expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Reply' }));
+  expect(screen.getByRole('group', { name: 'Reactions' })).toBeTruthy();
 });

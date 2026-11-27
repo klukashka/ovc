@@ -5,10 +5,26 @@ import type { ObservedBrowser } from './browser-diagnostics.ts';
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { type Diagnostics, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
-import { channelOf, channelUnread, postMessage } from './messages.ts';
+import {
+  channelOf,
+  channelUnread,
+  messages,
+  openSettledConversation,
+  postMessage,
+  send,
+  settledComposer,
+} from './messages.ts';
 import { backgroundOf, transparent } from './dangerActions.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
-import { accessToken, callApi, createCard, createGroup, seedActiveStudent, signUpOnInvitation } from './tutoring.ts';
+import {
+  accessToken,
+  archiveGroup,
+  callApi,
+  createCard,
+  createGroup,
+  seedActiveStudent,
+  signUpOnInvitation,
+} from './tutoring.ts';
 
 async function holdListUntilChannelDenial(page: Page, channel: string): Promise<() => Promise<boolean>> {
   let reached = (): void => {
@@ -80,44 +96,6 @@ async function studentContext(browser: ObservedBrowser, deployment: Deployment):
     timezoneId: 'Europe/Moscow',
     viewport: { width: 360, height: 780 },
   });
-}
-
-function messages(page: Page): Locator {
-  return page.getByRole('list', { name: 'Messages', exact: true }).getByRole('listitem');
-}
-
-function conversationQueryPaths(channel: string): readonly string[] {
-  return [`/api/v1/channels/${channel}`, `/api/v1/channels/${channel}/messages`];
-}
-
-async function openSettledConversation(
-  page: Page,
-  channel: string,
-  layout: 'with the chat list' | 'conversation only',
-): Promise<void> {
-  const paths = conversationQueryPaths(channel);
-  const traffic = trafficAfterReady(page, layout === 'with the chat list' ? [...paths, '/api/v1/channels'] : paths);
-  await traffic.initialize();
-  await page.goto(`/messages/${channel}`);
-  await expectRefetchedAfterTheSocketIsReady(traffic);
-}
-
-async function settledComposer(page: Page): Promise<void> {
-  await page.waitForFunction(() => document.querySelector('textarea')?.readOnly === false);
-}
-
-async function send(page: Page, body: string): Promise<void> {
-  await page.getByRole('textbox', { name: 'Message', exact: true }).fill(body);
-  const saved = page.waitForResponse(
-    (response) =>
-      response.request().method() === 'POST' && /\/channels\/[^/]+\/messages$/.test(new URL(response.url()).pathname),
-  );
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
-  const response = await saved;
-  if (response.status() !== 201) {
-    throw new Error(`sending a message answered ${String(response.status())}`);
-  }
-  await settledComposer(page);
 }
 
 test.describe('text messages', () => {
@@ -272,14 +250,18 @@ test.describe('text messages', () => {
     const own = messages(page).filter({ hasText: 'Something to delete' });
     await own.getByRole('button', { name: 'Message actions', exact: true }).click();
     const menu = own.locator('[aria-expanded="true"] + div');
-    const lastItem = menu.locator(':scope > button:last-child');
-    await expect(lastItem).toHaveText('Delete');
-    await expect(lastItem).toHaveClass(/text-danger/);
-    await expect(lastItem.locator('svg')).toHaveCount(1);
-    await expect(menu.locator(':scope > hr')).toHaveCount(1);
+    const lastItem = menu.locator('[data-menu-actions] > button:last-child');
+    const order = await menu.getByRole('button').allTextContents();
+    const separatorCount = await menu.locator('[data-menu-actions] > hr').count();
+    const destructiveClass = await lastItem.getAttribute('class');
+    const warningIcons = await lastItem.locator('svg').count();
 
     await lastItem.click();
 
+    expect(order).toEqual(['👍', '❤️', '😂', '😮', '😢', '✅', 'Reply', 'Copy text', 'Edit', 'Pin', 'Delete']);
+    expect(separatorCount).toBe(1);
+    expect(destructiveClass).toMatch(/text-danger/);
+    expect(warningIcons).toBe(1);
     const dialog = page.getByRole('dialog', { name: 'Delete this message?' });
     await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
     await expect(dialog.getByRole('button')).toHaveText(['Delete message', 'Cancel']);
@@ -712,14 +694,25 @@ test.describe('Messages on a computer', () => {
     const { cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
     const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
     await signInThroughTheApi(page, tutor);
+    await openSettledConversation(page, channel, 'with the chat list');
+    const composer = page.getByRole('textbox', { name: 'Message', exact: true });
+    await composer.fill('Round send');
+    const sendButton = page.getByRole('button', { name: 'Send', exact: true });
+    const fine = await page.evaluate(() => matchMedia('(pointer: fine)').matches);
 
-    await page.goto(`/messages/${channel}`);
-    await settledComposer(page);
+    await sendButton.click();
 
+    await expect(composer).toHaveValue('');
+    await expect(composer).toBeFocused();
     const attach = page.getByRole('button', { name: 'Attach files', exact: true });
     await expect(attach).toBeVisible();
     await expect(attach).toHaveText('');
-    await expect(page.getByRole('button', { name: 'Send', exact: true })).toHaveClass(/bg-accent/);
+    await expect(sendButton).toHaveText('');
+    await expect(sendButton).toHaveClass(/rounded-full/);
+    await expect(sendButton).toHaveClass(/bg-accent/);
+    const box = await sendButton.boundingBox();
+    expect(box?.width).toBe(fine ? 40 : 44);
+    expect(box?.height).toBe(fine ? 40 : 44);
   });
 });
 
@@ -1155,7 +1148,6 @@ test.describe('reactions in a group chat', () => {
 
     const asked = messages(firstPage).filter({ hasText: 'Who finished the chapter?' });
     await asked.getByRole('button', { name: 'Message actions', exact: true }).click();
-    await firstPage.getByRole('button', { name: 'React', exact: true }).click();
     await firstPage.getByRole('button', { name: 'Thumbs up', exact: true }).click();
 
     const tutorChip = messages(page)
@@ -1459,4 +1451,442 @@ test.describe('chat list filters over their own chats', () => {
     await expect(row.locator('[data-ticks="sent"]')).toHaveCount(0);
     await diagnostics.closeContext(context);
   });
+});
+
+async function actionsChat(
+  page: Page,
+  deployment: Deployment,
+  asStudent = false,
+): Promise<{
+  readonly tutor: TestAccount;
+  readonly channel: string;
+  readonly group: string;
+  readonly message: string;
+}> {
+  const tutor = await seedVerifiedUser(deployment, 'Menu tutor', 'en');
+  const { student, cardId } = await seedActiveStudent(deployment, tutor, 'Menu student', 'en');
+  const group = await createGroup(deployment, tutor, 'Message actions group', [cardId]);
+  const channel = await channelOf(deployment, tutor, `/groups/${group}`);
+  const message = await postMessage(deployment, tutor, channel, 'Menu body \u202e text https://example.org', null);
+  await postMessage(deployment, tutor, channel, 'Second menu body', message);
+  const reaction = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'PUT',
+    `/messages/${message}/reaction`,
+    { reaction: 'heart' },
+  );
+  if (reaction.status !== 204) throw new Error(`seeding a reaction answered ${String(reaction.status)}`);
+  await signInThroughTheApi(page, asStudent ? student : tutor);
+  await openSettledConversation(page, channel, 'with the chat list');
+  await messages(page).filter({ hasText: 'Second menu body' }).waitFor();
+  return { tutor, channel, group, message };
+}
+
+function actionRow(page: Page): Locator {
+  return page.locator('[data-row]').filter({
+    has: page.locator('[data-bubble] > p').filter({ hasText: /^Menu body \u202e text https:\/\/example\.org$/ }),
+  });
+}
+
+async function observeContextMenu(target: Locator): Promise<void> {
+  await target.evaluate((element) => {
+    document.addEventListener(
+      'contextmenu',
+      (event) => {
+        element.setAttribute('data-context-prevented', String(event.defaultPrevented));
+      },
+      { once: true },
+    );
+  });
+}
+
+test.describe('message menu gestures and keyboard', () => {
+  test.use({ locale: 'en-GB', viewport: { width: 1280, height: 800 } });
+
+  test("a right click on a bubble's text opens its menu on its first item without scrolling the history", async ({
+    page,
+    deployment,
+  }) => {
+    await actionsChat(page, deployment);
+    const row = actionRow(page);
+    const pane = page.locator('[data-history-pane]');
+    const before = await pane.evaluate((element) => element.scrollTop);
+
+    await row.locator('[data-bubble] > p').click({ button: 'right', position: { x: 5, y: 5 } });
+
+    await expect(row.getByRole('button', { name: 'Reply', exact: true })).toBeFocused();
+    await expect(row.getByRole('group', { name: 'Reactions' })).toBeVisible();
+    expect(await pane.evaluate((element) => element.scrollTop)).toBe(before);
+    expect(
+      await row.getByRole('group', { name: 'Reactions' }).evaluate((group) => {
+        const action = group.parentElement?.querySelector('[data-menu-actions]');
+        return (
+          action !== null &&
+          action !== undefined &&
+          (group.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0
+        );
+      }),
+    ).toBe(true);
+  });
+
+  test("Escape closes a menu opened by right click onto the message's Message actions button", async ({
+    page,
+    deployment,
+  }) => {
+    await actionsChat(page, deployment);
+    const row = actionRow(page);
+    await row.locator('[data-bubble] > p').click({ button: 'right', position: { x: 5, y: 5 } });
+
+    await page.keyboard.press('Escape');
+
+    await expect(row.getByRole('button', { name: 'Message actions' })).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Reply', exact: true })).toHaveCount(0);
+  });
+
+  test('a right click on a link in a bubble opens no message menu and is not prevented', async ({
+    page,
+    deployment,
+  }) => {
+    await actionsChat(page, deployment);
+    const link = actionRow(page).getByRole('link', { name: 'https://example.org' });
+    await observeContextMenu(link);
+
+    await link.click({ button: 'right' });
+
+    await expect(link).toHaveAttribute('data-context-prevented', 'false');
+    await expect(page.getByRole('button', { name: 'Reply', exact: true })).toHaveCount(0);
+  });
+
+  for (const part of ['reaction chip', 'quote'] as const) {
+    test(`a right click on a reaction chip or the quote opens no message menu and is not prevented: ${part}`, async ({
+      page,
+      deployment,
+    }) => {
+      await actionsChat(page, deployment);
+      const target =
+        part === 'reaction chip'
+          ? actionRow(page).getByRole('list', { name: 'Reactions' }).getByRole('button')
+          : messages(page).filter({ hasText: 'Second menu body' }).locator('[data-bubble] > button');
+      await observeContextMenu(target);
+
+      await target.click({ button: 'right' });
+
+      await expect(target).toHaveAttribute('data-context-prevented', 'false');
+      await expect(page.getByRole('button', { name: 'Reply', exact: true })).toHaveCount(0);
+    });
+  }
+
+  test('a right click inside a text selection made before it opens no message menu', async ({ page, deployment }) => {
+    await actionsChat(page, deployment);
+    const text = actionRow(page).locator('[data-bubble] > p');
+    await text.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const selection = window.getSelection();
+      if (selection === null) throw new Error('selection is unavailable');
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+
+    await text.click({ button: 'right', position: { x: 5, y: 5 } });
+
+    await expect(page.getByRole('button', { name: 'Reply', exact: true })).toHaveCount(0);
+  });
+
+  for (const opener of [
+    { title: 'Shift+F10 on a focused message opens its menu on its first item', key: 'Shift+F10' },
+    { title: 'the context-menu key on a focused message opens its menu on its first item', key: 'ContextMenu' },
+  ]) {
+    test(opener.title, async ({ page, deployment }) => {
+      await actionsChat(page, deployment);
+      const row = actionRow(page);
+      await row.focus();
+
+      await page.keyboard.press(opener.key);
+
+      await expect(row.getByRole('button', { name: 'Reply', exact: true })).toBeFocused();
+    });
+  }
+
+  test('Shift+F10 on a focused link in a bubble opens no message menu and is not prevented', async ({
+    page,
+    deployment,
+  }) => {
+    await actionsChat(page, deployment);
+    const link = actionRow(page).getByRole('link', { name: 'https://example.org' });
+    await link.focus();
+    await link.evaluate((element) => {
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'F10') element.setAttribute('data-key-prevented', String(event.defaultPrevented));
+      });
+    });
+
+    await page.keyboard.press('Shift+F10');
+
+    await expect(link).toHaveAttribute('data-key-prevented', 'false');
+    await expect(page.getByRole('button', { name: 'Reply', exact: true })).toHaveCount(0);
+  });
+
+  test("opening a second message's menu closes the first", async ({ page, deployment }) => {
+    await actionsChat(page, deployment);
+    const lower = messages(page)
+      .filter({ hasText: 'Second menu body' })
+      .getByRole('button', { name: 'Message actions' });
+    await lower.click();
+    const upper = actionRow(page).getByRole('button', { name: 'Message actions' });
+
+    await upper.click();
+
+    await expect(lower).toHaveAttribute('aria-expanded', 'false');
+    await expect(upper).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByRole('button', { name: 'Reply', exact: true })).toHaveCount(1);
+  });
+
+  test('Shift+F10 on another message while a menu is open closes the first menu and opens the other', async ({
+    page,
+    deployment,
+  }) => {
+    await actionsChat(page, deployment);
+    const upper = actionRow(page).getByRole('button', { name: 'Message actions' });
+    await upper.click();
+    const lowerRow = messages(page).filter({ hasText: 'Second menu body' });
+    await lowerRow.focus();
+
+    await page.keyboard.press('Shift+F10');
+
+    await expect(upper).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByRole('button', { name: 'Reply', exact: true })).toHaveCount(1);
+    await expect(lowerRow.getByRole('button', { name: 'Reply', exact: true })).toBeFocused();
+  });
+
+  test('a click outside the menu closes it and leaves focus where the click put it', async ({ page, deployment }) => {
+    await actionsChat(page, deployment);
+    await actionRow(page).getByRole('button', { name: 'Message actions' }).click();
+    const composer = page.getByRole('textbox', { name: 'Message', exact: true });
+
+    await composer.click();
+
+    await expect(composer).toBeFocused();
+    await expect(page.getByRole('button', { name: 'Reply', exact: true })).toHaveCount(0);
+  });
+
+  test('a touch long press on a bubble opens its menu, with its pointer down not prevented and touch-action and user-select unchanged', async ({
+    page,
+    deployment,
+  }) => {
+    await actionsChat(page, deployment);
+    const bubble = actionRow(page).locator('[data-bubble]');
+    const before = await bubble.evaluate((element) => ({
+      touch: getComputedStyle(element).touchAction,
+      select: getComputedStyle(element).userSelect,
+    }));
+
+    const allowed = await bubble.evaluate((element) =>
+      element.dispatchEvent(
+        new PointerEvent('pointerdown', { bubbles: true, cancelable: true, pointerType: 'touch', pointerId: 1 }),
+      ),
+    );
+
+    expect(allowed).toBe(true);
+    await expect(page.getByRole('button', { name: 'Reply', exact: true })).toBeFocused();
+    expect(
+      await bubble.evaluate((element) => ({
+        touch: getComputedStyle(element).touchAction,
+        select: getComputedStyle(element).userSelect,
+      })),
+    ).toEqual(before);
+  });
+
+  test('the reaction row reacts with one press and closes the menu onto Message actions', async ({
+    page,
+    deployment,
+  }) => {
+    await actionsChat(page, deployment);
+    const row = actionRow(page);
+    const opener = row.getByRole('button', { name: 'Message actions' });
+    await opener.click();
+
+    await page
+      .getByRole('group', { name: 'Reactions' })
+      .getByRole('button', { name: 'Thumbs up', exact: true })
+      .click();
+
+    await expect(row.getByRole('button', { name: /Thumbs up.*your reaction/ })).toBeVisible();
+    await expect(opener).toBeFocused();
+    await expect(page.getByRole('group', { name: 'Reactions' })).toHaveCount(0);
+  });
+
+  test("Remove reaction under the row removes the caller's reaction", async ({ page, deployment }) => {
+    await actionsChat(page, deployment);
+    const row = actionRow(page);
+    await row.getByRole('button', { name: 'Message actions' }).click();
+
+    await page.getByRole('button', { name: 'Remove reaction', exact: true }).click();
+
+    await expect(row.getByRole('list', { name: 'Reactions' })).toHaveCount(0);
+    await expect(row.getByRole('button', { name: 'Message actions' })).toBeFocused();
+  });
+
+  test('at 360 px the menu with its reaction row stays inside the window', async ({ page, deployment }) => {
+    await actionsChat(page, deployment);
+    await page.setViewportSize({ width: 360, height: 800 });
+    const row = actionRow(page);
+
+    await row.getByRole('button', { name: 'Message actions' }).click();
+
+    const bounds = await row.locator('[aria-expanded="true"] + div').boundingBox();
+    if (bounds === null) throw new Error('the menu is missing');
+    expect(bounds.x).toBeGreaterThanOrEqual(0);
+    expect(bounds.x + bounds.width).toBeLessThanOrEqual(360);
+    expect(bounds.y).toBeGreaterThanOrEqual(0);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(800);
+  });
+});
+
+test.describe('copy text', () => {
+  test.use({ locale: 'en-GB', viewport: { width: 1280, height: 800 } });
+
+  test('Copy text announces the copy and returns focus to Message actions', async ({
+    page,
+    context,
+    browserName,
+    deployment,
+  }) => {
+    if (browserName === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await actionsChat(page, deployment);
+    const row = actionRow(page);
+    await row.getByRole('button', { name: 'Message actions' }).click();
+
+    await row.getByRole('button', { name: 'Copy text', exact: true }).click();
+
+    await expect(page.getByRole('status').filter({ hasText: 'Text copied.' })).toBeVisible();
+    await expect(row.getByRole('button', { name: 'Message actions' })).toBeFocused();
+    if (browserName === 'chromium')
+      expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(
+        'Menu body \u202e text https://example.org',
+      );
+  });
+
+  test("in a read-only chat a student's menu on another member's message holds only Copy text", async ({
+    page,
+    deployment,
+  }) => {
+    const setup = await actionsChat(page, deployment, true);
+    await archiveGroup(deployment, setup.tutor, setup.group);
+    await page.getByRole('paragraph').filter({ hasText: 'This chat is read-only' }).waitFor();
+    const row = actionRow(page);
+
+    await row.getByRole('button', { name: 'Message actions' }).click();
+
+    await expect(row.getByRole('button')).toHaveText(['', 'Copy text']);
+    await expect(row.getByRole('button', { name: 'Copy text' })).toBeFocused();
+  });
+
+  test('a chat that becomes read-only while the menu is open drops its write items and moves focus to Copy text', async ({
+    page,
+    deployment,
+  }) => {
+    const setup = await actionsChat(page, deployment, true);
+    const row = actionRow(page);
+    await row.getByRole('button', { name: 'Message actions' }).click();
+
+    await archiveGroup(deployment, setup.tutor, setup.group);
+
+    await expect(page.getByRole('paragraph').filter({ hasText: 'This chat is read-only' })).toBeVisible();
+    await expect(row.getByRole('button')).toHaveText(['', 'Copy text']);
+    await expect(row.getByRole('button', { name: 'Copy text' })).toBeFocused();
+  });
+});
+
+test.describe('the composer', () => {
+  test.use({ locale: 'en-GB', viewport: { width: 1280, height: 800 } });
+
+  test('the emoji picker inserts the chosen emoji over the selection and returns focus to the composer with the caret after it', async ({
+    page,
+    deployment,
+  }) => {
+    const requests: { readonly url: string; readonly type: string }[] = [];
+    page.on('request', (request) => {
+      requests.push({ url: request.url(), type: request.resourceType() });
+    });
+    await actionsChat(page, deployment);
+    const composer = page.getByRole('textbox', { name: 'Message', exact: true });
+    await composer.fill('before selected after');
+    await composer.evaluate((element) => {
+      if (!(element instanceof HTMLTextAreaElement)) throw new Error('composer is missing');
+      element.setSelectionRange(7, 15);
+    });
+    await page.getByRole('button', { name: 'Emoji', exact: true }).click();
+    const before = requests.length;
+
+    await page.getByRole('button', { name: 'Grinning face', exact: true }).click();
+
+    await expect(composer).toHaveValue('before 😀 after');
+    await expect(composer).toBeFocused();
+    expect(
+      await composer.evaluate((element) => {
+        if (!(element instanceof HTMLTextAreaElement)) throw new Error('composer is missing');
+        return [element.selectionStart, element.selectionEnd];
+      }),
+    ).toEqual([9, 9]);
+    expect(
+      requests
+        .slice(before)
+        .filter(
+          (request) =>
+            request.type === 'font' ||
+            request.type === 'image' ||
+            new URL(request.url).origin !== new URL(deployment.origin).origin,
+        ),
+    ).toEqual([]);
+  });
+
+  test('Escape closes the emoji picker onto its button', async ({ page, deployment }) => {
+    await actionsChat(page, deployment);
+    const emoji = page.getByRole('button', { name: 'Emoji', exact: true });
+    await emoji.click();
+
+    await page.keyboard.press('Escape');
+
+    await expect(emoji).toBeFocused();
+    await expect(page.getByRole('group', { name: 'Emoji', exact: true })).toHaveCount(0);
+  });
+
+  for (const movement of [
+    { key: 'ArrowRight', name: 'Beaming face' },
+    { key: 'ArrowLeft', name: 'Hot beverage' },
+    { key: 'ArrowDown', name: 'Thinking face' },
+    { key: 'ArrowUp', name: 'Fire' },
+    { key: 'End', name: 'Hot beverage' },
+    { key: 'Home', name: 'Grinning face' },
+  ]) {
+    test(`arrow keys, Home and End move through the emoji picker: ${movement.key}`, async ({ page, deployment }) => {
+      await actionsChat(page, deployment);
+      await page.getByRole('button', { name: 'Emoji', exact: true }).click();
+      if (movement.key === 'Home') await page.keyboard.press('End');
+
+      await page.keyboard.press(movement.key);
+
+      await expect(
+        page
+          .getByRole('group', { name: 'Emoji', exact: true })
+          .getByRole('button', { name: movement.name, exact: true }),
+      ).toBeFocused();
+      await expect(page.getByRole('group', { name: 'Emoji', exact: true }).locator('button[tabindex="0"]')).toHaveCount(
+        1,
+      );
+    });
+  }
+});
+
+test('the composer › clicking Emoji again closes the picker onto its button', async ({ page, deployment }) => {
+  await actionsChat(page, deployment);
+  const emoji = page.getByRole('button', { name: 'Emoji', exact: true });
+  await emoji.click();
+
+  await emoji.click();
+
+  await expect(page.getByRole('group', { name: 'Emoji', exact: true })).toHaveCount(0);
+  await expect(emoji).toBeFocused();
 });

@@ -1,4 +1,6 @@
-import type { ReactElement, ReactNode } from 'react';
+import { type ReactElement, type ReactNode, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+
+import { useScheduler } from '../../app/clock.ts';
 
 import { dateTimeFormat } from '../../lib/format/dates.ts';
 import type { Language } from '../../lib/i18n/resources.ts';
@@ -17,6 +19,13 @@ function bubbleCorners(own: boolean, place: MessagePlace): string {
   return [place.firstOfGroup ? '' : near[0], place.lastOfGroup ? '' : near[1]].join(' ');
 }
 
+function selectionIntersects(selection: Selection | null, node: Node): boolean {
+  if (selection === null || selection.isCollapsed) return false;
+  return Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index)).some((range) =>
+    range.intersectsNode(node),
+  );
+}
+
 export function MessageRow({
   message,
   place,
@@ -25,6 +34,7 @@ export function MessageRow({
   timeZone,
   groupChat,
   menu,
+  onOpenMenu = null,
   refresh,
   onJump,
   peerReadSeq,
@@ -39,6 +49,7 @@ export function MessageRow({
   readonly timeZone: string;
   readonly groupChat: boolean;
   readonly menu: ReactNode;
+  readonly onOpenMenu?: (() => void) | null;
   readonly refresh: () => Promise<boolean>;
   readonly onJump: (quote: MessageQuote) => void;
   readonly peerReadSeq: number | null;
@@ -46,6 +57,132 @@ export function MessageRow({
   readonly onToggleReaction?: (reaction: ReactionValue, mine: boolean) => void;
   readonly tracked?: boolean;
 }): ReactElement {
+  const scheduler = useScheduler();
+  const openMenu = useRef(onOpenMenu);
+  const rowPointerPending = useRef(false);
+  useLayoutEffect(() => {
+    openMenu.current = onOpenMenu;
+  }, [onOpenMenu]);
+  const bubble = useRef<HTMLDivElement>(null);
+  const row = useRef<HTMLLIElement>(null);
+  const cancelPress = useRef<() => void>(() => undefined);
+  const pressedLong = useRef(false);
+  const press = useRef<{ readonly id: number; readonly x: number; readonly y: number } | null>(null);
+  const pointer = useRef<{
+    readonly type: string;
+    readonly button: number;
+    readonly ctrl: boolean;
+    readonly shift: boolean;
+    readonly selected: boolean;
+    readonly anchor: Node | null;
+    readonly focus: Node | null;
+    readonly anchorOffset: number;
+    readonly focusOffset: number;
+  } | null>(null);
+  const excluded = useCallback((target: EventTarget): boolean => {
+    const interactive =
+      target instanceof Element
+        ? target.closest(
+            'a, button, input, textarea, select, summary, img, [role="button"], [tabindex], [data-reaction]',
+          )
+        : null;
+    return interactive !== null && bubble.current?.contains(interactive) === true;
+  }, []);
+  const cancel = useCallback((): void => {
+    cancelPress.current();
+    press.current = null;
+  }, []);
+  useEffect(() => {
+    const pane = bubble.current?.closest('[data-history-pane]');
+    pane?.addEventListener('scroll', cancel);
+    return (): void => {
+      cancelPress.current();
+      pane?.removeEventListener('scroll', cancel);
+    };
+  }, [cancel]);
+  useEffect(() => {
+    if (onOpenMenu === null) cancelPress.current();
+  }, [onOpenMenu]);
+  useEffect(() => {
+    const rowElement = row.current;
+    const bubbleElement = bubble.current;
+    if (rowElement === null || bubbleElement === null) return undefined;
+    const bubbleNode: HTMLElement = bubbleElement;
+    function pointerDown(): void {
+      rowPointerPending.current = true;
+    }
+    function clearPointerPending(): void {
+      rowPointerPending.current = false;
+    }
+    function keydown(event: KeyboardEvent): void {
+      rowPointerPending.current = false;
+      pressedLong.current = false;
+      cancel();
+      if (
+        event.target === rowElement &&
+        openMenu.current !== null &&
+        (event.key === 'ContextMenu' || (event.key === 'F10' && event.shiftKey))
+      ) {
+        event.preventDefault();
+        openMenu.current();
+      }
+    }
+    function contextMenu(event: MouseEvent): void {
+      const pointerPending = rowPointerPending.current;
+      rowPointerPending.current = false;
+      const recorded = pointer.current;
+      pointer.current = null;
+      if (event.target === rowElement) {
+        if (pointerPending || ('pointerType' in event && event.pointerType !== '') || openMenu.current === null) return;
+        event.preventDefault();
+        openMenu.current();
+        return;
+      }
+      if (!(event.target instanceof Node) || !bubbleNode.contains(event.target)) return;
+      if (
+        recorded?.type !== 'mouse' ||
+        recorded.shift ||
+        recorded.selected ||
+        !(recorded.button === 2 || (recorded.button === 0 && recorded.ctrl)) ||
+        ('pointerType' in event && event.pointerType !== 'mouse') ||
+        excluded(event.target) ||
+        openMenu.current === null
+      )
+        return;
+      event.preventDefault();
+      const selection = window.getSelection();
+      if (
+        selection?.isCollapsed === false &&
+        bubbleNode.contains(selection.anchorNode) &&
+        bubbleNode.contains(selection.focusNode) &&
+        (selection.anchorNode !== recorded.anchor ||
+          selection.focusNode !== recorded.focus ||
+          selection.anchorOffset !== recorded.anchorOffset ||
+          selection.focusOffset !== recorded.focusOffset)
+      )
+        selection.removeAllRanges();
+      openMenu.current();
+    }
+    function click(event: MouseEvent): void {
+      if (pressedLong.current && event.detail > 0) {
+        pressedLong.current = false;
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    }
+    rowElement.addEventListener('pointerdown', pointerDown, true);
+    rowElement.addEventListener('keydown', keydown);
+    rowElement.addEventListener('click', clearPointerPending);
+    rowElement.addEventListener('contextmenu', contextMenu);
+    bubbleElement.addEventListener('click', click, true);
+    return (): void => {
+      rowElement.removeEventListener('pointerdown', pointerDown, true);
+      rowElement.removeEventListener('keydown', keydown);
+      rowElement.removeEventListener('click', clearPointerPending);
+      rowElement.removeEventListener('contextmenu', contextMenu);
+      bubbleElement.removeEventListener('click', click, true);
+    };
+  }, [cancel, excluded]);
   const own = message.own;
   const sender = own ? texts.you : (message.sender_label ?? texts.deletedUser);
   const senderShown = groupChat && !own && place.firstOfGroup;
@@ -56,6 +193,7 @@ export function MessageRow({
   );
   return (
     <li
+      ref={row}
       data-row={message.id}
       data-seq={tracked ? message.seq : undefined}
       data-window-seq={tracked ? undefined : message.seq}
@@ -70,7 +208,44 @@ export function MessageRow({
         className={`flex max-w-[85%] items-end gap-1 desktop:max-w-[72%] ${own ? 'flex-row-reverse self-end' : 'self-start'}`}
       >
         <div
+          ref={bubble}
           data-bubble=""
+          onPointerDown={(event) => {
+            pressedLong.current = false;
+            cancel();
+            const selection = window.getSelection();
+            pointer.current = {
+              type: event.pointerType,
+              button: event.button,
+              ctrl: event.ctrlKey,
+              shift: event.shiftKey,
+              selected: selectionIntersects(selection, event.currentTarget),
+              anchor: selection?.anchorNode ?? null,
+              focus: selection?.focusNode ?? null,
+              anchorOffset: selection?.anchorOffset ?? 0,
+              focusOffset: selection?.focusOffset ?? 0,
+            };
+            if (event.pointerType !== 'touch' || excluded(event.target) || onOpenMenu === null) return;
+            press.current = { id: event.pointerId, x: event.clientX, y: event.clientY };
+            cancelPress.current = scheduler.schedule(500, () => {
+              pressedLong.current = true;
+              onOpenMenu();
+            });
+          }}
+          onPointerMove={(event) => {
+            const start = press.current;
+            if (
+              start !== null &&
+              start.id === event.pointerId &&
+              Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10
+            )
+              cancel();
+          }}
+          onPointerUp={cancel}
+          onPointerCancel={() => {
+            cancel();
+            pressedLong.current = false;
+          }}
           className={`flex min-w-0 flex-col gap-1 rounded-lg px-3 py-1.5 ${own ? 'bg-mine' : 'border border-border bg-surface'} ${bubbleCorners(own, place)}`}
         >
           <span dir="auto" className={senderShown ? 'text-label text-accent-text [overflow-wrap:anywhere]' : 'sr-only'}>

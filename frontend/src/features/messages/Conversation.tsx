@@ -29,9 +29,10 @@ import {
 } from '../../components/ui/Form.tsx';
 import { useChatWrite } from '../../components/ui/chatWrite.ts';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
-import { FocusedNotice } from '../../components/ui/LiveNotice.tsx';
+import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { asApiError, useApiClient, type ApiError } from '../../lib/api/client.ts';
+import { copyText, type CopyResult } from '../../lib/clipboard.ts';
 import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
 import {
   type Channel,
@@ -56,9 +57,10 @@ import { useChatSignals } from './presence.ts';
 import { PresenceSummary } from './PresenceSummary.tsx';
 import { TypingIndicator } from './TypingIndicator.tsx';
 import { aroundPrefix, channelKey, messagesKey } from './keys.ts';
-import { ArrowDownIcon, CloseIcon, SearchIcon } from './icons.tsx';
+import { ArrowDownIcon, CloseIcon, SearchIcon, SendIcon } from './icons.tsx';
 import { SearchPanel } from './SearchPanel.tsx';
 import { MessageBody } from './MessageBody.tsx';
+import { EmojiPicker } from './EmojiPicker.tsx';
 import { MessageMenu, type PinAction } from './MessageMenu.tsx';
 import { MessageRow } from './MessageRow.tsx';
 import { revealRow } from './reveal.ts';
@@ -232,6 +234,38 @@ export function Conversation({
   const conflictContainer = useRef<HTMLDivElement>(null);
   const alive = useRef(true);
   const [draft, setDraft] = useState('');
+  const [openMenuMessageId, setOpenMenuMessageId] = useState<string | null>(null);
+  const [menuOpenRequest, setMenuOpenRequest] = useState(0);
+  const copyCount = useRef(0);
+  const copyGeneration = useRef(0);
+  const [copyNotice, setCopyNotice] = useState<{ readonly result: CopyResult; readonly count: number } | null>(null);
+  const copyAlert = useRef<HTMLParagraphElement>(null);
+  const emojiCaret = useRef<number | null>(null);
+  const [emojiInsertion, setEmojiInsertion] = useState(0);
+  useLayoutEffect(() => {
+    if (copyNotice?.result === 'failed') copyAlert.current?.focus();
+  }, [copyNotice]);
+  useLayoutEffect(() => {
+    const caret = emojiCaret.current;
+    if (caret === null) return;
+    emojiCaret.current = null;
+    composer.current?.focus();
+    composer.current?.setSelectionRange(caret, caret);
+  }, [draft, emojiInsertion]);
+  function changeDraft(value: string): void {
+    setDraft(value);
+    if (value.trim() === '') presence.stopTyping();
+    else presence.startTyping();
+  }
+  function clearCopyNotice(): void {
+    copyGeneration.current += 1;
+    setCopyNotice(null);
+  }
+  function openMenu(messageId: string): void {
+    clearCopyNotice();
+    setOpenMenuMessageId(messageId);
+    setMenuOpenRequest((count) => count + 1);
+  }
   const [editing, setEditing] = useState<Message | null>(null);
   const [replyToId, setReplyToId] = useState<string | null>(null);
   const replySnapshot = useRef<Message | null>(null);
@@ -534,6 +568,15 @@ export function Conversation({
       !(current.state.status === 'error' && asApiError(current.state.error).status === 404)
     );
   }
+  function copyBody(body: string): void {
+    const generation = copyGeneration.current;
+    const result = copyText(navigator.clipboard, body);
+    void result.then((outcome) => {
+      if (!isAlive() || copyGeneration.current !== generation) return;
+      copyCount.current += 1;
+      setCopyNotice({ result: outcome, count: copyCount.current });
+    });
+  }
   function shownUndeleted(messageId: string): boolean {
     const pages = [
       cache.getQueryData<MessagePage>(messagesKey(channel.id)),
@@ -725,6 +768,7 @@ export function Conversation({
         await editMessage(client, original, body);
       }
       if (!isAlive() || editGeneration.current !== generation) return;
+      clearCopyNotice();
       submission.current = null;
       if (original === null) {
         uploads.queue.clear();
@@ -847,9 +891,24 @@ export function Conversation({
     const reaction = channel.writable
       ? { current: message.reactions.find((item) => item.mine)?.reaction ?? null }
       : null;
-    if (!canDelete && pin === null && reply === null && reaction === null) return null;
+    const body = message.body;
+    const canCopy = body !== null && body !== '';
+    if (!canDelete && pin === null && reply === null && reaction === null && !canCopy) return null;
     return (
       <MessageMenu
+        open={openMenuMessageId === message.id}
+        openRequest={menuOpenRequest}
+        onOpenChange={(open) => {
+          if (open) openMenu(message.id);
+          else setOpenMenuMessageId((current) => (current === message.id ? null : current));
+        }}
+        onCopy={
+          canCopy
+            ? (): void => {
+                copyBody(body);
+              }
+            : null
+        }
         texts={texts}
         editable={editable}
         busy={busy}
@@ -891,6 +950,7 @@ export function Conversation({
     );
   }
   function rowOf(message: Message, place: MessagePlace, tracked: boolean): ReactElement {
+    const menu = menuOf(message);
     return (
       <MessageRow
         key={message.id}
@@ -912,7 +972,14 @@ export function Conversation({
         onJump={(quote) => {
           jumpTo(quote.seq, quote.message_id);
         }}
-        menu={menuOf(message)}
+        menu={menu}
+        onOpenMenu={
+          menu === null
+            ? null
+            : (): void => {
+                openMenu(message.id);
+              }
+        }
       />
     );
   }
@@ -990,9 +1057,7 @@ export function Conversation({
         rows={1}
         className="min-h-11 min-w-0 flex-1 resize-none rounded-md border border-border-strong bg-field px-3 py-2"
         onChange={(event) => {
-          setDraft(event.target.value);
-          if (event.target.value.trim() === '') presence.stopTyping();
-          else presence.startTyping();
+          changeDraft(event.target.value);
         }}
         onBlur={presence.stopTyping}
         onKeyUp={() => {
@@ -1014,9 +1079,14 @@ export function Conversation({
         busy={busy}
         unavailable={guard.unavailable || conflict !== null}
         unavailableReason={conflict !== null ? texts.resolveConflict : guard.reason}
-        className={primaryButtonClass}
+        label={editing === null ? texts.send : texts.save}
+        className={
+          editing === null
+            ? 'inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-accent text-on-accent hover:bg-accent-hover aria-disabled:opacity-60 desktop:pointer-fine:size-10'
+            : primaryButtonClass
+        }
       >
-        {editing === null ? texts.send : texts.save}
+        {editing === null ? <SendIcon size={20} /> : texts.save}
       </ActionButton>
       {editing === null ? null : (
         <button type="button" className={quietButtonClass} onClick={cancelEdit}>
@@ -1269,6 +1339,13 @@ export function Conversation({
           </section>
         ) : null}
       </div>
+      {copyNotice === null ? null : copyNotice.result === 'failed' ? (
+        <p key={copyNotice.count} ref={copyAlert} role="alert" tabIndex={-1} className="text-danger outline-none">
+          {texts.copyFailed}
+        </p>
+      ) : (
+        <LiveNotice key={copyNotice.count} message={texts.copied} />
+      )}
       <form
         className={`flex shrink-0 flex-col gap-2 border-t border-border pt-3${phone ? ' pb-[env(safe-area-inset-bottom)]' : ''}`}
         onSubmit={(event) => {
@@ -1324,6 +1401,24 @@ export function Conversation({
         <UploadComposer
           focusFallback={composer}
           field={field}
+          emoji={
+            <EmojiPicker
+              texts={texts}
+              writable={channel.writable}
+              busy={busy}
+              composer={composer}
+              onChoose={(emoji) => {
+                const field = composer.current;
+                if (field === null) return;
+                const start = field.selectionStart;
+                const end = field.selectionEnd;
+                emojiCaret.current = start + emoji.length;
+                setEmojiInsertion((count) => count + 1);
+                changeDraft(draft.slice(0, start) + emoji + draft.slice(end));
+                field.focus();
+              }}
+            />
+          }
           editing={editing !== null}
           items={uploads.items}
           texts={texts}

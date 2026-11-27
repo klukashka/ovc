@@ -1,8 +1,10 @@
 import type { Page } from '@playwright/test';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
+import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { trafficAfterReady, expectRefetchedAfterTheSocketIsReady } from './realtime.ts';
+import { channelOf, postMessage } from './messages.ts';
 import { accessToken, callApi, createGroup, seedActiveStudent } from './tutoring.ts';
 
 test.use({ locale: 'ru-RU' });
@@ -243,5 +245,70 @@ for (const theme of ['light', 'dark'] as const) {
         .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-pressed'))),
     ).toEqual(['false', 'false', 'true', 'false']);
     await expect(groups).toBeFocused();
+  });
+}
+
+async function openConversationWithOneMessage(
+  page: Page,
+  deployment: Deployment,
+  theme: 'light' | 'dark',
+): Promise<void> {
+  const tutor = await seedVerifiedUser(deployment, 'Репетитор', 'ru');
+  const { cardId } = await seedActiveStudent(deployment, tutor, 'Ученик', 'ru');
+  const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+  await postMessage(deployment, tutor, channel, 'Сообщение для проверки', null);
+  const saved = await callApi(deployment, await accessToken(deployment, tutor), 'PATCH', '/users/me', { theme });
+  if (saved.status !== 200) throw new Error('theme was not saved');
+  await signedInAt(page, tutor, `/messages/${channel}`);
+  await page.getByText('Сообщение для проверки', { exact: true }).waitFor();
+}
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`the message menu's reaction row is a named group of six named pressed-state buttons before Reply in the ${theme} theme`, async ({
+    page,
+    deployment,
+  }) => {
+    await openConversationWithOneMessage(page, deployment, theme);
+
+    await page.getByRole('button', { name: 'Действия с сообщением', exact: true }).click();
+
+    const row = page.getByRole('group', { name: 'Реакции', exact: true });
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    expect(
+      await row
+        .getByRole('button')
+        .evaluateAll((buttons) =>
+          buttons.map((button) => [button.getAttribute('aria-label'), button.getAttribute('aria-pressed')]),
+        ),
+    ).toEqual([
+      ['Нравится', 'false'],
+      ['Сердце', 'false'],
+      ['Смешно', 'false'],
+      ['Удивление', 'false'],
+      ['Грустно', 'false'],
+      ['Готово', 'false'],
+    ]);
+    await expect(page.getByRole('button', { name: 'Ответить', exact: true })).toBeFocused();
+  });
+
+  test(`the emoji picker is a named group of named buttons with one tab stop in the ${theme} theme`, async ({
+    page,
+    deployment,
+  }) => {
+    await openConversationWithOneMessage(page, deployment, theme);
+
+    await page.getByRole('button', { name: 'Эмодзи', exact: true }).click();
+
+    const picker = page.getByRole('group', { name: 'Эмодзи', exact: true });
+    const choices = picker.getByRole('button');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await expect(choices).toHaveCount(40);
+    await expect(choices.first()).toHaveAccessibleName('Улыбающееся лицо');
+    await expect(choices.first()).toBeFocused();
+    expect(
+      await choices.evaluateAll(
+        (buttons) => buttons.filter((button) => button.getAttribute('tabindex') !== '-1').length,
+      ),
+    ).toBe(1);
   });
 }

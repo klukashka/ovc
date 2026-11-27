@@ -35,10 +35,12 @@ export function UploadComposer({
   remove,
   focusFallback,
   field,
+  emoji,
   editing,
 }: {
   readonly focusFallback: RefObject<HTMLTextAreaElement | null>;
   readonly field: ReactNode;
+  readonly emoji?: ReactNode;
   readonly editing: boolean;
   readonly items: readonly UploadItem[];
   readonly texts: ChatTexts;
@@ -114,6 +116,7 @@ export function UploadComposer({
             </ActionButton>
           </>
         )}
+        {emoji}
         {field}
       </div>
     </div>
