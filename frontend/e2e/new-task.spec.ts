@@ -452,27 +452,6 @@ test.describe('new task', () => {
     await expect(main(page).getByRole('radio', { name: 'After checking' })).toHaveAccessibleDescription(noManualHint);
   });
 
-  test('mixed work issued after checking reveals no key, explanation or points while it waits for checking', async ({
-    page,
-    deployment,
-  }) => {
-    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
-    const { student } = await seedActiveStudent(deployment, tutor, 'Anna');
-    await openNewTask(page, tutor);
-    await writeTask(page, 'Mixed');
-    await addMixedQuestions(page);
-    await chooseStudent(page, 'Anna');
-
-    await issue(page);
-    await issuedNotice(page).waitFor();
-    const submissionId = await onlyStudentSubmission(deployment, student);
-    const studentBodies = await answerAndSubmit(deployment, student, submissionId);
-
-    await expect(issuedNotice(page)).toBeFocused();
-    expectNoKeysOrPoints(studentBodies);
-    expect(await reviewQueueSubmissions(deployment, tutor)).toEqual([submissionId]);
-  });
-
   test('an all-automatic task defaults to Never and warns on the policies that reveal answers', async ({
     page,
     deployment,

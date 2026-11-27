@@ -303,7 +303,7 @@ test.describe('issuing from the library', () => {
     await expect(items.getByRole('button', { name: 'Issue assignment', exact: true })).toHaveCount(0);
   });
 
-  test('Issue assignment opens the Issue page on its heading with the template preset', async ({
+  test('Issue assignment opens the Issue page on its heading with the template preset and warns under After checking that a template without hand-checked questions reveals answers at submission', async ({
     page,
     deployment,
   }) => {
@@ -318,20 +318,6 @@ test.describe('issuing from the library', () => {
     await expect(audienceSearch(page)).toBeVisible();
     await expect(issueDialog(page).getByRole('link', { name: 'Back to the library' })).toBeVisible();
     await expect(issueDialog(page).getByText('Fractions', { exact: true })).toBeVisible();
-    await expect(issueDialog(page).getByRole('radio', { name: 'After checking' })).toBeChecked();
-  });
-
-  test('the Issue page warns under After checking that a template without hand-checked questions reveals answers at submission', async ({
-    page,
-    deployment,
-  }) => {
-    const { pavel } = await pavelWithAnna(deployment);
-    await createReadyTemplate(deployment, pavel, 'Fractions');
-    await openLibrary(page, pavel);
-
-    await chooseRowAction(page, 'Fractions', 'Issue assignment');
-
-    await expect(issueHeading(page)).toBeFocused();
     const afterChecking = issueDialog(page).getByRole('radio', { name: 'After checking' });
     await expect(afterChecking).toBeChecked();
     await expect(afterChecking).toHaveAccessibleDescription(

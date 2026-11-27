@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { type TestAccount, testNetAddress } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { accessToken } from './tutoring.ts';
+import { accessToken, inSeedBatches } from './tutoring.ts';
 
 export interface SavedTemplate {
   readonly id: string;
@@ -166,9 +166,7 @@ export async function issueManyThroughTheApi(
   count: number,
   seed: IssueSeed = {},
 ): Promise<void> {
-  for (let index = 0; index < count; index += 1) {
-    await issueThroughTheApi(deployment, tutor, templateId, audience, seed);
-  }
+  await inSeedBatches(count, () => issueThroughTheApi(deployment, tutor, templateId, audience, seed));
 }
 
 export interface IssueState {

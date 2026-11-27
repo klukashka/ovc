@@ -408,24 +408,6 @@ test.describe('pilot 4, Maria in Russian and Boris in English', () => {
 test.describe('Anna in Russian', () => {
   test.use({ locale: 'ru-RU', timezoneId: 'Europe/Berlin', colorScheme: 'light' });
 
-  test('my tutors › the stop studying dialog opens on Cancel and says that the student leaves the tutor’s groups', async ({
-    page,
-    deployment,
-  }) => {
-    const maria = await seedVerifiedUser(deployment, 'Мария');
-    const { student: anna, cardId } = await seedActiveStudent(deployment, maria, 'Анна', 'ru');
-    await createGroup(deployment, maria, 'B1 evening', [cardId]);
-    await signInThroughTheApi(page, anna);
-    await page.goto('/tutors');
-    await page.getByRole('button', { name: 'Другие действия: Мария' }).click();
-
-    await page.getByRole('button', { name: 'Прекратить занятия' }).click();
-
-    const dialog = page.getByRole('dialog', { name: 'Прекратить занятия с этим репетитором?' });
-    await expect(dialog.getByRole('button', { name: 'Отмена' })).toBeFocused();
-    await expect(dialog).toContainText('Вы выйдете из групп этого репетитора');
-  });
-
   test.describe('Maria and her student Anna, shared by the tests below', () => {
     test.describe.configure({ mode: 'default' });
 
@@ -462,7 +444,7 @@ test.describe('Anna in Russian', () => {
       await expect(lastItem.locator('svg')).toHaveCount(1);
     });
 
-    test('my tutors › the stop studying dialog shows the filled Stop studying before a quiet Cancel and opens on Cancel', async ({
+    test('my tutors › the stop studying dialog shows the filled Stop studying before a quiet Cancel, opens on Cancel and says that the student leaves the tutor’s groups', async ({
       page,
       mariaAndAnna: { anna },
     }) => {
@@ -477,6 +459,7 @@ test.describe('Anna in Russian', () => {
       await expect(dialog.getByRole('button')).toHaveText(['Прекратить занятия', 'Отмена']);
       expect(await backgroundOf(dialog.getByRole('button', { name: 'Прекратить занятия' }))).not.toBe(transparent);
       expect(await backgroundOf(dialog.getByRole('button', { name: 'Отмена' }))).toBe(transparent);
+      await expect(dialog).toContainText('Вы выйдете из групп этого репетитора');
     });
 
     test('my tutors › the stop studying dialog opens again after Cancel', async ({ page, mariaAndAnna: { anna } }) => {

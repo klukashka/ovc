@@ -170,6 +170,7 @@ interface SweptPage {
   readonly path: string;
   readonly ready: (page: Page) => Locator;
   readonly measure?: (page: Page) => Promise<LayoutFacts>;
+  readonly table?: string;
 }
 
 async function pagesScrollingSideways(
@@ -257,12 +258,18 @@ interface MarkupSweep {
   readonly withoutMarkupText: readonly string[];
 }
 
+async function tableShowsMarkupAsText(page: Page, name: string): Promise<boolean> {
+  const table = page.getByRole('table', { name });
+  const markupRows = await table.locator('tbody > tr').filter({ hasText: markup }).count();
+  return markupRows > 0 && (await table.locator('img, b').count()) === 0;
+}
+
 async function pagesSweptForMarkup(page: Page, pages: readonly SweptPage[]): Promise<MarkupSweep> {
   trackedApiReads(page);
   await page.setViewportSize(phone);
   const sideways: string[] = [];
   const withoutMarkupText: string[] = [];
-  for (const { path, ready } of pages) {
+  for (const { path, ready, table } of pages) {
     await page.goto(path);
     await ready(page).waitFor();
     await page.evaluate(async () => {
@@ -275,6 +282,12 @@ async function pagesSweptForMarkup(page: Page, pages: readonly SweptPage[]): Pro
     const main = page.getByRole('main');
     if (!((await main.textContent()) ?? '').includes(markup) || (await main.locator('img, b').count()) > 0) {
       withoutMarkupText.push(path);
+    }
+    if (table !== undefined && !(await tableShowsMarkupAsText(page, table))) {
+      withoutMarkupText.push(`${path} table ${table}`);
+    }
+    if ((await page.title()) === '1') {
+      withoutMarkupText.push(`${path} title`);
     }
   }
   return { sideways, withoutMarkupText };
@@ -355,6 +368,7 @@ test.describe('the 360 px sweeps', () => {
     expect(sideways).toEqual([]);
     const table = page.getByRole('table', { name: 'Notifications' });
     await expect(table).toContainText(markup);
+    await expect(table.locator('tbody > tr').filter({ hasText: markup })).not.toHaveCount(0);
     await expect(table.locator('img, b')).toHaveCount(0);
     await expect(page).not.toHaveTitle('1');
   });
@@ -374,9 +388,9 @@ test.describe('the 360 px sweeps', () => {
       },
       { path: '/schedule', ready: (shown: Page): Locator => shown.locator('main a[href^="/lessons/"]').first() },
       { path: `/lessons/${seeded.lessonId}`, ready: headingNamed(longWord) },
-      { path: '/students', ready: firstTableRow },
+      { path: '/students', ready: firstTableRow, table: 'Active' },
       { path: `/students/${seeded.markupCardId}`, ready: headingNamed(markup) },
-      { path: '/groups', ready: firstTableRow },
+      { path: '/groups', ready: firstTableRow, table: 'Groups' },
       { path: `/groups/${seeded.groupId}`, ready: headingNamed(longWord) },
     ];
 
@@ -1135,7 +1149,10 @@ test.describe('desktop layout', () => {
     expect(await scrollsSideways(page)).toBe(false);
   });
 
-  test('at 1440 px My tutors shows its side column beside the main column', async ({ page, deployment }) => {
+  test('at 1440 px My tutors shows its side column beside the main column, and a table row keeps the tutor as its header and its actions apart', async ({
+    page,
+    deployment,
+  }) => {
     const { student } = await tutorWithStudentInGroup(deployment);
     await signInThroughTheApi(page, student);
 
@@ -1145,36 +1162,12 @@ test.describe('desktop layout', () => {
     const aside = await boxOf(page.locator('[data-column="aside"]'));
 
     expect(Math.abs(aside.top - main.top)).toBeLessThanOrEqual(1);
-  });
-
-  test('a table row keeps the tutor as its header and its actions apart', async ({ page, deployment }) => {
-    const { student } = await tutorWithStudentInGroup(deployment);
-    await signInThroughTheApi(page, student);
-
-    await openAt(page, computer, '/tutors');
     const row = tableRows(page, 'Tutors').first();
-
     await expect(row.getByRole('rowheader')).toContainText('Tutor');
     const actions = row.getByRole('cell').last();
     await expect(actions.getByRole('link', { name: 'Messages' })).toBeVisible();
     await expect(actions.getByRole('button', { name: /Tutor/ })).toBeVisible();
   });
-
-  for (const { path, table } of tutorPages) {
-    test(`${path} shows a name with markup as text in its table`, async ({ page, deployment }) => {
-      const tutor = await seedVerifiedUser(deployment, 'Tutor', 'en');
-      const { cardId } = await seedActiveStudent(deployment, tutor, markup, 'en');
-      await createGroup(deployment, tutor, markup, [cardId]);
-      await signInThroughTheApi(page, tutor);
-
-      await openAt(page, computer, path);
-      const shown = await firstRowOf(page, table);
-
-      expect(shown.text).toContain(markup);
-      expect(shown.injected).toBe(0);
-      await expect(page).not.toHaveTitle('1');
-    });
-  }
 
   test('New group stands in the page header once a group exists and gets focus back from its dialog', async ({
     page,

@@ -316,11 +316,16 @@ async function seedRequesters(
 }
 
 const seedBatchSize = 5;
+export const uploadSeedBatchSize = 3;
 
-export async function inSeedBatches(count: number, create: (index: number) => Promise<unknown>): Promise<void> {
-  for (let first = 0; first < count; first += seedBatchSize) {
+export async function inSeedBatches(
+  count: number,
+  create: (index: number) => Promise<unknown>,
+  batchSize: number = seedBatchSize,
+): Promise<void> {
+  for (let first = 0; first < count; first += batchSize) {
     await Promise.all(
-      Array.from({ length: Math.min(seedBatchSize, count - first) }, (_, offset) => create(first + offset)),
+      Array.from({ length: Math.min(batchSize, count - first) }, (_, offset) => create(first + offset)),
     );
   }
 }

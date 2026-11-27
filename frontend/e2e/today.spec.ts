@@ -3,7 +3,14 @@ import type { Page } from '@playwright/test';
 import { type TestAccount, newTestAccount, registerTutor, seedAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { type Diagnostics, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
-import { accountId, expectReadyForNavigation, todayQueryPaths, trafficAfterReady, waitForSockets } from './realtime.ts';
+import {
+  accountId,
+  expectReadyForNavigation,
+  firstPageFrameReceived,
+  todayQueryPaths,
+  trafficAfterReady,
+  waitForSockets,
+} from './realtime.ts';
 import { createPastSimpleTemplate, onlySubmission, pastSimple } from './assignment.ts';
 import { issueThroughTheApi } from './homework.ts';
 import { channelOf } from './messages.ts';
@@ -30,6 +37,7 @@ import {
 } from './tutoring.ts';
 
 const markup = '<img src=x onerror="document.title=1"><b>Bold</b>';
+const chatRefetchDelayMilliseconds = 1_000;
 
 interface LocalTime {
   readonly zone: string;
@@ -458,7 +466,9 @@ test.describe('Today', () => {
     if (typeof seq !== 'number') {
       throw new Error('the sent message has no sequence number');
     }
+    await page.clock.install();
     await signInThroughTheApi(page, tutor);
+    const readUpdated = firstPageFrameReceived(page, 'read.updated');
     await page.goto('/today');
     const unread = page.getByRole('region', { name: 'Unread messages' });
     await unread.getByRole('listitem').getByRole('link').focus();
@@ -467,6 +477,8 @@ test.describe('Today', () => {
     const read = await callApi(deployment, await accessToken(deployment, tutor), 'POST', `/channels/${channel}/read`, {
       seq,
     });
+    await readUpdated;
+    await page.clock.fastForward(chatRefetchDelayMilliseconds);
 
     expect(read.status).toBe(200);
     await expect(unread.getByText('No unread messages')).toBeVisible();

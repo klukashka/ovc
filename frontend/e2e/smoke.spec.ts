@@ -63,7 +63,9 @@ test('the chosen language is remembered across reloads', async ({ page }) => {
   await expect(page.getByRole('navigation').getByRole('link', { name: 'Sign up' })).toBeVisible();
 });
 
-test('the tutor frame shows the tutor sections without a server status block', async ({ signedInPage: page }) => {
+test('the tutor frame shows the tutor sections without a server status block, with the current sidebar item in the primary text colour', async ({
+  signedInPage: page,
+}) => {
   const readinessRequests = recordRequestsTo(page, '/api/v1/health/ready');
 
   await openSettledToday(page);
@@ -77,6 +79,8 @@ test('the tutor frame shows the tutor sections without a server status block', a
   await expect(page.getByRole('region', { name: 'Состояние сервера' })).toHaveCount(0);
   expect(readinessRequests).toEqual([]);
   await expect(page).toHaveTitle('Сегодня · OVC');
+  await expect(navigation.getByRole('link', { name: 'Сегодня' })).toHaveCSS('color', 'rgb(38, 36, 31)');
+  await expect(navigation.getByRole('link', { name: 'Расписание' })).toHaveCSS('color', 'rgb(107, 101, 90)');
 });
 
 function recordRequestsTo(page: Page, path: string): readonly string[] {
@@ -267,9 +271,14 @@ test.describe('below 768 px', () => {
     await expect(bottomBar(page).getByRole('link', { name: 'Сегодня' })).not.toHaveAttribute('aria-current');
   });
 
-  test('the frame’s icons are 20 px and its targets at least 44 × 44 px', async ({ signedInPage: page }) => {
-    await openSheetOnToday(page);
+  test('More opens the sheet on its first section row, and the frame’s icons are 20 px and its targets at least 44 × 44 px', async ({
+    signedInPage: page,
+  }) => {
+    await openSettledToday(page);
 
+    await bottomBar(page).getByRole('button', { name: 'Ещё' }).click();
+
+    await expect(moreSheet(page).getByRole('link', { name: 'Ученики' })).toBeFocused();
     const sizes = await page.evaluate(() => {
       const frame = [
         ...document.querySelectorAll('header, nav[aria-label="Основная навигация"], dialog[aria-label="Ещё"]'),
@@ -293,14 +302,6 @@ test.describe('below 768 px', () => {
       expect(target.width).toBeGreaterThanOrEqual(44);
       expect(target.height).toBeGreaterThanOrEqual(44);
     }
-  });
-
-  test('More opens the sheet on its first section row', async ({ signedInPage: page }) => {
-    await openSettledToday(page);
-
-    await bottomBar(page).getByRole('button', { name: 'Ещё' }).click();
-
-    await expect(moreSheet(page).getByRole('link', { name: 'Ученики' })).toBeFocused();
   });
 
   test('on a page the sheet lists, More opens the sheet on that page’s row', async ({ signedInPage: page }) => {
@@ -508,18 +509,6 @@ test('showing the sidebar moves focus to the hide button', async ({ signedInPage
   await page.getByRole('button', { name: 'Показать боковую панель' }).click();
 
   await expect(page.getByRole('button', { name: 'Скрыть боковую панель' })).toBeFocused();
-});
-
-test('the current sidebar item uses the primary text colour', async ({ signedInPage: page }) => {
-  await page.goto('/today');
-
-  const current = page.getByRole('navigation').getByRole('link', { name: 'Сегодня' });
-
-  await expect(current).toHaveCSS('color', 'rgb(38, 36, 31)');
-  await expect(page.getByRole('navigation').getByRole('link', { name: 'Расписание' })).toHaveCSS(
-    'color',
-    'rgb(107, 101, 90)',
-  );
 });
 
 test('the public frame’s controls on a computer follow the token sizes', async ({ page }) => {

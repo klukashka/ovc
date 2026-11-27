@@ -223,10 +223,13 @@ test.describe('the fake meeting room', () => {
 
   test('a restart ends the room that is open', async ({ page, deployment, control }) => {
     const { tutor, lesson } = await lessonFor(deployment, control, { tutor: tutorName, student: studentName });
-    await page.goto(await joinLink(deployment, tutor, lesson));
+    const link = await joinLink(deployment, tutor, lesson);
+    await page.clock.install();
+    await page.goto(link);
     await expectInRoom(page, tutorName, 'moderator');
 
     await joinLink(deployment, tutor, lesson, 'restart-room');
+    await page.clock.runFor(refreshMilliseconds);
 
     await expectRoomState(page, 'ended');
     await expect(page.locator('#identity')).toBeHidden();
@@ -236,12 +239,14 @@ test.describe('the fake meeting room', () => {
   test('the fake end control ends the room for its participant', async ({ page, deployment, control }) => {
     const { tutor, lesson } = await lessonFor(deployment, control, { tutor: tutorName, student: studentName });
     const link = await joinLink(deployment, tutor, lesson);
+    await page.clock.install();
     await page.goto(link);
     await expectInRoom(page, tutorName, 'moderator');
 
     const ended = await testControlPost(deployment, '/__test__/fake-provider/end', {
       capability: new URL(link).hash.slice(1),
     });
+    await page.clock.runFor(refreshMilliseconds);
 
     expect(ended.status).toBe(200);
     await expectRoomState(page, 'ended');
@@ -304,17 +309,20 @@ test.describe('the fake meeting room', () => {
   test('a provider outage shows in the room and passes', async ({ page, deployment, control }) => {
     const { tutor, lesson } = await lessonFor(deployment, control, { tutor: tutorName, student: studentName });
     const link = await joinLink(deployment, tutor, lesson);
+    await page.clock.install();
     await page.goto(link);
     await expectInRoom(page, tutorName, 'moderator');
 
     const down = await testControlPost(deployment, '/__test__/fake-provider/availability', { available: false });
     try {
       expect(down.status).toBe(200);
+      await page.clock.runFor(refreshMilliseconds);
       await expectRoomState(page, 'unavailable');
     } finally {
       const up = await testControlPost(deployment, '/__test__/fake-provider/availability', { available: true });
       expect(up.status).toBe(200);
     }
+    await page.clock.runFor(refreshMilliseconds);
 
     await expectInRoom(page, tutorName, 'moderator');
     await leaveRoom(page);

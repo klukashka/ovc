@@ -28,19 +28,6 @@ function signUpLanguage(page: Page): ReturnType<Page['locator']> {
   return page.locator('select[name="language"]');
 }
 
-test('after sign-up the result heading takes focus', async ({ page }) => {
-  const account = newTestAccount('Фокус после регистрации');
-  await page.goto('/signup/tutor');
-  await page.getByLabel('Имя').fill(account.name);
-  await page.getByLabel('Email').fill(account.email);
-  await page.getByLabel('Пароль', { exact: true }).fill(account.password);
-  await page.getByLabel(/^Я даю согласие на обработку моих персональных данных/).check();
-
-  await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
-
-  await expect(page.getByRole('heading', { level: 1, name: 'Проверьте почту' })).toBeFocused();
-});
-
 test('after asking for a reset link the notice takes focus', async ({ page }) => {
   await page.goto('/forgot-password');
   await page.getByLabel('Email').fill('nobody@example.test');
@@ -114,20 +101,6 @@ test('the language switch of a signed-in person is saved to the account', async 
   await expect(page.locator('html')).toHaveAttribute('lang', 'en');
 });
 
-test('removing the photo moves focus to its notice', async ({ page, deployment }) => {
-  const account = await seedVerifiedUser(deployment, 'Фокус после удаления фото');
-  await signedInAt(page, account, '/settings/profile');
-  await page
-    .getByLabel('Загрузить фото')
-    .setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: onePixelPng });
-  await expect(page.getByRole('img', { name: 'Фото: Фокус после удаления фото' })).toBeVisible();
-
-  await page.getByRole('button', { name: 'Удалить фото' }).click();
-
-  await expect(page.getByText('Фото не загружено.')).toBeVisible();
-  await expect(page.getByRole('status').filter({ hasText: 'Фото обновлено.' })).toBeFocused();
-});
-
 test('a tutor sees the subjects normalised after saving them', async ({ page, deployment }) => {
   const account = await seedVerifiedUser(deployment, 'Предметы без мусора');
   await signedInAt(page, account, '/settings/profile');
@@ -155,30 +128,6 @@ test('an avatar saved while another field has focus leaves the focus there', asy
   await expect(page.getByRole('img', { name: 'Фото: Фокус остаётся в поле' })).toBeVisible();
   await expect(page.getByText('Фото обновлено.')).toBeVisible();
   await expect(name).toBeFocused();
-});
-
-test('Escape on the deletion dialog returns focus to the button that opened it', async ({ page, tutor }) => {
-  await signedInAt(page, tutor, '/settings/account');
-  const opener = page.getByRole('button', { name: 'Действия с аккаунтом' });
-  await opener.click();
-  await page.getByRole('button', { name: 'Удалить аккаунт' }).click();
-  await expect(page.getByRole('dialog', { name: 'Удалить аккаунт?' })).toBeVisible();
-
-  await page.keyboard.press('Escape');
-
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(opener).toBeFocused();
-});
-
-test('the deletion dialog opens on its password field', async ({ page, tutor }) => {
-  await signedInAt(page, tutor, '/settings/account');
-  await page.getByRole('button', { name: 'Действия с аккаунтом' }).click();
-
-  await page.getByRole('button', { name: 'Удалить аккаунт' }).click();
-
-  const dialog = page.getByRole('dialog', { name: 'Удалить аккаунт?' });
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByLabel('Текущий пароль')).toBeFocused();
 });
 
 test('a busy preferences save keeps focus on its button', async ({ page, deployment }) => {

@@ -589,7 +589,7 @@ historyTest.describe('Messages on a computer, with one long history shared by th
   historyTest.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1440, height: 900 } });
 
   historyTest(
-    "at 1440 × 900 the composer's bottom edge stays inside the window with a long history",
+    "at 1440 × 900 the composer's bottom edge stays inside the window with a long history, which shows its latest message with the heading focused",
     async ({ page, sharedHistory }) => {
       const { tutor, channel } = sharedHistory;
       await signInThroughTheApi(page, tutor);
@@ -606,18 +606,10 @@ historyTest.describe('Messages on a computer, with one long history shared by th
       expect(composerBox).not.toBeNull();
       expect((composerBox?.y ?? 0) + (composerBox?.height ?? 0)).toBeLessThanOrEqual(900);
       expect(pageScrolls).toBe(false);
+      await expect(messages(page).getByText(/History message 12$/)).toBeInViewport();
+      await expect(page.getByRole('heading', { level: 2, name: 'Anna', exact: true })).toBeFocused();
     },
   );
-
-  historyTest('an opened conversation shows its latest message', async ({ page, sharedHistory }) => {
-    const { tutor, channel } = sharedHistory;
-    await signInThroughTheApi(page, tutor);
-
-    await page.goto(`/messages/${channel}`);
-
-    await expect(messages(page).getByText(/History message 12$/)).toBeInViewport();
-    await expect(page.getByRole('heading', { level: 2, name: 'Anna', exact: true })).toBeFocused();
-  });
 
   historyTest(
     'a history shown at its bottom stays at its bottom when the window gets shorter',

@@ -270,6 +270,7 @@ test.describe('account edge cases', () => {
         await deletionDialog(page).getByRole('button', { name: 'Отмена' }).click();
       }
 
+      await expect(page.getByRole('dialog')).toHaveCount(0);
       await expect(page.locator('input[type="password"]')).toHaveCount(0);
       await expect(accountActions(page)).toBeFocused();
       await expect(page).toHaveURL('/settings/account');
@@ -527,19 +528,24 @@ test.describe('account edge cases', () => {
     await expect(page.getByLabel('Предметы')).toHaveValue('Английский, Немецкий');
   });
 
-  test('an uploaded avatar shown from its avatar address is removed', async ({ page, deployment }) => {
+  test('an uploaded avatar shown from its avatar address is removed, moving focus to its notice', async ({
+    page,
+    deployment,
+  }) => {
     const account = await seedVerifiedUser(deployment, 'Tutor with a photo');
     await signedInAt(page, account, '/settings/profile');
     const photo = page.getByRole('img', { name: 'Фото: Tutor with a photo' });
     await page
       .getByLabel('Загрузить фото')
       .setInputFiles({ name: 'photo.png', mimeType: 'image/png', buffer: onePixelPng });
+    await expect(photo).toBeVisible();
     await expect(photo).toHaveAttribute('src', /^\/api\/v1\/avatars\/[0-9a-f-]{36}$/);
 
     await page.getByRole('button', { name: 'Удалить фото' }).click();
 
     await expect(page.getByText('Фото не загружено.')).toBeVisible();
     await expect(photo).toHaveCount(0);
+    await expect(page.getByRole('status').filter({ hasText: 'Фото обновлено.' })).toBeFocused();
   });
 
   test('a file that is not an image is refused as an avatar', async ({ page, deployment, diagnostics }) => {

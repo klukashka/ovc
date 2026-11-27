@@ -23,6 +23,7 @@ import { createPastSimpleTemplate } from './assignment.ts';
 import { expectDangerConfirmation, expectLastDangerItem, openedMenu } from './dangerActions.ts';
 import { issueThroughTheApi } from './homework.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
+import { installPageClock, skipSaveDelay } from './save-delay.ts';
 import { addDays, cancelThisLesson, localDate, scheduleLessons, scheduleLessonsWithIds } from './schedule.ts';
 import {
   accessToken,
@@ -656,6 +657,7 @@ test.describe('in English with the dark theme', () => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
     const { student, cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
     const inFlight = apiRequestsInFlight(page);
+    await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, pavel);
     await page.goto('/students');
     const row = tableRows(page, 'Active').filter({ hasText: 'Boris' });
@@ -676,6 +678,7 @@ test.describe('in English with the dark theme', () => {
         response.request().method() === 'GET' && new URL(response.url()).pathname === `/api/v1/students/${cardId}`,
     );
     await notes.getByLabel('Notes').fill('Prefers evening lessons.');
+    await skipSaveDelay(page);
     await expect(notes.getByRole('status')).toHaveText('Saved.');
     await expect(notes.getByLabel('Notes')).toBeFocused();
     await expect(notes.getByRole('button')).toHaveCount(0);
@@ -734,6 +737,7 @@ test.describe('in English with the dark theme', () => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
     const { cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
     diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/students/${cardId}`, status: 422 });
+    await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${cardId}`);
     const form = page.getByRole('form', { name: 'Notes' });
@@ -745,6 +749,7 @@ test.describe('in English with the dark theme', () => {
       field.setRangeText(value, 0, field.value.length, 'end');
       field.dispatchEvent(new Event('input', { bubbles: true }));
     }, refused);
+    await skipSaveDelay(page);
 
     await form.getByRole('status').filter({ hasText: 'Notes were not saved.' }).waitFor();
     await diagnostics.finishHttpPhase();
@@ -767,6 +772,7 @@ test.describe('in English with the dark theme', () => {
     const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
     const { cardId } = await seedActiveStudent(deployment, pavel, 'Boris');
     diagnostics.expectFailure({ method: 'PATCH', path: `/api/v1/students/${cardId}`, status: 422 });
+    await installPageClock(page, { pageClock: true });
     await signInThroughTheApi(page, pavel);
     await page.goto(`/students/${cardId}`);
     const form = page.getByRole('form', { name: 'Notes' });
@@ -778,9 +784,11 @@ test.describe('in English with the dark theme', () => {
       field.setRangeText(value, 0, field.value.length, 'end');
       field.dispatchEvent(new Event('input', { bubbles: true }));
     }, refused);
+    await skipSaveDelay(page);
     await form.getByRole('status').filter({ hasText: 'Notes were not saved.' }).waitFor();
 
     await notes.fill('Prefers mornings.');
+    await skipSaveDelay(page);
     await expect(form.getByRole('status')).toHaveText('Saved.');
 
     await expect(form.getByRole('button', { name: 'Try again' })).toHaveCount(0);

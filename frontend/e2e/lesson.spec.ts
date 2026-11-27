@@ -29,7 +29,16 @@ import {
   seriesDates,
   setTimezone,
 } from './schedule.ts';
-import { acceptSignedIn, accessToken, callApi, createCard, createGroup, endRelationship } from './tutoring.ts';
+import {
+  acceptSignedIn,
+  accessToken,
+  callApi,
+  createCard,
+  createGroup,
+  endRelationship,
+  inSeedBatches,
+  uploadSeedBatchSize,
+} from './tutoring.ts';
 import { expectDangerConfirmation } from './dangerActions.ts';
 
 const moscow = 'Europe/Moscow';
@@ -476,19 +485,6 @@ test.describe('lesson page for a tutor in Russian', () => {
     await expect(page.getByRole('status').filter({ hasText: changedMeanwhile })).toBeFocused();
     await expect(lessonActions(page)).toHaveCount(0);
     await expect(editButton(page)).toHaveCount(0);
-  });
-
-  test('lesson › an edit dialog of a one-off lesson opens on its title', async ({ page, deployment, control }) => {
-    const seed = await tutorAndStudent(deployment);
-    const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
-    await signInThroughTheApi(page, seed.maria);
-    await page.goto(lessonAddress(lesson));
-
-    await editButton(page).click();
-
-    await expect(editDialog(page).getByLabel('Название')).toBeFocused();
-    await expect(editDialog(page).getByRole('radio')).toHaveCount(0);
-    await expect(editDialog(page).getByLabel('Время начала')).toHaveValue('18:00');
   });
 
   test('lesson › cancelling opens on the dismiss button', async ({ page, deployment, control }) => {
@@ -1079,9 +1075,11 @@ test.describe('lesson materials for a tutor in Russian', () => {
   }) => {
     const seed = await tutorAndStudent(deployment);
     const lesson = await oneLesson(deployment, seed, await tomorrow(control.now));
-    for (let index = 1; index <= 31; index += 1) {
-      await createLibraryMaterial(deployment, seed.maria, `Лист ${String(index).padStart(2, '0')}`);
-    }
+    await inSeedBatches(
+      31,
+      (index) => createLibraryMaterial(deployment, seed.maria, `Лист ${String(index + 1).padStart(2, '0')}`),
+      uploadSeedBatchSize,
+    );
     await openLessonAsTutor(page, seed, lesson);
     await attachButton(page).click();
     const dialog = attachDialog(page);

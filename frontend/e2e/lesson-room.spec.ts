@@ -15,6 +15,7 @@ import {
   accountId,
   closeSockets,
   expectRefetchedAfterTheSocketIsReady,
+  firstPageSocketClosed,
   trafficAfterReady,
   waitForSockets,
 } from './realtime.ts';
@@ -25,6 +26,8 @@ import { accessToken, callApi, createCard, acceptSignedIn, createGroup } from '.
 const moscow = 'Europe/Moscow';
 const lessonTitle = 'Разговорная практика';
 const startsInMilliseconds = 5 * 60_000;
+const listenerReconnectCeilingMilliseconds = 2_000;
+const roomRefreshMilliseconds = 1_000;
 const tutorName = 'Мария Тьютор';
 const studentName = 'Анна Ученица';
 const waitingText = 'Комната откроется, когда подключится преподаватель';
@@ -504,12 +507,15 @@ test.describe('the lesson room through a new tab', () => {
     control,
   }) => {
     const seed = await seedLesson(deployment, control);
+    const socketClosed = firstPageSocketClosed(page);
     await openLesson(page, seed.student, seed.lessonId, control);
     const student = await accountId(deployment, seed.student);
     const traffic = trafficAfterReady(page, [`/api/v1/lessons/${seed.lessonId}`]);
 
     await closeSockets(deployment, student, 1012);
     await joinThroughTheApi(deployment, seed);
+    await socketClosed;
+    await page.clock.fastForward(listenerReconnectCeilingMilliseconds);
     await expectRefetchedAfterTheSocketIsReady(traffic);
 
     await expect(roomButton(page, 'Подключиться')).toBeVisible();
@@ -694,10 +700,16 @@ test.describe('ending the lesson and restarting the room', () => {
     const restart = lessonActions(page);
     const dialog = page.getByRole('dialog', { name: 'Перезапустить комнату?' });
     const opened = page.context().waitForEvent('page');
+    const restarted = page.waitForResponse(
+      (response) =>
+        response.request().method() === 'POST' && new URL(response.url()).pathname.endsWith('/restart-room'),
+    );
 
     await dialog.getByRole('button', { name: 'Перезапустить комнату' }).click();
     const newRoom = await opened;
     await diagnostics.watch(newRoom);
+    await restarted;
+    await page.clock.runFor(roomRefreshMilliseconds);
 
     await expect(newRoom.locator('#room')).toHaveAttribute('data-state', 'entered');
     await expect(oldRoom.locator('#room')).toHaveAttribute('data-state', 'ended');

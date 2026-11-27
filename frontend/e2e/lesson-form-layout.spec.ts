@@ -200,6 +200,8 @@ for (const language of languages) {
         await page.getByRole('button', { name: language.editLesson, exact: true }).click();
 
         await expect(dialog.getByLabel(language.title, { exact: true })).toBeFocused();
+        await expect(dialog.getByRole('radio')).toHaveCount(0);
+        await expect(dialog.locator('input[name="start"]')).toHaveValue('18:00');
         await expect(dialog.getByLabel(language.date, { exact: true })).toHaveValue(date);
         await expectLessonFieldLayout(dialog, viewport.columns);
       });

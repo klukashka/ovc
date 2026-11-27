@@ -351,6 +351,7 @@ test('pilot-1 › steps 1–3 sign up, confirm in a fresh browser with a new pas
   const maria = newTestAccount('Мария');
   await signUpThroughTheForm(page, maria);
   await expect(page.getByRole('heading', { level: 1, name: 'Проверьте почту' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 1, name: 'Проверьте почту' })).toBeFocused();
   await expect(page.getByText(maria.email)).toBeVisible();
   await control.tick();
   const link = emailedLink(await control.mail(maria.email), '/verify-email');

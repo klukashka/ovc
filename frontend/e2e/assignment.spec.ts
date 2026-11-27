@@ -49,6 +49,7 @@ import {
   createGroup,
   deleteAccount,
   endRelationship,
+  inSeedBatches,
   saveTheme,
   seedActiveStudent,
   signUpActiveStudentOnInvitation,
@@ -513,6 +514,7 @@ test.describe('answering an assignment', () => {
     await use.waitFor();
 
     await use.click();
+    await skipVisibleSaveDelay(page);
 
     const alert = question(page, 3).getByRole('alert');
     await expect(alert).toHaveText('This file is no longer available. Attach it again.');
@@ -1013,12 +1015,14 @@ test.describe('results of checked and returned work', () => {
   });
 
   test('answers are revealed only as the policy and state allow', async ({ page, deployment }) => {
-    const never = await submittedByAnna(deployment, 'never');
+    const [never, afterCheck, afterSubmission] = await Promise.all([
+      submittedByAnna(deployment, 'never'),
+      submittedByAnna(deployment, 'after_check'),
+      submittedByAnna(deployment, 'after_submission'),
+    ]);
     await publishReview(deployment, never.pavel, never.submissionId, 'check', 'Checked.', [
       { questionId: never.fileQuestion, points: 4 },
     ]);
-    const afterCheck = await submittedByAnna(deployment, 'after_check');
-    const afterSubmission = await submittedByAnna(deployment, 'after_submission');
 
     const neverText = await shownResults(page, never.anna, never.submissionId);
     const afterCheckText = await shownResults(page, afterCheck.anna, afterCheck.submissionId);
@@ -1152,14 +1156,22 @@ test.describe('Home’s Recently checked panel', () => {
   }) => {
     const { pavel, anna, annaCard } = await pavelWithAnna(deployment);
     const weeks = ['Week 1', 'Week 2', 'Week 3', 'Week 4', 'Week 5', 'Week 6'];
-    const submissions: string[] = [];
-    for (const title of weeks) {
-      const template = await createPastSimpleTemplate(deployment, pavel, { texts: { ...pastSimple, title } });
+    await inSeedBatches(weeks.length, async (index) => {
+      const texts = { ...pastSimple, title: weeks[index] ?? '' };
+      const template = await createPastSimpleTemplate(deployment, pavel, { texts });
       await issueThroughTheApi(deployment, pavel, template, { relationship_id: annaCard });
-      const submissionId = await onlySubmission(deployment, anna);
-      await answerTextAndSubmit(deployment, anna, submissionId, 'went');
-      submissions.push(submissionId);
-    }
+    });
+    const todo = await studentWork(deployment, anna, 'todo');
+    const submissions = weeks.map((title) => {
+      const work = todo.find((item) => item.title === title);
+      if (work === undefined) {
+        throw new Error(`Anna has no work titled ${title}`);
+      }
+      return work.submissionId;
+    });
+    await inSeedBatches(submissions.length, (index) =>
+      answerTextAndSubmit(deployment, anna, submissions[index] ?? '', 'went'),
+    );
     const checkWeek = async (index: number): Promise<void> => {
       await control.advance(60);
       const submissionId = submissions[index] ?? '';

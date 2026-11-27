@@ -17,7 +17,7 @@ import {
   type ReadinessRequestId,
 } from './navigation-readiness.ts';
 
-import { authFrame, closeCodes, parseServerFrame } from '../src/lib/realtime/frames.ts';
+import { type ServerFrame, authFrame, closeCodes, parseServerFrame } from '../src/lib/realtime/frames.ts';
 import {
   type RealtimeSocket,
   type SocketFactory,
@@ -502,6 +502,33 @@ function slotAttempt(sockets: SocketFactory, token: string): Promise<SlotAttempt
           reject(new Error(`a socket taking a slot closed with ${String(code)} before it was ready`));
         }
       },
+    });
+  });
+}
+
+export function firstPageFrameReceived(page: Page, type: ServerFrame['type']): Promise<void> {
+  return new Promise((resolve) => {
+    page.on('websocket', (socket) => {
+      if (new URL(socket.url()).pathname !== realtimePath) {
+        return;
+      }
+      socket.on('framereceived', ({ payload }) => {
+        if (typeof payload === 'string' && parseServerFrame(payload)?.type === type) {
+          resolve();
+        }
+      });
+    });
+  });
+}
+
+export function firstPageSocketClosed(page: Page): Promise<void> {
+  return new Promise((resolve) => {
+    page.on('websocket', (socket) => {
+      if (new URL(socket.url()).pathname === realtimePath) {
+        socket.on('close', () => {
+          resolve();
+        });
+      }
     });
   });
 }

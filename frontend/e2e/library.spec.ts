@@ -299,19 +299,6 @@ test.describe('library folders', () => {
     await expect(page.getByRole('button', { name: 'Undo', exact: true })).toHaveCount(0);
   });
 
-  test('deleting a folder asks first and opens on Cancel', async ({ page, deployment }) => {
-    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
-    await createFolder(deployment, tutor, 'Grammar');
-    await openLibrary(page, tutor);
-
-    await chooseRowAction(page, 'Grammar', 'Delete');
-
-    await expect(dialog(page).getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
-    await expect(page.getByRole('dialog', { name: 'Delete the folder Grammar?' })).toContainText(
-      'The empty folder is deleted. Nobody is notified. It cannot be undone.',
-    );
-  });
-
   test('Delete is the last item of the row menu after a separator, styled as dangerous', async ({
     page,
     deployment,
@@ -329,7 +316,7 @@ test.describe('library folders', () => {
     await expect(page.locator('main [aria-expanded="true"] + div').locator(':scope > hr')).toHaveCount(1);
   });
 
-  test('the Delete confirmation shows its filled consequence first and a quiet Cancel after it', async ({
+  test('deleting a folder asks first, opens on Cancel and shows its filled consequence first and a quiet Cancel after it', async ({
     page,
     deployment,
   }) => {
@@ -339,6 +326,10 @@ test.describe('library folders', () => {
 
     await chooseRowAction(page, 'Grammar', 'Delete');
 
+    await expect(dialog(page).getByRole('button', { name: 'Cancel', exact: true })).toBeFocused();
+    await expect(page.getByRole('dialog', { name: 'Delete the folder Grammar?' })).toContainText(
+      'The empty folder is deleted. Nobody is notified. It cannot be undone.',
+    );
     await expect(dialog(page).getByRole('button')).toHaveText(['Delete folder', 'Cancel']);
     expect(await backgroundOf(dialog(page).getByRole('button', { name: 'Delete folder', exact: true }))).not.toBe(
       transparent,

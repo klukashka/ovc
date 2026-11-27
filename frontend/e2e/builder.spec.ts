@@ -432,10 +432,11 @@ test.describe('builder blocks', () => {
   test('a save shows Saving… while it is in flight and Saved once it answers', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     const template = await createTemplate(deployment, tutor, 'Verbs');
-    await openBuilder(page, tutor, template.id);
+    await openBuilder(page, tutor, template.id, { pageClock: true });
     const release = await holdSaves(page, template.id);
 
     await titleField(page).fill('Verbs, week 2');
+    await skipSaveDelay(page);
     await page.getByRole('status').filter({ hasText: 'Saving…' }).waitFor();
     await release();
 
@@ -622,9 +623,10 @@ test.describe('builder order and focus', () => {
   test('deleting the only block focuses Add block', async ({ page, deployment }) => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     const template = await createTemplate(deployment, tutor, 'Removals', [instruction('First')]);
-    await openBuilder(page, tutor, template.id);
+    await openBuilder(page, tutor, template.id, { pageClock: true });
 
     await block(page, '1. Instruction').getByRole('button', { name: 'Delete', exact: true }).click();
+    await skipSaveDelay(page);
 
     await expect(addBlockButton(page)).toBeFocused();
     await expect(page.getByText('Add at least one block', { exact: true })).toBeVisible();
