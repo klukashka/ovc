@@ -244,6 +244,13 @@ for (const theme of ['light', 'dark'] as const) {
         .getByRole('button')
         .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-pressed'))),
     ).toEqual(['false', 'false', 'true', 'false']);
+    expect(
+      new Set(
+        await filters
+          .getByRole('button')
+          .evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().top)),
+      ).size,
+    ).toBe(1);
     await expect(groups).toBeFocused();
   });
 }
@@ -312,3 +319,35 @@ for (const theme of ['light', 'dark'] as const) {
     ).toBe(1);
   });
 }
+
+test.describe('the chat filters at the narrowest list', () => {
+  test.use({ viewport: { width: 1280, height: 800 } });
+
+  test('opening Messages on the Unread filter shows the pressed Unread tab on one line', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Репетитор вкладок', 'ru');
+    const { student, cardId } = await seedActiveStudent(deployment, tutor, 'Ученик вкладок', 'ru');
+    const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+    await postMessage(deployment, student, channel, 'Непрочитанное сообщение', null);
+    await signInThroughTheApi(page, tutor);
+    const ready = trafficAfterReady(page, ['/api/v1/channels']);
+    await ready.initialize();
+
+    await page.goto('/messages?filter=unread');
+
+    await expectRefetchedAfterTheSocketIsReady(ready);
+    const filters = page.getByRole('group', { name: 'Фильтр чатов', exact: true });
+    const unread = filters.getByRole('button', { name: 'Непрочитанные, 1', exact: true });
+    await expect(unread).toHaveAttribute('aria-pressed', 'true');
+    await expect(unread).toBeInViewport({ ratio: 1 });
+    expect(
+      new Set(
+        await filters
+          .getByRole('button')
+          .evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().top)),
+      ).size,
+    ).toBe(1);
+  });
+});
