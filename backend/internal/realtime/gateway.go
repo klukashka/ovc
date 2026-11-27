@@ -361,7 +361,22 @@ func (g *Gateway) forgetLocked(user domain.UserID, found *account) {
 	}
 }
 
+type closeMode int
+
+const (
+	closeHandshake closeMode = iota
+	closeDropped
+)
+
 func (g *Gateway) closeLocked(s *socket, code domain.CloseCode, reason string) {
+	mode := closeHandshake
+	if code == closeAbnormal {
+		mode = closeDropped
+	}
+	g.closeInModeLocked(s, code, reason, mode)
+}
+
+func (g *Gateway) closeInModeLocked(s *socket, code domain.CloseCode, reason string, mode closeMode) {
 	if s.closed {
 		return
 	}
@@ -383,7 +398,7 @@ func (g *Gateway) closeLocked(s *socket, code domain.CloseCode, reason string) {
 	core.Go(context.Background(), logger, "realtime.close", func(ctx context.Context) {
 		defer close(finished)
 		var err error
-		if code == closeAbnormal {
+		if mode == closeDropped {
 			err = conn.CloseNow()
 		} else {
 			err = conn.Close(websocket.StatusCode(code), code.Reason())

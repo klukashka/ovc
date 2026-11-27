@@ -135,6 +135,11 @@ func newLiveHarness(t *testing.T, tuning liveTuning) *liveHarness {
 		cancel()
 		<-stopped
 	})
+	t.Cleanup(func() {
+		if t.Failed() {
+			h.logCloseRecords(t)
+		}
+	})
 	live := &liveHarness{authHarness: h, gateway: gateway, adapter: adapter, realtimeDeps: captured}
 	live.awaitListener(t, func(_ listener.Generation, connected bool) bool { return connected })
 	return live
@@ -172,6 +177,15 @@ func (h *authHarness) countLogs(fragments ...string) int {
 		}
 	}
 	return count
+}
+
+func (h *authHarness) logCloseRecords(t *testing.T) {
+	t.Helper()
+	for _, line := range strings.Split(h.logs.String(), "\n") {
+		if strings.Contains(line, `"ws.connection.closed"`) || strings.Contains(line, `"ws.backpressure.closed"`) {
+			t.Log(line)
+		}
+	}
 }
 
 func (h *authHarness) awaitLogs(t *testing.T, at int, fragments ...string) {

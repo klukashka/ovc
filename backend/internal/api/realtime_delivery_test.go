@@ -124,6 +124,11 @@ func TestSlowConsumerIsClosedWith4429(t *testing.T) {
 
 	h.awaitLogs(t, 1, `"ws.backpressure.closed"`)
 	h.awaitLogs(t, 1, `"ws.connection.closed"`, `"code":4429`)
+	slowConsumer := h.countLogs(`"ws.connection.closed"`, `"code":4429`, `"reason":"write_timeout"`) +
+		h.countLogs(`"ws.connection.closed"`, `"code":4429`, `"reason":"backpressure"`)
+	if slowConsumer != 1 {
+		t.Fatalf("4429 closes naming write_timeout or backpressure: %d, want 1", slowConsumer)
+	}
 	for {
 		result := <-stalled.stream()
 		if result.err != nil {

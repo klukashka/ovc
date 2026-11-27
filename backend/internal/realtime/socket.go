@@ -30,8 +30,9 @@ const (
 )
 
 const (
-	closeAbnormal    = 1006
-	closedDuringAuth = "closed"
+	closeAbnormal      = 1006
+	closedDuringAuth   = "closed"
+	reasonWriteTimeout = "write_timeout"
 )
 
 var validRef = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
@@ -59,6 +60,9 @@ type socket struct {
 	generation     listener.Generation
 	suspended      bool
 	queue          outbound
+	writeSeq       uint64
+	writing        bool
+	cancelWrite    context.CancelFunc
 
 	framesIn    int
 	framesOut   int
@@ -519,15 +523,30 @@ func (s *socket) flush() bool {
 			return true
 		}
 		frame, ok := s.queue.pop()
-		s.g.mu.Unlock()
 		if !ok {
+			s.g.mu.Unlock()
 			return true
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), s.g.deps.Timing.WriteTimeout)
+		ctx, cancel := context.WithCancel(context.Background())
+		s.writeSeq++
+		seq := s.writeSeq
+		s.writing = true
+		s.cancelWrite = cancel
+		s.g.mu.Unlock()
+		timer := s.g.deps.Scheduler.AfterFunc(s.g.deps.Timing.WriteTimeout, func() {
+			core.Go(context.Background(), s.log(), "realtime.write_timeout", func(ctx context.Context) {
+				s.writeTimedOut(ctx, seq)
+			})
+		})
 		err := s.conn.Write(ctx, websocket.MessageText, frame)
+		timer.Stop()
+		s.g.mu.Lock()
+		s.writing = false
+		s.cancelWrite = nil
+		s.g.mu.Unlock()
 		cancel()
 		if err != nil {
-			s.writeFailed(ctx, err)
+			s.closeWith(closeAbnormal, "write_failed")
 			return false
 		}
 		s.g.mu.Lock()
@@ -536,13 +555,22 @@ func (s *socket) flush() bool {
 	}
 }
 
-func (s *socket) writeFailed(ctx context.Context, err error) {
-	if errors.Is(err, context.DeadlineExceeded) {
-		s.log().LogAttrs(ctx, slog.LevelWarn, "ws.backpressure.closed", slog.String("reason", "write_timeout"))
-		s.closeWith(domain.CloseTooMany, "write_timeout")
+func (s *socket) writeTimedOut(ctx context.Context, seq uint64) {
+	if !s.dropTimedOutWrite(seq) {
 		return
 	}
-	s.closeWith(closeAbnormal, "write_failed")
+	s.log().LogAttrs(ctx, slog.LevelWarn, "ws.backpressure.closed", slog.String("reason", reasonWriteTimeout))
+}
+
+func (s *socket) dropTimedOutWrite(seq uint64) bool {
+	s.g.mu.Lock()
+	defer s.g.mu.Unlock()
+	if s.closed || !s.writing || s.writeSeq != seq {
+		return false
+	}
+	s.g.closeInModeLocked(s, domain.CloseTooMany, reasonWriteTimeout, closeDropped)
+	s.cancelWrite()
+	return true
 }
 
 func (s *socket) ping() {
