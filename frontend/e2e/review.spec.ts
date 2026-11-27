@@ -19,6 +19,7 @@ import {
   tableRows,
 } from './fixtures.ts';
 import { createReadyTemplate, issueThroughTheApi, withdrawThroughTheApi } from './homework.ts';
+import { expectSettledAfterTheSocketIsReady, todayQueryPaths, trafficAfterReady } from './realtime.ts';
 import { answerTextAndSubmit, draftOf, returnFromAnotherTab, saveDraftFromAnotherTab, storedReview } from './review.ts';
 import { type PageClockOption, installPageClock, skipVisibleSaveDelay } from './save-delay.ts';
 import { endRelationship, inSeedBatches, seedActiveStudent } from './tutoring.ts';
@@ -657,7 +658,9 @@ test.describe('Today’s homework panels', () => {
     const { pavel, issues, now } = await deadlinesForAnna(deployment, control, ['Fractions']);
     await page.clock.install({ time: now });
     await signInThroughTheApi(page, pavel);
+    const traffic = trafficAfterReady(page, todayQueryPaths);
     await page.goto('/today');
+    await expectSettledAfterTheSocketIsReady(page, traffic);
     const deadlines = page.getByRole('region', { name: 'Upcoming deadlines' });
     await deadlines.getByRole('link', { name: 'Fractions' }).focus();
 

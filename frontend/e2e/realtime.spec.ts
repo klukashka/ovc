@@ -5,6 +5,7 @@ import { diagnosedTest as test, expect, seedVerifiedUser, tableRows } from './fi
 import {
   accountId,
   closeSockets,
+  expectLinuxWebKitToRefuseServiceRestart,
   expectRefetchedAfterTheSocketIsReady,
   trafficAfterReady,
   waitForSockets,
@@ -62,7 +63,12 @@ for (const code of [4429, 1012] as const) {
   test(`realtime › reconnects and refetches after the server closes with ${String(code)}`, async ({
     page,
     deployment,
+    diagnostics,
+    browserName,
   }) => {
+    if (code === 1012) {
+      expectLinuxWebKitToRefuseServiceRestart(diagnostics, browserName, deployment.origin);
+    }
     const maria = await seedVerifiedUser(deployment, 'Мария');
     const user = await accountId(deployment, maria);
     await signInThroughTheApi(page, maria);

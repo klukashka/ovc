@@ -39,7 +39,7 @@ test('the browser keeps the host-only secure refresh cookie on the loopback prev
   if (token === null) {
     throw new Error('the confirmation link carries no token');
   }
-  await page.goto('/');
+  await page.goto('/favicon.svg');
 
   const statuses = await page.evaluate(
     async ({ confirmationToken, newPassword }) => {

@@ -3,6 +3,7 @@ import type { Locator, Page } from '@playwright/test';
 import { signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { createFolder } from './homework.ts';
+import { expectSettledAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { addDays, localDate, scheduleLessonsWithIds } from './schedule.ts';
 import { createGroup, endRelationship, seedActiveStudent } from './tutoring.ts';
 
@@ -93,10 +94,12 @@ test.describe('empty states with a next step', () => {
       [`/students/${anna.cardId}?tab=homework`, 'Issue to this student'],
       [`/lessons/${lesson?.id ?? ''}`, 'Issue for this lesson'],
     ] as const) {
+      const traffic = trafficAfterReady(page, ['/api/v1/library']);
       await page.goto(address);
       await page.getByRole('button', { name: action, exact: true }).click();
       await issueHeading(page).waitFor();
       await page.getByRole('main').getByText('1 student will receive this', { exact: true }).waitFor();
+      await expectSettledAfterTheSocketIsReady(page, traffic);
       opened.push(addressOf(page));
     }
 
