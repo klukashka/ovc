@@ -236,6 +236,7 @@ The counter counts open To do items plus uncleared updates. "Mark all as read" b
 ## Owner decision (2026-11-27)
 
 The owner decided by multiple-choice question on 2026-11-27, through the coordinating agent:
+
 - direction **A**: the bell, the notifications panel, the `/notifications` page and the global counter are removed;
 - no history page for students;
 - a 14-day "Recent updates" list on Today and Home, with no read state;
