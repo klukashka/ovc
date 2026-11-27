@@ -1,5 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 
 import { describe, expect, test } from 'vitest';
 
@@ -100,6 +100,120 @@ function lowestContrast(theme: Theme): number {
     ),
   );
 }
+
+interface ColourPair {
+  readonly foreground: string;
+  readonly background: string;
+}
+
+const textSurfaces = ['bg', 'surface', 'field', 'sidebar', 'hover'] as const;
+const controlBackgrounds = ['bg', 'surface', 'field', 'sidebar', 'hover'] as const;
+const minimumBoundaryContrast = 3;
+
+function pairs(foregrounds: readonly string[], backgrounds: readonly string[]): ColourPair[] {
+  return foregrounds.flatMap((foreground) => backgrounds.map((background) => ({ foreground, background })));
+}
+
+function textPairs(theme: Theme): ColourPair[] {
+  const mutedOnMine = theme === 'dark' ? pairs(['text-muted'], ['mine']) : [];
+  return [
+    ...pairs(['text', 'text-muted', 'accent-text'], textSurfaces),
+    ...pairs(['text', 'accent-text'], ['mine']),
+    ...mutedOnMine,
+    ...pairs(['success', 'warning', 'info'], ['bg', 'surface', 'sidebar']),
+    ...pairs(['danger'], ['bg', 'surface', 'field', 'sidebar', 'hover']),
+    ...pairs(['live'], ['bg', 'surface']),
+    ...pairs(['on-accent'], ['accent', 'accent-hover', 'danger']),
+  ];
+}
+
+function boundaryPairs(): ColourPair[] {
+  return [
+    ...pairs(['border-strong'], controlBackgrounds),
+    ...pairs(['icon'], ['bg', 'surface', 'field', 'sidebar', 'hover', 'mine']),
+    ...pairs(['focus'], ['bg', 'surface', 'field', 'sidebar', 'hover', 'mine']),
+    ...pairs(['accent'], ['bg', 'surface', 'field', 'mine']),
+    ...pairs(['bg'], ['success']),
+  ];
+}
+
+function failingPairs(theme: Theme, candidates: readonly ColourPair[], minimum: number): string[] {
+  return candidates
+    .filter(
+      ({ foreground, background }) => contrast(colourOf(theme, foreground), colourOf(theme, background)) < minimum,
+    )
+    .map(({ foreground, background }) => `${foreground} on ${background}`);
+}
+
+const sourceRoot = resolve(import.meta.dirname, '../src');
+const backgroundImageMarks = [
+  'bg-linear-',
+  'bg-radial-',
+  'bg-conic-',
+  'bg-gradient-',
+  'bg-[url(',
+  'bg-[image:',
+  'bg-(image:',
+  'gradient(',
+  'url(',
+];
+
+function sourceFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) {
+      return sourceFiles(path);
+    }
+    return /\.(ts|tsx)$/.test(entry.name) ? [path] : [];
+  });
+}
+
+function backgroundImagesInSources(): string[] {
+  return sourceFiles(sourceRoot).flatMap((path) => {
+    const source = readFileSync(path, 'utf8');
+    return backgroundImageMarks.filter((mark) => source.includes(mark)).map((mark) => `${path}: ${mark}`);
+  });
+}
+
+function backgroundImagesInStyles(): string[] {
+  const withoutImports = styles
+    .split('\n')
+    .filter((line) => !line.startsWith('@import'))
+    .join('\n');
+  const htmlRule = /html \{[^}]*\}/.exec(withoutImports)?.[0] ?? '';
+  return [
+    ...(withoutImports.includes('gradient(') ? ['gradient('] : []),
+    ...(withoutImports.includes('url(') ? ['url('] : []),
+    ...(withoutImports.includes('background-image') ? ['background-image'] : []),
+    ...(htmlRule.includes('background-color') ? [] : ['no background-color on html']),
+  ];
+}
+
+describe('the semantic colours', () => {
+  test.each(['light', 'dark'] as const)(
+    'every text colour keeps 4.5:1 on each surface it sits on in the %s theme',
+    (theme) => {
+      const failing = failingPairs(theme, textPairs(theme), minimumContrast);
+
+      expect(failing).toEqual([]);
+    },
+  );
+
+  test.each(['light', 'dark'] as const)(
+    'every control boundary, icon and focus colour keeps 3:1 on each background a control sits on in the %s theme',
+    (theme) => {
+      const failing = failingPairs(theme, boundaryPairs(), minimumBoundaryContrast);
+
+      expect(failing).toEqual([]);
+    },
+  );
+
+  test('the page background is one flat colour', () => {
+    const found = [...backgroundImagesInStyles(), ...backgroundImagesInSources()];
+
+    expect(found).toEqual([]);
+  });
+});
 
 describe('the tutor and group palette', () => {
   test.each(['light', 'dark'] as const)(

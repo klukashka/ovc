@@ -5,7 +5,7 @@ import type { ObservedBrowser } from './browser-diagnostics.ts';
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import { type Diagnostics, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
-import { channelOf, channelUnread } from './messages.ts';
+import { channelOf, channelUnread, postMessage } from './messages.ts';
 import { backgroundOf, transparent } from './dangerActions.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
 import { accessToken, callApi, createCard, createGroup, seedActiveStudent, signUpOnInvitation } from './tutoring.ts';
@@ -896,6 +896,72 @@ test.describe('replies and the pinned message', () => {
       messages(page).filter({ hasText: 'The question to answer' }).filter({ hasNotText: 'Here is my answer' }),
     ).toBeFocused();
     await diagnostics.closeContext(context);
+  });
+});
+
+async function openQuotedConversationAsTutor(page: Page, deployment: Deployment): Promise<QuotedConversation> {
+  const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+  const { student, cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+  const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+  const question = await postMessage(deployment, student, channel, 'A question from the student', null);
+  const answer = await postMessage(deployment, tutor, channel, 'An answer from the tutor', question);
+  await postMessage(deployment, student, channel, 'A thank-you from the student', answer);
+  await signInThroughTheApi(page, tutor);
+  return { channel };
+}
+
+interface QuotedConversation {
+  readonly channel: string;
+}
+
+function ownAnswer(page: Page): Locator {
+  return messages(page)
+    .filter({ hasText: 'An answer from the tutor' })
+    .filter({ hasNotText: 'A thank-you from the student' });
+}
+
+function othersThanks(page: Page): Locator {
+  return messages(page).filter({ hasText: 'A thank-you from the student' });
+}
+
+test.describe('secondary text inside the bubbles', () => {
+  test.use({
+    locale: 'en-GB',
+    timezoneId: 'Europe/Moscow',
+    viewport: { width: 1280, height: 800 },
+    colorScheme: 'light',
+  });
+
+  test("the time and quoted snippet of one's own message use the primary text colour, and another's keep the muted colour", async ({
+    page,
+    deployment,
+  }) => {
+    const { channel } = await openQuotedConversationAsTutor(page, deployment);
+
+    await openSettledConversation(page, channel, 'with the chat list');
+
+    await expect(ownAnswer(page).locator('time')).toHaveCSS('color', 'rgb(36, 34, 29)');
+    await expect(ownAnswer(page).getByText('A question from the student')).toHaveCSS('color', 'rgb(36, 34, 29)');
+    await expect(othersThanks(page).locator('time')).toHaveCSS('color', 'rgb(106, 100, 88)');
+    await expect(othersThanks(page).getByText('An answer from the tutor')).toHaveCSS('color', 'rgb(106, 100, 88)');
+  });
+});
+
+test.describe('secondary text inside the bubbles with the dark colour scheme', () => {
+  test.use({
+    locale: 'en-GB',
+    timezoneId: 'Europe/Moscow',
+    viewport: { width: 1280, height: 800 },
+    colorScheme: 'dark',
+  });
+
+  test("the time and quoted snippet of one's own message keep the muted colour", async ({ page, deployment }) => {
+    const { channel } = await openQuotedConversationAsTutor(page, deployment);
+
+    await openSettledConversation(page, channel, 'with the chat list');
+
+    await expect(ownAnswer(page).locator('time')).toHaveCSS('color', 'rgb(173, 165, 147)');
+    await expect(ownAnswer(page).getByText('A question from the student')).toHaveCSS('color', 'rgb(173, 165, 147)');
   });
 });
 

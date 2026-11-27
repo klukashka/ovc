@@ -79,8 +79,8 @@ test('the tutor frame shows the tutor sections without a server status block, wi
   await expect(page.getByRole('region', { name: 'Состояние сервера' })).toHaveCount(0);
   expect(readinessRequests).toEqual([]);
   await expect(page).toHaveTitle('Сегодня · OVC');
-  await expect(navigation.getByRole('link', { name: 'Сегодня' })).toHaveCSS('color', 'rgb(38, 36, 31)');
-  await expect(navigation.getByRole('link', { name: 'Расписание' })).toHaveCSS('color', 'rgb(107, 101, 90)');
+  await expect(navigation.getByRole('link', { name: 'Сегодня' })).toHaveCSS('color', 'rgb(36, 34, 29)');
+  await expect(navigation.getByRole('link', { name: 'Расписание' })).toHaveCSS('color', 'rgb(106, 100, 88)');
 });
 
 function recordRequestsTo(page: Page, path: string): readonly string[] {
@@ -489,7 +489,22 @@ test.describe('with the dark colour scheme', () => {
     const themeAtFirstBody = await page.evaluate(() => String(window.ovcFirstBodyTheme));
     expect(themeAtFirstBody).toBe('dark');
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-    await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(28, 27, 24)');
+    await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(27, 25, 20)');
+    await expect(page.locator('html')).toHaveCSS('background-image', 'none');
+    await expect(page.locator('body')).toHaveCSS('background-image', 'none');
+  });
+});
+
+test.describe('with the light colour scheme', () => {
+  test.use({ colorScheme: 'light' });
+
+  test('the page background is one flat colour', async ({ page }) => {
+    await page.goto('/today');
+
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light');
+    await expect(page.locator('html')).toHaveCSS('background-color', 'rgb(245, 241, 232)');
+    await expect(page.locator('html')).toHaveCSS('background-image', 'none');
+    await expect(page.locator('body')).toHaveCSS('background-image', 'none');
   });
 });
 

@@ -55,7 +55,7 @@
   --radius-lg: 10px;
   --radius-full: 9999px;
 
-  --shadow-raised: 0 8px 24px rgba(38, 36, 31, 0.12);
+  --shadow-raised: 0 8px 24px rgba(36, 34, 29, 0.12);
 
   --ease-quiet: cubic-bezier(0.2, 0.8, 0.2, 1);
 
@@ -71,28 +71,28 @@
   --duration-menu: 200ms;
   --duration-dialog: 280ms;
 
-  --color-bg: #f7f4ee;
-  --color-surface: #fbf9f4;
+  --color-bg: #f5f1e8;
+  --color-surface: #ffffff;
   --color-field: #ffffff;
-  --color-sidebar: #f1eee6;
-  --color-hover: #e7e3d9;
-  --color-border: #e2dcd0;
-  --color-border-strong: #8f8676;
-  --color-text: #26241f;
-  --color-text-muted: #6b655a;
+  --color-sidebar: #ede8dc;
+  --color-hover: #e9e3d6;
+  --color-border: #ddd6c6;
+  --color-border-strong: #857c6b;
+  --color-text: #24221d;
+  --color-text-muted: #6a6458;
   --color-icon: #736c60;
-  --color-accent: #5e6b3a;
-  --color-accent-hover: #525e32;
+  --color-accent: #56632f;
+  --color-accent-hover: #4a5628;
   --color-on-accent: #ffffff;
-  --color-accent-text: #4a5530;
-  --color-focus: #5e6b3a;
+  --color-accent-text: #4b5729;
+  --color-focus: #56632f;
   --color-success: #2e6b4f;
   --color-warning: #8a5a12;
   --color-danger: #a3352a;
   --color-info: #3f5e7a;
-  --color-live: #a3352a;
-  --color-scrim: rgba(38, 36, 31, 0.32);
-  --color-mine: #eceedf;
+  --color-live: #b9442f;
+  --color-scrim: rgba(36, 34, 29, 0.32);
+  --color-mine: #dde0d5;
 
   --color-clay: #6e3d22;
   --color-slate: #13759d;
@@ -105,28 +105,28 @@
 }
 
 [data-theme='dark'] {
-  --color-bg: #1c1b18;
-  --color-surface: #23221e;
-  --color-field: #2a2925;
-  --color-sidebar: #201f1c;
-  --color-hover: #2e2d28;
-  --color-border: #37352f;
+  --color-bg: #1b1914;
+  --color-surface: #24211b;
+  --color-field: #2a2720;
+  --color-sidebar: #1f1c17;
+  --color-hover: #2f2b24;
+  --color-border: #3a362d;
   --color-border-strong: #7d7667;
-  --color-text: #ece8df;
-  --color-text-muted: #aba496;
+  --color-text: #efe9dc;
+  --color-text-muted: #ada593;
   --color-icon: #9c9587;
-  --color-accent: #a3b275;
-  --color-accent-hover: #b2c083;
-  --color-on-accent: #1c1b18;
-  --color-accent-text: #b7c48c;
-  --color-focus: #a3b275;
+  --color-accent: #a7b47a;
+  --color-accent-hover: #b5c189;
+  --color-on-accent: #1b1914;
+  --color-accent-text: #bcc88f;
+  --color-focus: #a7b47a;
   --color-success: #86c3a4;
   --color-warning: #d9a75e;
   --color-danger: #e58a7c;
   --color-info: #93b3d1;
-  --color-live: #e58a7c;
+  --color-live: #e8907f;
   --color-scrim: rgba(0, 0, 0, 0.5);
-  --color-mine: #2b3023;
+  --color-mine: #333727;
   --color-clay: #c29582;
   --color-slate: #5e9ac8;
   --color-moss: #848f7e;
@@ -163,6 +163,10 @@
 
   dialog::backdrop {
     background-color: var(--color-scrim);
+  }
+
+  [data-theme='light'] [data-own] [data-bubble] {
+    --color-text-muted: var(--color-text);
   }
 
   html {

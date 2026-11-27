@@ -17,6 +17,37 @@ export async function channelOf(deployment: Deployment, account: TestAccount, re
   return body.channel_id;
 }
 
+export async function postMessage(
+  deployment: Deployment,
+  account: TestAccount,
+  channel: string,
+  text: string,
+  replyTo: string | null,
+): Promise<string> {
+  const response = await callApi(
+    deployment,
+    await accessToken(deployment, account),
+    'POST',
+    `/channels/${channel}/messages`,
+    {
+      body: text,
+      attachment_ids: [],
+      ...(replyTo === null ? {} : { reply_to_message_id: replyTo }),
+    },
+  );
+  const body = response.body;
+  if (
+    response.status !== 201 ||
+    typeof body !== 'object' ||
+    body === null ||
+    !('id' in body) ||
+    typeof body.id !== 'string'
+  ) {
+    throw new Error(`posting a message answered ${String(response.status)}`);
+  }
+  return body.id;
+}
+
 export async function channelUnread(deployment: Deployment, account: TestAccount, channel: string): Promise<number> {
   const response = await callApi(deployment, await accessToken(deployment, account), 'GET', `/channels/${channel}`);
   const body = response.body;

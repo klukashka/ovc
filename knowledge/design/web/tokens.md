@@ -1,6 +1,6 @@
 # Design tokens
 
-The values behind the quiet visual language described in [the product overview](../../../docs/product.md#visual-language) and decided in [ADR-0010](../../../docs/decisions/0010-quiet-visual-language.md). Tokens are CSS custom properties consumed through the Tailwind theme, defined in `frontend/src/styles.css` with Tailwind's default palette, type scale, radii, shadows and breakpoints cleared; components never use raw values. Contrast ratios below were computed with the WCAG 2.2 relative-luminance formula on 2026-10-20. The [clickable prototype](prototype/README.md) shows the tokens in use.
+The values behind the quiet visual language described in [the product overview](../../../docs/product.md#visual-language) and decided in [ADR-0010](../../../docs/decisions/0010-quiet-visual-language.md). Tokens are CSS custom properties consumed through the Tailwind theme, defined in `frontend/src/styles.css` with Tailwind's default palette, type scale, radii, shadows and breakpoints cleared; components never use raw values. Contrast ratios below were computed with the WCAG 2 relative-luminance formula on 2026-11-27 (redesign R0 of the [visual redesign plan](../../plans/redesign.md), owner's palette decision of 2026-11-27, pending owner review). The [clickable prototype](prototype/README.md) shows the tokens in use.
 
 ## Principles
 
@@ -37,7 +37,7 @@ Times, dates and counts use tabular figures (`font-variant-numeric: tabular-nums
 
 - **Spacing:** a 4 px base (`--spacing: 4px` in the Tailwind theme, independent of the root font size) with the steps 4, 8, 12, 16, 24, 32, 40, 48 and 64. Sections on a page are 40 apart; list rows have 13 px vertical padding.
 - **Radius:** `radius-s` 6 (sidebar items, small inputs, segmented controls), `radius-m` 8 (buttons, inputs), `radius-l` 10 (panels, dialogs), `radius-full` (avatars, state and tutor dots). In the Tailwind theme they are `--radius-sm`, `--radius-md`, `--radius-lg` and `--radius-full` (utilities `rounded-sm`, `rounded-md`, `rounded-lg`, `rounded-full`), because `rounded-s` is Tailwind's start-side utility.
-- **Elevation:** `shadow-raised` `0 8px 24px rgba(38,36,31,.12)` for menus, popovers and dialogs only. Dark theme uses a `border-strong` outline instead.
+- **Elevation:** `shadow-raised` `0 8px 24px rgba(36,34,29,.12)` for menus, popovers and dialogs only. Dark theme uses a `border-strong` outline instead.
 - **Targets:** from 1024 px with a fine pointer, buttons and inputs are at least 40 px tall, sidebar items 32 px tall and the sidebar's icon buttons 28 × 28 px; below 1024 px or with a coarse or absent pointer (`pointer: coarse` or `pointer: none`), every target is at least 44 × 44 px. Links inside running text are exempt, as WCAG 2.5.8 allows.
 - **Layout widths:** the sidebar is 248 px; page content is centred with a maximum of 1120 px and side padding of 56 px; reading width is at most 720 px, and running text inside it at most 68 `ch` (`--container-running-text`, utility `max-w-running-text`; interface rework stage, change U2, pending owner review); the main column and a 300 px side column (`--container-aside`) sit 64 px apart. Breakpoints are 768, 1024 and 1280 px.
 - **Page widths** (design slice step L, pending owner review): signed-in pages use the full page content width by default (`Page` with `width="page"`); public pages, the token pages and short forms keep the reading width (`width="reading"`). Until their own design slice step, the student card and group page (step D5) also keep the reading width; Today and Home take the page width from step D2.
@@ -47,47 +47,56 @@ Times, dates and counts use tabular figures (`font-variant-numeric: tabular-nums
 
 | Token | Light | Dark | Use |
 |---|---|---|---|
-| `bg` | `#F7F4EE` | `#1C1B18` | Page background (warm paper / warm graphite) |
-| `surface` | `#FBF9F4` | `#23221E` | Highlighted panels, the review side panel, dialogs |
-| `field` | `#FFFFFF` | `#2A2925` | Inputs and text areas |
-| `sidebar` | `#F1EEE6` | `#201F1C` | Sidebar background |
-| `hover` | `#E7E3D9` | `#2E2D28` | Hovered and current sidebar items, hovered rows, segmented control track |
-| `border` | `#E2DCD0` | `#37352F` | Hairline rules between rows and around panels (decorative only) |
-| `border-strong` | `#8F8676` | `#7D7667` | Input and control boundaries (≥ 3:1) |
-| `text` | `#26241F` | `#ECE8DF` | Primary text |
-| `text-muted` | `#6B655A` | `#ABA496` | Secondary text, section labels, sidebar group labels and counts |
+| `bg` | `#F5F1E8` | `#1B1914` | Page background (warm paper / night ink), one flat colour with no image, glow or gradient |
+| `surface` | `#FFFFFF` | `#24211B` | Highlighted panels, the review side panel, dialogs |
+| `field` | `#FFFFFF` | `#2A2720` | Inputs and text areas |
+| `sidebar` | `#EDE8DC` | `#1F1C17` | Sidebar background |
+| `hover` | `#E9E3D6` | `#2F2B24` | Hovered and current sidebar items, hovered rows, segmented control track |
+| `border` | `#DDD6C6` | `#3A362D` | Hairline rules between rows and around panels (decorative only) |
+| `border-strong` | `#857C6B` | `#7D7667` | Input and control boundaries (≥ 3:1) |
+| `text` | `#24221D` | `#EFE9DC` | Primary text |
+| `text-muted` | `#6A6458` | `#ADA593` | Secondary text, section labels, sidebar group labels and counts |
 | `icon` | `#736C60` | `#9C9587` | Outline icons; not for text |
-| `accent` | `#5E6B3A` | `#A3B275` | The one primary button per view, current-tab underline, selected radio and checkbox (olive); never a state colour |
-| `accent-hover` | `#525E32` | `#B2C083` | Hovered primary button |
-| `on-accent` | `#FFFFFF` | `#1C1B18` | Text on `accent` |
-| `accent-text` | `#4A5530` | `#B7C48C` | Links, accent text, and the state colour for states that invite the viewer to act (starting soon, needs checking, wants to join) |
-| `focus` | `#5E6B3A` | `#A3B275` | 2 px focus ring with 2 px offset |
+| `accent` | `#56632F` | `#A7B47A` | The one primary button per view, current-tab underline, selected radio and checkbox (olive); never a state colour |
+| `accent-hover` | `#4A5628` | `#B5C189` | Hovered primary button |
+| `on-accent` | `#FFFFFF` | `#1B1914` | Text on `accent` |
+| `accent-text` | `#4B5729` | `#BCC88F` | Links, accent text, and the state colour for states that invite the viewer to act (starting soon, needs checking, wants to join) |
+| `focus` | `#56632F` | `#A7B47A` | 2 px focus ring with 2 px offset |
 | `success` | `#2E6B4F` | `#86C3A4` | Checked, accepted (pine, distinct from the olive accent) |
 | `warning` | `#8A5A12` | `#D9A75E` | Due soon, late, needs attention |
 | `danger` | `#A3352A` | `#E58A7C` | Errors, destructive actions, wrong answers, cancelled |
 | `info` | `#3F5E7A` | `#93B3D1` | Submitted, informational |
-| `live` | `#A3352A` | `#E58A7C` | Lesson live now, recording (always with its word and the live dot) |
-| `scrim` | `rgba(38,36,31,.32)` | `rgba(0,0,0,.5)` | The dimmed page behind a modal overlay (decorative) |
-| `mine` | `#ECEEDF` | `#2B3023` | The bubble of the caller's own messages in Messages; others' bubbles use `surface` (interface rework stage, specified 2026-11-23 by change U1b from the prototype the owner approved, pending owner review; built by M1 on 2026-11-24) |
+| `live` | `#B9442F` | `#E8907F` | Lesson live now, recording (always with its word and the live dot); as text only on `bg` and `surface` |
+| `scrim` | `rgba(36,34,29,.32)` | `rgba(0,0,0,.5)` | The dimmed page behind a modal overlay (decorative) |
+| `mine` | `#DDE0D5` | `#333727` | The bubble of the caller's own messages in Messages; others' bubbles use `surface` (interface rework stage, specified 2026-11-23 by change U1b from the prototype the owner approved, pending owner review; built by M1 on 2026-11-24) |
+
+The light and dark values come from the owner's two palettes of 2026-11-27, "Warm paper" and "Warm paper · night, ink"; `field`, `hover`, `border-strong` (light), `accent-hover`, `focus` and `scrim` are derived so that every pair below holds, and `icon` and the status colours (`success`, `warning`, `danger`, `info`) are unchanged and still hold their pairs (redesign R0 of the [visual redesign plan](../../plans/redesign.md), owner's palette decision of 2026-11-27, pending owner review).
 
 Measured contrast:
 
 | Pair | Light | Dark |
 |---|---|---|
-| `text` on `bg` / `surface` / `sidebar` / `hover` / `field` | 14.1 / 14.7 / 13.4 / 12.1 / 15.5 | 14.1 / 13.0 / 13.5 / 11.3 / 11.9 |
-| `text-muted` on `bg` / `surface` / `sidebar` / `hover` | 5.3 / 5.5 / 5.0 / 4.5 | 7.0 / 6.4 / 6.7 / 5.6 |
-| `on-accent` on `accent` / `accent-hover` | 5.8 / 7.0 | 7.5 / 8.8 |
-| `accent-text` on `bg` / `surface` / `sidebar` | 7.3 / 7.6 / 6.9 | 9.3 / 8.6 / 8.9 |
-| `success` on `bg` / `surface` | 5.7 / 6.0 | 8.5 / 7.9 |
-| `warning` on `bg` / `surface` | 5.4 / 5.6 | 7.9 / 7.3 |
-| `danger` and `live` on `bg` / `surface` | 6.2 / 6.4 | 6.8 / 6.3 |
-| `info` on `bg` / `surface` | 6.2 / 6.5 | 7.9 / 7.3 |
-| `icon` on `bg` / `sidebar` / `hover` | 4.7 / 4.5 / 4.1 | 5.8 / 5.5 / 4.6 |
-| `border-strong` on `bg` / `surface` / `field` | 3.3 / 3.4 / 3.6 | 3.8 / 3.5 / 3.2 |
-| `focus` on `bg` / `surface` | 5.3 / 5.5 | 7.5 / 7.0 |
-| `text` / `text-muted` / `accent-text` on `mine` (computed 2026-11-23 with the WCAG 2 formula) | 13.2 / 4.9 / 6.8 | 11.1 / 5.5 / 7.3 |
+| `text` on `bg` / `surface` / `field` / `sidebar` / `hover` / `mine` | 14.1 / 15.9 / 15.9 / 13.0 / 12.4 / 11.9 | 14.5 / 13.3 / 12.3 / 14.0 / 11.6 / 10.1 |
+| `text-muted` on `bg` / `surface` / `field` / `sidebar` / `hover` | 5.2 / 5.9 / 5.9 / 4.8 / 4.6 | 7.2 / 6.6 / 6.1 / 6.9 / 5.8 |
+| `text-muted` on `mine` | 4.39, not used (see below) | 5.0 |
+| `accent-text` on `bg` / `surface` / `sidebar` / `hover` / `mine` | 6.9 / 7.8 / 6.4 / 6.1 / 5.8 | 9.9 / 9.0 / 9.5 / 7.9 / 6.9 |
+| `on-accent` on `accent` / `accent-hover` / `danger` | 6.5 / 7.9 / 6.8 | 7.9 / 9.2 / 6.9 |
+| `success` / `warning` / `info` on `bg` / `surface` / `sidebar` (lowest) | 5.2 / 4.8 / 5.6 | 8.4 / 7.8 / 7.8 |
+| `danger` on `bg` / `surface` / `field` / `sidebar` / `hover` | 6.0 / 6.8 / 6.8 / 5.5 / 5.3 | 6.9 / 6.3 / 5.9 / 6.7 / 5.5 |
+| `live` on `bg` / `surface` | 4.7 / 5.3 | 7.3 / 6.7 |
+| `icon` on `bg` / `surface` / `field` / `sidebar` / `hover` / `mine` | 4.6 / 5.2 / 5.2 / 4.3 / 4.1 / 3.9 | 5.9 / 5.4 / 5.0 / 5.7 / 4.7 / 4.1 |
+| `border-strong` on `bg` / `surface` / `field` / `sidebar` / `hover` | 3.7 / 4.1 / 4.1 / 3.4 / 3.2 | 3.9 / 3.6 / 3.3 / 3.8 / 3.1 |
+| `focus` on `bg` / `surface` / `field` / `sidebar` / `hover` / `mine` | 5.8 / 6.5 / 6.5 / 5.3 / 5.1 / 4.9 | 7.9 / 7.2 / 6.7 / 7.6 / 6.3 / 5.5 |
+| `accent` (checkbox, radio, current tab) on `bg` / `surface` / `field` / `mine` | 5.8 / 6.5 / 6.5 / 4.9 | 7.9 / 7.2 / 6.7 / 5.5 |
+| `bg` on `success` (the first-run checklist's check mark) | 5.6 | 8.7 |
 
-Every text pair meets WCAG AA for normal text (4.5:1); `icon`, `border-strong` on every background a control sits on (`bg`, `surface`, `field`) and the focus ring meet 3:1. Controls therefore never change their own fill to `hover`: a hovered quiet button fills with `surface`, and the segmented control's track is `hover` with its selected segment on `field` outlined by `border-strong` (3.6:1 against the segment's own `field`; against the track it is 2.8:1, so the pressed segment also changes its label to `text` and weight 500). The current sidebar item's `hover` fill is decorative; it is identified by weight 500 and `aria-current`. `border` (1.2:1 light, 1.4:1 dark) is used only where the boundary carries no meaning.
+Every text pair meets WCAG AA for normal text (4.5:1); `icon`, `border-strong` on every background a control sits on (`bg`, `surface`, `field`, `sidebar`, `hover`) and the focus ring meet 3:1, and `frontend/scripts/palette.test.ts` checks every pair in this table from `styles.css` except the one marked not used. Controls therefore never change their own fill to `hover`: a hovered quiet button fills with `surface`, and the segmented control's track is `hover` with its selected segment on `field` outlined by `border-strong` (4.1:1 light and 3.3:1 dark against the segment's own `field`, 3.2:1 and 3.1:1 against the track; the pressed segment also changes its label to `text` and weight 500). In the light theme `field` equals `surface`, so an input inside a panel or a dialog is marked by its `border-strong` outline alone, and a quiet button's hover fill is not visible inside a `surface` panel. The current sidebar item's `hover` fill is decorative (1.05:1 against `sidebar` light, 1.2:1 dark); it is identified by weight 500, `text` colour and `aria-current`. `border` (1.3:1 light and 1.5:1 dark on `bg`) is used only where the boundary carries no meaning (redesign R0 of the [visual redesign plan](../../plans/redesign.md), owner's palette decision of 2026-11-27, pending owner review).
+
+Usage rules that keep the pairs above (redesign R0 of the [visual redesign plan](../../plans/redesign.md), owner's palette decision of 2026-11-27, pending owner review):
+
+- **Own bubbles in the light theme:** `text-muted` on light `mine` is 4.39:1, so inside one's own bubble (`[data-own] [data-bubble]`) secondary text (the time, edited mark and ticks, deleted, erased and reclaimed lines, the quoted snippet with its reclaimed note, attachment details) takes `text` in the light theme through one scoped rule in `styles.css`; the dark theme keeps `text-muted` (5.0:1).
+- **`live` text** stands only on `bg` and `surface`; on `sidebar` or `hover` (4.37:1 and 4.18:1 light) the live label is in `text` beside the live dot. A tinted surface added later (a selected row, a live panel) states its own pairs in this table and keeps `live` text off it.
+- **Control boundaries** use `border-strong`; the decorative `border` never marks a control.
 
 ### Tutor colours
 
@@ -95,16 +104,16 @@ A relationship's colour labels a tutor's items in the student's views ([states](
 
 | Key | Word | Light | Dark | On `bg` / `surface` (light) | On `bg` / `surface` (dark) |
 |---|---|---|---|---|---|
-| `clay` | brown | `#6E3D22` | `#C29582` | 8.1 / 8.5 | 6.5 / 6.0 |
-| `slate` | blue | `#13759D` | `#5E9AC8` | 4.7 / 4.9 | 5.7 / 5.3 |
-| `moss` | green | `#2B5037` | `#848F7E` | 8.3 / 8.7 | 5.1 / 4.7 |
-| `plum` | purple | `#7A5E81` | `#B183AE` | 5.1 / 5.3 | 5.5 / 5.1 |
-| `ochre` | mustard | `#7F6B37` | `#CFB87C` | 4.7 / 4.9 | 8.9 / 8.2 |
-| `teal` | teal | `#2F7475` | `#54AEA4` | 4.9 / 5.1 | 6.5 / 6.0 |
-| `rust` | pink | `#9D5264` | `#F5ABBD` | 5.0 / 5.2 | 9.4 / 8.7 |
-| `ink` | grey | `#50555E` | `#BFC0CD` | 6.8 / 7.1 | 9.5 / 8.8 |
+| `clay` | brown | `#6E3D22` | `#C29582` | 7.9 / 8.9 | 6.6 / 6.0 |
+| `slate` | blue | `#13759D` | `#5E9AC8` | 4.6 / 5.2 | 5.8 / 5.3 |
+| `moss` | green | `#2B5037` | `#848F7E` | 8.1 / 9.1 | 5.2 / 4.7 |
+| `plum` | purple | `#7A5E81` | `#B183AE` | 5.0 / 5.6 | 5.6 / 5.1 |
+| `ochre` | mustard | `#7F6B37` | `#CFB87C` | 4.6 / 5.2 | 9.0 / 8.3 |
+| `teal` | teal | `#2F7475` | `#54AEA4` | 4.8 / 5.4 | 6.7 / 6.1 |
+| `rust` | pink | `#9D5264` | `#F5ABBD` | 4.9 / 5.5 | 9.6 / 8.7 |
+| `ink` | grey | `#50555E` | `#BFC0CD` | 6.6 / 7.5 | 9.7 / 8.9 |
 
-Measured on 2026-11-08 with CIE76 (sRGB to CIE Lab, D65): the closest palette pair is `plum`–`ink` at 21.7 in the light theme and `clay`–`ochre` at 24.4 in the dark theme; the closest value to a state colour (`info`, `success`, `warning`, `danger`, `live`, `accent`) is `moss`–`success` at 12.4 and `ink`–`info` at 14.9. The thresholds are at least 20 between palette values and at least 12 to a state colour in both themes, and `frontend/scripts/palette.test.ts` computes all three measures from `styles.css` (design slice step C, pending owner review). The keys keep their stored names; the words people hear and see in tooltips follow the colours.
+Measured on 2026-11-08 with CIE76 (sRGB to CIE Lab, D65): the closest palette pair is `plum`–`ink` at 21.7 in the light theme and `clay`–`ochre` at 24.4 in the dark theme; the closest value to a state colour (`info`, `success`, `warning`, `danger`, `live`, `accent`) is `moss`–`success` at 12.4 and `ink`–`info` at 14.9; the contrasts on the new `bg` and `surface` were recomputed on 2026-11-27, the lowest being 4.6 (`slate` and `ochre` on light `bg`) and 4.7 (`moss` on dark `surface`) (redesign R0 of the [visual redesign plan](../../plans/redesign.md), owner's palette decision of 2026-11-27, pending owner review). The thresholds are at least 20 between palette values and at least 12 to a state colour in both themes, and `frontend/scripts/palette.test.ts` computes all three measures from `styles.css` (design slice step C, pending owner review). The keys keep their stored names; the words people hear and see in tooltips follow the colours.
 
 Group colours use the same palette.
 

@@ -10,7 +10,7 @@ Recording states apply once recordings land [after the MVP](../../../docs/roadma
 |---|---|---|---|---|---|
 | `scheduled` | before the tutor joins; on the lesson page only (design slice step D4) | `info` | calendar | Scheduled | Запланирован |
 | `scheduled`, join window open | 10 minutes before start | `accent-text` | door | Starting soon | Скоро начало |
-| `live` | the tutor has joined | `live` | pulsing dot | Live now | Идёт сейчас |
+| `live` | the tutor has joined; on `sidebar` and `hover` the word is in `text` beside the live dot ([tokens](tokens.md#colours); redesign R0 of the [visual redesign plan](../../plans/redesign.md), pending owner review) | `live` | pulsing dot | Live now | Идёт сейчас |
 | `ended`, took place | after it ran | `success` | check | Ended | Завершён |
 | `ended`, did not take place | nobody joined | `text-muted` | dash | Did not take place | Не состоялся |
 | `cancelled` | cancelled | `danger` | cross | Cancelled | Отменён |
