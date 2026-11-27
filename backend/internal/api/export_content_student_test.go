@@ -798,9 +798,10 @@ func TestStudentExportMatchesTheRoutes(t *testing.T) {
 	channels := h.routePaged(t, token, channelsRoute, "items")
 	exportedChannels := make([]json.RawMessage, 0, len(archive.data.Messages))
 	for _, history := range archive.data.Messages {
+		assertExportedPeerReadIsNull(t, history.Channel)
 		exportedChannels = append(exportedChannels, history.Channel)
 	}
-	assertSameItems(t, "channels", exportedChannels, channels)
+	assertSameItems(t, "channels", exportedChannels, channels, "peer_read")
 	for _, channel := range channels {
 		identified := decodedAs[struct {
 			ID string `json:"id"`
@@ -1205,5 +1206,16 @@ func TestExportRecordsCarryNoContentKeyOrAddress(t *testing.T) {
 	}
 	if unreadable != 2 {
 		t.Errorf("the scan saw %d export.file.unreadable records, want one for the student's export and one for the tutor's", unreadable)
+	}
+}
+
+func assertExportedPeerReadIsNull(t *testing.T, raw json.RawMessage) {
+	t.Helper()
+	channel := decodedAs[channelItem](t, raw)
+	if string(channel.LastMessage) == "null" {
+		return
+	}
+	if read := lastPeerRead(t, channel); read != nil {
+		t.Fatalf("exported channel carries peer_read %v", read)
 	}
 }

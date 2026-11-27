@@ -2,6 +2,17 @@ import type { ChatTexts } from './translations.ts';
 
 export const chatTexts: ChatTexts = {
   notFound: 'Не найдено',
+  filters: 'Фильтр чатов',
+  filterAll: 'Все',
+  filterStudents: 'Ученики',
+  filterTutors: 'Репетиторы',
+  filterGroups: 'Группы',
+  filterUnread: 'Непрочитанные',
+  filterUnreadCount: 'Непрочитанные, {count}',
+  emptyUnread: 'Нет непрочитанных чатов',
+  emptyGroups: 'Нет групповых чатов',
+  emptyStudents: 'Нет чатов с учениками',
+  emptyTutors: 'Нет чатов с репетиторами',
   search: 'Поиск чатов',
   empty: 'Нет чатов',
   choose: 'Выберите чат',

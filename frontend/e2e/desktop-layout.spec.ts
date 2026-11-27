@@ -876,6 +876,7 @@ async function messagesScene(deployment: Deployment, studentLanguage: 'ru' | 'en
   const tutor = await seedVerifiedUser(deployment, longWord, 'en');
   const { student, cardId } = await seedActiveStudent(deployment, tutor, longWord, studentLanguage);
   const groupId = await createGroup(deployment, tutor, markup, [cardId]);
+  await createGroup(deployment, tutor, '\u202eInitial group', [cardId]);
   const direct = await channelOf(deployment, tutor, `/students/${cardId}`);
   const group = await channelOf(deployment, tutor, `/groups/${groupId}`);
   const tutorToken = await accessToken(deployment, tutor);
@@ -935,6 +936,24 @@ function chatListFacts(words: ChatWords): (page: Page) => Promise<LayoutFacts> {
     return {
       'the list: the bottom bar is shown': (await page.locator('nav[data-frame-only]').count()) === 1,
       'the list: a group name and a preview with markup are text': (await list.getByText(markup).count()) === 2,
+      'the list: rows fit and are at least 56 px high': await list
+        .getByRole('link')
+        .evaluateAll((rows) =>
+          rows.every((row) => row.getBoundingClientRect().height >= 56 && row.scrollWidth <= row.clientWidth),
+        ),
+      'the list: a format character is removed only from the avatar': await list
+        .getByRole('link')
+        .filter({ hasText: '\u202eInitial group' })
+        .evaluate(
+          (row) =>
+            row.querySelector('[aria-hidden="true"][dir="auto"]')?.textContent === 'I' &&
+            row.textContent.includes('\u202eInitial group'),
+        ),
+      'the list: markup starts with a literal angle bracket in the avatar': await list
+        .getByRole('link')
+        .filter({ hasText: markup })
+        .first()
+        .evaluate((row) => row.querySelector('[aria-hidden="true"][dir="auto"]')?.textContent === '<'),
       'the list: no markup element is rendered': (await list.locator('img, b').count()) === 0,
     };
   };
@@ -1042,11 +1061,19 @@ test.describe('the 360 px sweeps of Messages', () => {
 
     expect(sideways).toEqual([]);
     expect(measured).toEqual(allTrue(measured));
-    expect(Object.keys(measured)).toHaveLength(23);
+    expect(Object.keys(measured)).toHaveLength(26);
     expect(group.text).toContain(markup);
     expect(group.injected).toBe(0);
     await expect(page.getByRole('list', { name: 'Members', exact: true })).toContainText(longWord);
     expect(headingFocusedAfterWidening).toBe(true);
+    expect(
+      await page
+        .getByRole('region', { name: words.list, exact: true })
+        .getByRole('link')
+        .evaluateAll((rows) =>
+          rows.every((row) => row.getBoundingClientRect().height >= 56 && row.scrollWidth <= row.clientWidth),
+        ),
+    ).toBe(true);
     await expect(page).not.toHaveTitle('1');
   });
 
@@ -1081,7 +1108,7 @@ test.describe('the 360 px sweeps of Messages', () => {
 
     expect(sideways).toEqual([]);
     expect(measured).toEqual(allTrue(measured));
-    expect(Object.keys(measured)).toHaveLength(19);
+    expect(Object.keys(measured)).toHaveLength(22);
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
     expect(group.text).toContain(markup);
     expect(group.injected).toBe(0);

@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { type ReactElement, type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useLocation } from 'react-router';
 
 import { useScheduler } from '../../app/clock.ts';
 import { phoneLayoutQuery, useMediaQuery } from '../../app/context.ts';
@@ -14,6 +14,7 @@ import { fetchChannel } from './api.ts';
 import { ChannelList } from './ChannelList.tsx';
 import { Conversation } from './Conversation.tsx';
 import { scheduleChatReads } from './refetch.ts';
+import { channelFilter, channelFilterSearch } from './filters.ts';
 import { channelKey } from './keys.ts';
 import { evictChannel } from './cache.ts';
 import { type ChatTexts, useChatTexts } from './translations.ts';
@@ -106,9 +107,10 @@ function useFocusHeadingWhenLayoutDropsFocus(phone: boolean): void {
 }
 
 function BackToList({ label }: { readonly label: string }): ReactElement {
+  const location = useLocation();
   return (
     <Link
-      to="/messages"
+      to={`/messages${channelFilterSearch(channelFilter(location.search))}`}
       aria-label={label}
       className="inline-flex size-11 shrink-0 items-center justify-center rounded-sm text-icon hover:bg-hover hover:text-text"
     >

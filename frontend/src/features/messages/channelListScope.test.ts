@@ -5,7 +5,7 @@ import { FollowingQueryClient } from '../../app/queryClient.ts';
 import { manualScheduler } from '../../lib/api/fakeTransport.ts';
 import { channelScopeRevision, evictChannel } from './cache.ts';
 import { ChannelScopeUnsettledError, firstPageInScope, firstPageScopeAttempts } from './firstPage.ts';
-import { channelsKey } from './keys.ts';
+import { channelPageKey } from './keys.ts';
 import { chatRefetch } from './refetch.ts';
 
 interface ListPage {
@@ -20,7 +20,7 @@ interface ListRequest {
   readonly answer: (version: string, channels?: readonly string[]) => void;
 }
 
-const listKey = [...channelsKey, '', null] as const;
+const listKey = channelPageKey('', 'all', 0, null);
 const clients: FollowingQueryClient[] = [];
 
 afterEach(() => {

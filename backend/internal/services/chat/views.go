@@ -50,6 +50,9 @@ type Quote struct {
 }
 
 type LastMessage struct {
+	PeerRead        *bool
+	Deleted         bool
+	Erased          bool
 	Seq             int64
 	CreatedAt       time.Time
 	Own             bool
@@ -270,7 +273,7 @@ func lastMessages(
 		from := senderOf(viewer, row)
 		last[row.ChannelID] = &LastMessage{
 			Seq: row.Seq, CreatedAt: row.CreatedAt, Own: from.own, SenderLabel: from.label, SenderLabelKind: from.kind, Preview: previewOf(row),
-			AttachmentCount: counts[row.ID],
+			AttachmentCount: counts[row.ID], Deleted: row.DeletedAt != nil, Erased: row.ErasedAt != nil,
 		}
 	}
 	return last, messageAccounts(rows), nil

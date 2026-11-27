@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { trafficAfterReady, expectRefetchedAfterTheSocketIsReady } from './realtime.ts';
+import { accessToken, callApi, createGroup, seedActiveStudent } from './tutoring.ts';
 
 test.use({ locale: 'ru-RU' });
 
@@ -208,3 +209,39 @@ test('the resend button keeps focus while it waits', async ({ page }) => {
   await expect(resend).toBeDisabled();
   await expect(resend).toBeFocused();
 });
+
+for (const theme of ['light', 'dark'] as const) {
+  test(`the chat filters are a named group of pressed-state buttons in the ${theme} theme`, async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Репетитор фильтров', 'ru');
+    const member = await seedActiveStudent(deployment, tutor, 'Ученик фильтров', 'ru');
+    await createGroup(deployment, tutor, 'Группа фильтров', [member.cardId]);
+    const saved = await callApi(deployment, await accessToken(deployment, tutor), 'PATCH', '/users/me', { theme });
+    if (saved.status !== 200) throw new Error('chat filter theme was not saved');
+    await signInThroughTheApi(page, tutor);
+    const ready = trafficAfterReady(page, ['/api/v1/channels']);
+    await ready.initialize();
+    await page.goto('/messages');
+    await expectRefetchedAfterTheSocketIsReady(ready);
+    const chats = page.getByRole('region', { name: 'Чаты', exact: true }).getByRole('link');
+    await chats.first().waitFor();
+    const filters = page.getByRole('group', { name: 'Фильтр чатов', exact: true });
+    const groups = filters.getByRole('button', { name: 'Группы', exact: true });
+
+    await groups.click();
+
+    await page.waitForURL('/messages?filter=group');
+    await expect(chats).toHaveCount(1);
+    await expect(chats.first()).toContainText('Группа фильтров');
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme);
+    await expect(filters.getByRole('button')).toHaveText(['Все', 'Ученики', 'Группы', 'Непрочитанные']);
+    expect(
+      await filters
+        .getByRole('button')
+        .evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-pressed'))),
+    ).toEqual(['false', 'false', 'true', 'false']);
+    await expect(groups).toBeFocused();
+  });
+}

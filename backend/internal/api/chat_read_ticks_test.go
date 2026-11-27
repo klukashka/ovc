@@ -434,3 +434,203 @@ func TestAPurgedStudentLeavesTheTutorNoPeerRead(t *testing.T) {
 		t.Fatalf("the tutor saw %v before the purge and %v after", before, after)
 	}
 }
+
+func lastPeerRead(t *testing.T, item channelItem) *bool {
+	t.Helper()
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(item.LastMessage, &fields); err != nil {
+		t.Fatal(err)
+	}
+	raw, exists := fields["peer_read"]
+	if !exists {
+		t.Fatalf("last message carries no peer_read: %s", item.LastMessage)
+	}
+	var read *bool
+	if err := json.Unmarshal(raw, &read); err != nil {
+		t.Fatal(err)
+	}
+	return read
+}
+
+func (h *authHarness) listedLastPeerRead(t *testing.T, token, channel string) *bool {
+	t.Helper()
+	result, page := h.channelList(t, token, "")
+	h.mustAnswer(t, result, http.StatusOK)
+	item, exists := itemOf(page, channel)
+	if !exists {
+		t.Fatalf("channel %s is not listed", channel)
+	}
+	return lastPeerRead(t, item)
+}
+
+func TestAnOwnDirectLastMessageIsUnreadInTheListUntilThePeerReads(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	parties := h.activeStudentInAGroup(t)
+	direct := h.directChannel(t, parties.card.ID)
+	h.seedMessages(t, direct.ID, parties.tutor, 3)
+
+	read := h.listedLastPeerRead(t, parties.tutorToken, direct.ID)
+
+	if read == nil || *read {
+		t.Fatalf("unread own message has peer_read %v", read)
+	}
+}
+
+func TestAnOwnDirectLastMessageIsReadInTheListAfterThePeerReads(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	parties := h.activeStudentInAGroup(t)
+	direct := h.directChannel(t, parties.card.ID)
+	h.seedMessages(t, direct.ID, parties.tutor, 3)
+	h.readChannel(t, parties.studentToken, direct.ID, 3)
+
+	read := h.listedLastPeerRead(t, parties.tutorToken, direct.ID)
+
+	if read == nil || !*read {
+		t.Fatalf("read own message has peer_read %v", read)
+	}
+}
+
+func (h *authHarness) listAndDetailRead(t *testing.T, token, channel string) (*bool, *bool, *int64, int64) {
+	t.Helper()
+	listed := h.listedLastPeerRead(t, token, channel)
+	result, detail := h.channelCall(t, token, channel)
+	h.mustAnswer(t, result, http.StatusOK)
+	var body struct {
+		PeerReadSeq *int64 `json:"peer_read_seq"`
+		LastMessage struct {
+			Seq int64 `json:"seq"`
+		} `json:"last_message"`
+	}
+	if err := json.Unmarshal([]byte(result.body), &body); err != nil {
+		t.Fatal(err)
+	}
+	return listed, lastPeerRead(t, detail), body.PeerReadSeq, body.LastMessage.Seq
+}
+
+func TestTheListsPeerReadEqualsTheDetailsPeerReadSeq(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"read-only", "suspended", "reactivated"} {
+		t.Run(state, func(t *testing.T) {
+			h := newFlowHarness(t)
+			var token, channel string
+			if state == "suspended" {
+				tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+				card, _ := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
+				token, channel = tutorToken, h.directChannel(t, card.ID).ID
+				h.seedMessages(t, channel, tutor, 5)
+				squatterToken := accessToken(t, h.login(t, newcomerEmail, newcomerPassword))
+				h.readChannel(t, squatterToken, channel, 2)
+				h.reclaimed(t, newcomerEmail)
+			} else {
+				parties := h.activeStudentInAGroup(t)
+				token, channel = parties.tutorToken, h.directChannel(t, parties.card.ID).ID
+				h.seedMessages(t, channel, parties.tutor, 5)
+				h.readChannel(t, parties.studentToken, channel, 2)
+				h.mustAnswer(t, h.endAsTutor(t, parties.tutorToken, parties.card.ID), http.StatusOK)
+				h.readChannel(t, parties.studentToken, channel, 5)
+				if state == "reactivated" {
+					h.reactivate(t, parties)
+				}
+			}
+
+			listed, detail, peerSeq, seq := h.listAndDetailRead(t, token, channel)
+
+			if peerSeq == nil || *peerSeq != 2 || seq != 5 || listed == nil || detail == nil || *listed != (*peerSeq >= seq) || *detail != *listed {
+				t.Fatalf("list %v, detail %v, peer sequence %v, message sequence %d", listed, detail, peerSeq, seq)
+			}
+		})
+	}
+}
+
+func TestATutorsOwnGroupLastMessageCarriesNoPeerRead(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	parties := h.activeStudentInAGroup(t)
+	group := h.groupChannel(t, parties.group.ID)
+	h.seedMessages(t, group.ID, parties.tutor, 3)
+
+	read := h.listedLastPeerRead(t, parties.tutorToken, group.ID)
+
+	if read != nil {
+		t.Fatalf("group message has peer_read %v", read)
+	}
+}
+
+func TestAStudentsOwnGroupLastMessageCarriesNoPeerRead(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	parties := h.activeStudentInAGroup(t)
+	group := h.groupChannel(t, parties.group.ID)
+	h.seedMessages(t, group.ID, parties.student, 3)
+
+	read := h.listedLastPeerRead(t, parties.studentToken, group.ID)
+
+	if read != nil {
+		t.Fatalf("group message has peer_read %v", read)
+	}
+}
+
+func TestAnOthersLastMessageCarriesNoPeerRead(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	parties := h.activeStudentInAGroup(t)
+	direct := h.directChannel(t, parties.card.ID)
+	h.seedMessages(t, direct.ID, parties.student, 3)
+
+	read := h.listedLastPeerRead(t, parties.tutorToken, direct.ID)
+
+	if read != nil {
+		t.Fatalf("another sender's message has peer_read %v", read)
+	}
+}
+
+func TestADeletedOwnLastMessageCarriesNoPeerRead(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	parties := h.activeStudentInAGroup(t)
+	direct := h.directChannel(t, parties.card.ID)
+	message := h.sent(t, parties.tutorToken, direct.ID, "To be deleted")
+	h.mustAnswer(t, h.deleteMessage(t, parties.tutorToken, message.ID), http.StatusNoContent)
+
+	read := h.listedLastPeerRead(t, parties.tutorToken, direct.ID)
+
+	if read != nil {
+		t.Fatalf("deleted message has peer_read %v", read)
+	}
+}
+
+func TestAnErasedOwnLastMessageCarriesNoPeerRead(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	parties := h.activeStudentInAGroup(t)
+	direct := h.directChannel(t, parties.card.ID)
+	h.seedMessages(t, direct.ID, parties.tutor, 1)
+	h.exec(t, "UPDATE messages SET body = NULL, erased_at = now() WHERE channel_id = $1::uuid", direct.ID)
+
+	read := h.listedLastPeerRead(t, parties.tutorToken, direct.ID)
+
+	if read != nil {
+		t.Fatalf("erased message has peer_read %v", read)
+	}
+}
+
+func TestADirectRowWhosePeerRowIsGoneCarriesNoPeerRead(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	parties := h.activeStudentInAGroup(t)
+	direct := h.directChannel(t, parties.card.ID)
+	h.seedMessages(t, direct.ID, parties.tutor, 3)
+	h.readChannel(t, parties.studentToken, direct.ID, 3)
+	h.mustAnswer(t, h.deleteMe(t, parties.studentToken, accountPassword), http.StatusNoContent)
+	h.advance(t, domain.DeletedAccountRetention+time.Hour)
+	h.tick(t)
+	token := accessToken(t, h.login(t, tutorEmail, accountPassword))
+
+	read := h.listedLastPeerRead(t, token, direct.ID)
+
+	if read != nil {
+		t.Fatalf("purged peer has peer_read %v", read)
+	}
+}

@@ -348,6 +348,10 @@ From slice 8 (pending owner review). A template's readiness ([validation](../../
 | online | `success` dot on the avatar plus "online" in the header | online | в сети |
 | typing | animated dots plus text | {name} is typing… | {name} печатает… |
 | typing, another student (a student's view, slice 6) | animated dots plus text | Someone is typing… | Кто-то печатает… |
+| chat filters group (R3a, pending owner review) | the name of the filter group | Chat filters | Фильтр чатов |
+| chat filters (R3a) | pressed-state buttons; the second one per role | All · Students · Tutors · Groups · Unread | Все · Ученики · Репетиторы · Группы · Непрочитанные |
+| Unread filter name (R3a) | accessible name with the count | Unread, {count} | Непрочитанные, {count} |
+| empty filtered list (R3a) | `text-muted` inside the list | No unread chats · No group chats · No chats with students · No chats with tutors | Нет непрочитанных чатов · Нет групповых чатов · Нет чатов с учениками · Нет чатов с репетиторами |
 | edited | caption after the time | edited | изменено |
 | deleted | muted italic placeholder | Message deleted | Сообщение удалено |
 | erased by a purge (slice 6) | muted italic placeholder | Message removed | Сообщение стёрто |

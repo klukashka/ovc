@@ -659,6 +659,13 @@ export class FakeChatServer {
         last === undefined
           ? null
           : {
+              peer_read:
+                last.senderId === caller.id &&
+                !last.message.deleted &&
+                !last.message.erased &&
+                this.peerRead(channel, caller) !== null
+                  ? (this.peerRead(channel, caller) ?? 0) >= last.message.seq
+                  : null,
               seq: last.message.seq,
               own: last.senderId === caller.id,
               created_at: last.message.created_at,
@@ -706,9 +713,17 @@ export class FakeChatServer {
         this.failChannelListRead = false;
         return refused(503, 'service_unavailable');
       }
+      const filter = address.searchParams.get('filter') ?? 'all';
+      if (!['all', 'direct', 'group', 'unread'].includes(filter)) return refused(422, 'validation_failed');
       const q = (address.searchParams.get('q') ?? '').toLocaleLowerCase();
       const sorted = this.byActivity(
-        visible.filter((channel) => (this.detail(channel, caller).label ?? '').toLocaleLowerCase().includes(q)),
+        visible.filter((channel) => {
+          const view = this.detail(channel, caller);
+          return (
+            (view.label ?? '').toLocaleLowerCase().includes(q) &&
+            (filter === 'all' || (filter === 'unread' ? view.unread_count > 0 : view.kind === filter))
+          );
+        }),
       );
       const cursor = address.searchParams.get('cursor');
       const offset = cursor === null ? 0 : sorted.findIndex((channel) => channel.channel.id === cursor) + 1;

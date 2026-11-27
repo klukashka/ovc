@@ -37,6 +37,7 @@ var mirrorAndPurgeQueries = []string{
 	"ListStudentDeletionTutors", "LockStudentDeletionGroups", "LockStudentDeletionChannels",
 	"DeleteMembersOfChannels", "DeleteMembershipsOfUser", "LockChannelsOfMember", "DeleteTutorChannelMembersBatch",
 	"ClaimUnbindableChatUploads", "MoveSenderReadMarker", "MoveReadMarker", "LockDigestMembers", "AdvanceDigestedMarker",
+	"ListPeerReadSeqs",
 	"GetPeerReadSeq", "GetDirectPeer", "ExportInvalidationAudience",
 }
 
@@ -244,6 +245,74 @@ func TestDigestMemberWritesUseTheActivePredicate(t *testing.T) {
 		}
 		if reached[testCase.student] != testCase.active || markers[testCase.student] != expected {
 			t.Errorf("%s: reachable %t, marker %d", testCase.name, reached[testCase.student], markers[testCase.student])
+		}
+	}
+}
+
+func TestListPeerReadSeqsEqualsGetPeerReadSeqForEveryPredicateCase(t *testing.T) {
+	t.Parallel()
+	database := testdb.New(t)
+	tutor, _, cases := seedPredicateCases(t, database)
+	ctx := context.Background()
+	repos := repositories.NewStore(database.Pool).Repositories()
+	purged := predicateCase{name: "a purged member", student: domain.UserID{6}, channel: domain.ChannelID{0x66}, link: domain.RelationshipID{0x46}}
+	var none *time.Time
+	if _, err := database.Pool.Exec(ctx, seedChannelAccount, purged.student, domain.RoleStudent, "purged@example.org", instant); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Pool.Exec(ctx, seedChannelLink, purged.link, tutor, purged.student, instant); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Pool.Exec(ctx, seedDirectChannel, purged.channel, tutor, purged.link, instant, none, none); err != nil {
+		t.Fatal(err)
+	}
+	for _, member := range []domain.UserID{tutor, purged.student} {
+		if _, err := database.Pool.Exec(ctx, seedChannelMember, purged.channel, member, none, instant); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cases = append(cases, purged)
+	channels := []domain.ChannelID{{0x65}}
+	for _, testCase := range cases {
+		channels = append(channels, testCase.channel)
+	}
+	if _, err := database.Pool.Exec(ctx, "UPDATE channels SET last_seq = 1000"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Pool.Exec(ctx, `WITH markers AS (
+ SELECT channel_id, user_id, row_number() OVER (ORDER BY channel_id, user_id) AS position FROM channel_members
+ ) UPDATE channel_members SET last_read_seq = markers.position * 3, shared_read_seq = markers.position * 3 - 1
+ FROM markers WHERE channel_members.channel_id = markers.channel_id AND channel_members.user_id = markers.user_id`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Pool.Exec(ctx, "DELETE FROM channel_members WHERE channel_id = $1 AND user_id = $2", purged.channel, purged.student); err != nil {
+		t.Fatal(err)
+	}
+	for _, testCase := range cases {
+		for _, viewer := range []struct {
+			name string
+			id   domain.UserID
+		}{{"tutor", tutor}, {"student", testCase.student}} {
+			t.Run(testCase.name+"/"+viewer.name, func(t *testing.T) {
+				single, singleErr := repos.Messages.PeerReadSeq(ctx, testCase.channel, viewer.id)
+				groupMarker, groupErr := repos.Messages.PeerReadSeq(ctx, domain.ChannelID{0x65}, viewer.id)
+
+				batch, batchErr := repos.Messages.PeerReadSeqs(ctx, channels, viewer.id)
+
+				if singleErr != nil || batchErr != nil || groupErr != nil {
+					t.Fatal(singleErr, batchErr, groupErr)
+				}
+				marker, exists := batch[testCase.channel]
+				if (single != nil) != exists || (single != nil && marker != *single) {
+					t.Fatalf("single %v, batch %v", single, batch)
+				}
+				if _, groupExists := batch[domain.ChannelID{0x65}]; groupExists || groupMarker != nil {
+					t.Fatal("a group read marker was exposed")
+				}
+				if single != nil && (*single == 0 || *single%3 != 2) {
+					t.Fatalf("shared marker was replaced by another marker: %d", *single)
+				}
+			})
 		}
 	}
 }

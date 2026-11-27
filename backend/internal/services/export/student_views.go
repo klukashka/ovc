@@ -248,7 +248,7 @@ func channelBody(channel chat.Channel) schemas.ChannelItem {
 	if last := channel.LastMessage; last != nil {
 		body.LastMessage = &schemas.ChannelLastMessage{
 			Seq: last.Seq, CreatedAt: last.CreatedAt.UTC(), Own: last.Own, SenderLabel: last.SenderLabel, SenderLabelKind: last.SenderLabelKind,
-			Preview: last.Preview, AttachmentCount: last.AttachmentCount,
+			Preview: last.Preview, AttachmentCount: last.AttachmentCount, PeerRead: nil,
 		}
 	}
 	return body

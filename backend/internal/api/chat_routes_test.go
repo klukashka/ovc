@@ -165,6 +165,7 @@ func TestOneChannelIsReadWithItsListFieldsAndHeaderLink(t *testing.T) {
 	t.Parallel()
 	h := newFlowHarness(t)
 	world := h.sharedChatWorld(t)
+	h.seedMessages(t, world.direct.ID, world.parties.tutor, 1)
 	_, tutorPage := h.channelList(t, world.parties.tutorToken, "")
 	_, studentPage := h.channelList(t, world.parties.studentToken, "")
 
@@ -180,6 +181,9 @@ func TestOneChannelIsReadWithItsListFieldsAndHeaderLink(t *testing.T) {
 
 	listed, _ := itemOf(tutorPage, world.direct.ID)
 	listedForStudent, _ := itemOf(studentPage, world.group.ID)
+	if read := lastPeerRead(t, direct); read == nil || *read {
+		t.Fatalf("own unread message has peer_read %v", read)
+	}
 	var studentFields map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(studentGroup.body), &studentFields); err != nil {
 		t.Fatal(err)

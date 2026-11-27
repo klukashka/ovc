@@ -84,6 +84,15 @@ const (
 	DeletedByTutor  MessageDeleter = "tutor"
 )
 
+type ChannelFilter string
+
+const (
+	ChannelFilterAll    ChannelFilter = "all"
+	ChannelFilterDirect ChannelFilter = "direct"
+	ChannelFilterGroup  ChannelFilter = "group"
+	ChannelFilterUnread ChannelFilter = "unread"
+)
+
 type ChannelKind string
 
 const (

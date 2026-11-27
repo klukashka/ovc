@@ -338,6 +338,20 @@ func (r Messages) MoveReadMarker(ctx context.Context, channel domain.ChannelID, 
 	return MarkerMove{Moved: moved.Moved, Exposed: moved.Exposed}, err
 }
 
+func (r Messages) PeerReadSeqs(ctx context.Context, channels []domain.ChannelID, viewer domain.UserID) (map[domain.ChannelID]int64, error) {
+	rows, err := r.queries.ListPeerReadSeqs(ctx, dbgen.ListPeerReadSeqsParams{
+		ChannelIds: uuids(channels), ViewerID: pgtype.UUID{Bytes: viewer, Valid: true},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("read the other members' shared read markers: %w", err)
+	}
+	markers := make(map[domain.ChannelID]int64, len(rows))
+	for _, row := range rows {
+		markers[row.ChannelID] = row.SharedReadSeq
+	}
+	return markers, nil
+}
+
 func (r Messages) PeerReadSeq(ctx context.Context, channel domain.ChannelID, viewer domain.UserID) (*int64, error) {
 	seq, err := r.queries.GetPeerReadSeq(ctx, dbgen.GetPeerReadSeqParams{
 		ChannelID: pgtype.UUID{Bytes: channel, Valid: true}, ViewerID: pgtype.UUID{Bytes: viewer, Valid: true},

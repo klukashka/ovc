@@ -796,9 +796,10 @@ func TestTutorExportMatchesTheRoutes(t *testing.T) {
 	channels := h.pagedItems(t, token, channelsRoute)
 	exportedChannels := make([]json.RawMessage, 0, len(data.Messages))
 	for _, history := range data.Messages {
+		assertExportedPeerReadIsNull(t, history.Channel)
 		exportedChannels = append(exportedChannels, history.Channel)
 	}
-	assertSameItems(t, "channels", exportedChannels, channels)
+	assertSameItems(t, "channels", exportedChannels, channels, "peer_read")
 	var exportedMessages, routedMessages []json.RawMessage
 	for _, channel := range channels {
 		history, _ := archive.historyOf(identifierOf(t, channel))

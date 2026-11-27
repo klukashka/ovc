@@ -2,6 +2,8 @@ import { retryAfterSeconds } from '../../components/ui/Form.tsx';
 import { type ApiClient, type ApiError, apiErrorFrom } from '../../lib/api/client.ts';
 import type { components } from '../../lib/api/schema.ts';
 
+import type { ChannelFilter } from './filters.ts';
+
 export type Channel = components['schemas']['ChannelDetail'];
 export type ChannelItem = components['schemas']['ChannelItem'];
 export type ChannelPage = components['schemas']['ChannelPage'];
@@ -18,10 +20,11 @@ export async function fetchChannels(
   q: string,
   cursor: string | null,
   signal: AbortSignal,
+  filter: ChannelFilter = 'all',
 ): Promise<ChannelPage> {
   const { data, error, response } = await client.GET('/api/v1/channels', {
     signal,
-    params: { query: { q, ...(cursor === null ? {} : { cursor }) } },
+    params: { query: { q, ...(filter === 'all' ? {} : { filter }), ...(cursor === null ? {} : { cursor }) } },
   });
   if (data === undefined) throw apiErrorFrom(response.status, error);
   return data;

@@ -3,6 +3,7 @@ package repositories
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
@@ -36,6 +37,7 @@ type ChannelCursor struct {
 }
 
 type ChannelQuery struct {
+	Filter  domain.ChannelFilter
 	Now     time.Time
 	Member  domain.UserID
 	Channel *domain.ChannelID
@@ -225,6 +227,17 @@ func (r Channels) DeleteMembershipsOf(ctx context.Context, user domain.UserID) (
 
 func (r Channels) List(ctx context.Context, query ChannelQuery) ([]ChannelRow, error) {
 	params := dbgen.ListChannelsOfMemberParams{Now: query.Now, UserID: query.Member, RowLimit: query.Limit}
+	switch query.Filter {
+	case "", domain.ChannelFilterAll:
+	case domain.ChannelFilterDirect, domain.ChannelFilterGroup:
+		kind := string(query.Filter)
+		params.Kind = &kind
+	case domain.ChannelFilterUnread:
+		unread := true
+		params.UnreadOnly = &unread
+	default:
+		return nil, fmt.Errorf("list channels with the unknown filter %q", query.Filter)
+	}
 	if query.Search != nil {
 		pattern := "%" + escapeLikePattern(*query.Search) + "%"
 		params.Pattern = &pattern

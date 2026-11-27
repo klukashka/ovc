@@ -338,6 +338,12 @@ JOIN channels ON channels.id = channel_members.channel_id
 WHERE channel_members.channel_id = sqlc.arg(channel_id)::uuid AND channels.kind = 'direct'
     AND channel_members.user_id <> sqlc.arg(viewer_id)::uuid;
 
+-- name: ListPeerReadSeqs :many
+SELECT channel_members.channel_id, channel_members.shared_read_seq FROM channel_members
+JOIN channels ON channels.id = channel_members.channel_id
+WHERE channel_members.channel_id = ANY(sqlc.arg(channel_ids)::uuid[]) AND channels.kind = 'direct'
+    AND channel_members.user_id <> sqlc.arg(viewer_id)::uuid;
+
 -- name: GetReadSignalScope :one
 SELECT (channels.read_only_since IS NULL)::boolean AS writable,
     (SELECT count(*) FROM active_channel_members AS active

@@ -1572,6 +1572,7 @@ export interface components {
             /** Format: date-time */
             created_at: string;
             own: boolean;
+            peer_read: boolean | null;
             preview: string | null;
             sender_label: string | null;
             /** @enum {string|null} */
@@ -4402,6 +4403,7 @@ export interface operations {
     "channels-list": {
         parameters: {
             query?: {
+                filter?: "all" | "direct" | "group" | "unread";
                 q?: string;
                 limit?: number;
                 cursor?: string;
@@ -14870,6 +14872,7 @@ type ReadonlyArray<T> = [
     unknown[]
 ] ? Readonly<Exclude<T, undefined>> : Readonly<Exclude<T, undefined>[]>;
 export const pathsApiV1AssignmentsGetParametersQueryStatusValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/assignments"]["get"]["parameters"]["query"]["status"]> = ["todo", "submitted", "checked", "closed"];
+export const pathsApiV1ChannelsGetParametersQueryFilterValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/channels"]["get"]["parameters"]["query"]["filter"]> = ["all", "direct", "group", "unread"];
 export const pathsApiV1IssuesGetParametersQueryStatusValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/issues"]["get"]["parameters"]["query"]["status"]> = ["active", "withdrawn"];
 export const pathsApiV1StudentsGetParametersQueryStateValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/students"]["get"]["parameters"]["query"]["state"]> = ["active", "invited", "ended"];
 export const pathsApiV1UploadsPostParametersQueryContextValues: ReadonlyArray<FlattenedDeepRequired<paths>["/api/v1/uploads"]["post"]["parameters"]["query"]["context"]> = ["avatar", "chat", "library", "prompt_image", "answer", "corrected"];

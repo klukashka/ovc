@@ -940,6 +940,43 @@ func (q *Queries) ListMessagesBefore(ctx context.Context, arg ListMessagesBefore
 	return items, nil
 }
 
+const listPeerReadSeqs = `-- name: ListPeerReadSeqs :many
+SELECT channel_members.channel_id, channel_members.shared_read_seq FROM channel_members
+JOIN channels ON channels.id = channel_members.channel_id
+WHERE channel_members.channel_id = ANY($1::uuid[]) AND channels.kind = 'direct'
+    AND channel_members.user_id <> $2::uuid
+`
+
+type ListPeerReadSeqsParams struct {
+	ChannelIds []pgtype.UUID
+	ViewerID   pgtype.UUID
+}
+
+type ListPeerReadSeqsRow struct {
+	ChannelID     domain.ChannelID
+	SharedReadSeq int64
+}
+
+func (q *Queries) ListPeerReadSeqs(ctx context.Context, arg ListPeerReadSeqsParams) ([]ListPeerReadSeqsRow, error) {
+	rows, err := q.db.Query(ctx, listPeerReadSeqs, arg.ChannelIds, arg.ViewerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPeerReadSeqsRow
+	for rows.Next() {
+		var i ListPeerReadSeqsRow
+		if err := rows.Scan(&i.ChannelID, &i.SharedReadSeq); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSenderMessagesBatch = `-- name: ListSenderMessagesBatch :many
 SELECT messages.id, messages.channel_id, channels.tutor_id,
     EXISTS (

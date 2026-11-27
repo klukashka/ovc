@@ -159,6 +159,7 @@ type Channel struct {
 }
 
 type Query struct {
+	Filter domain.ChannelFilter
 	Search string
 	Cursor string
 	Limit  int32
@@ -199,7 +200,7 @@ func (s *Service) ListIn(
 }
 
 func channelListing(viewer domain.UserID, query Query, now time.Time) (repositories.ChannelQuery, error) {
-	listing := repositories.ChannelQuery{Now: now, Member: viewer, Limit: query.Limit + 1}
+	listing := repositories.ChannelQuery{Now: now, Member: viewer, Filter: query.Filter, Limit: query.Limit + 1}
 	if query.Search != "" {
 		listing.Search = &query.Search
 	}
@@ -237,10 +238,17 @@ func listChannels(
 	if err != nil {
 		return Page{}, nil, err
 	}
+	markers, err := repos.Messages.PeerReadSeqs(ctx, ids, viewer)
+	if err != nil {
+		return Page{}, nil, err
+	}
 	page.Items = make([]Channel, 0, len(rows))
 	for _, row := range rows {
 		channel := channelView(viewer, row)
 		channel.LastMessage = last[row.ChannelID]
+		if seq, exists := markers[row.ChannelID]; exists {
+			setLastPeerRead(&channel, &seq)
+		}
 		page.Items = append(page.Items, channel)
 	}
 	page.UnreadChannels, err = repos.Channels.CountUnread(ctx, viewer, domain.UnreadChannelsCap)
@@ -276,6 +284,7 @@ func (s *Service) Channel(ctx context.Context, viewer domain.UserID, id domain.C
 		if channel.PeerReadSeq, err = repos.Messages.PeerReadSeq(ctx, id, viewer); err != nil {
 			return err
 		}
+		setLastPeerRead(&channel, channel.PeerReadSeq)
 		if rows[0].TutorID != viewer {
 			return nil
 		}
@@ -296,6 +305,15 @@ func (s *Service) Channel(ctx context.Context, viewer domain.UserID, id domain.C
 		return nil
 	})
 	return channel, err
+}
+
+func setLastPeerRead(channel *Channel, seq *int64) {
+	last := channel.LastMessage
+	if channel.Kind != domain.ChannelDirect || seq == nil || last == nil || !last.Own || last.Deleted || last.Erased {
+		return
+	}
+	read := *seq >= last.Seq
+	last.PeerRead = &read
 }
 
 func (s *Service) UnreadChannels(ctx context.Context, viewer domain.UserID) (int64, error) {

@@ -160,7 +160,7 @@ func (s studentSource) channels(ctx context.Context) ([]chat.Channel, error) {
 		var referenced []domain.UserID
 		cursor := ""
 		for {
-			page, accounts, err := s.content.Chat.ListIn(ctx, repos, s.student, chat.Query{Cursor: cursor, Limit: s.pageSize}, now)
+			page, accounts, err := s.content.Chat.ListIn(ctx, repos, s.student, chat.Query{Filter: domain.ChannelFilterAll, Cursor: cursor, Limit: s.pageSize}, now)
 			if err != nil {
 				return nil, err
 			}

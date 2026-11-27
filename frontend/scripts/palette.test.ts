@@ -236,3 +236,22 @@ describe('the tutor and group palette', () => {
     },
   );
 });
+
+test.each(['light', 'dark'] as const)(
+  "the text colour on each relationship colour's 16 percent sRGB tint of surface reaches 4.5:1 in the %s theme",
+  (theme) => {
+    const surface = colourOf(theme, 'surface');
+    const text = colourOf(theme, 'text');
+
+    const ratios = paletteKeys.map((key) => {
+      const colour = colourOf(theme, key);
+      return contrast(text, {
+        red: colour.red * 0.16 + surface.red * 0.84,
+        green: colour.green * 0.16 + surface.green * 0.84,
+        blue: colour.blue * 0.16 + surface.blue * 0.84,
+      });
+    });
+
+    expect(Math.min(...ratios)).toBeGreaterThanOrEqual(minimumContrast);
+  },
+);

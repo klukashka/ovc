@@ -822,6 +822,11 @@ test.describe('the messenger layout on a computer', () => {
     await oneNew.focus();
     await scrollHistoryTo(page, 'bottom');
 
+    expect(
+      await channelRows(page).evaluateAll((links) =>
+        links.every((link) => link.getBoundingClientRect().height >= 56 && link.scrollWidth <= link.clientWidth),
+      ),
+    ).toBe(true);
     expect(sentStatus).toBe(201);
     expect(arrivals).toEqual([201, 201, 201]);
     expect(latestAfterJump).toBe(true);
@@ -1165,5 +1170,293 @@ test.describe('reactions in a group chat', () => {
     await expect(secondChip).not.toContainText('Anna');
     await diagnostics.closeContext(firstContext);
     await diagnostics.closeContext(secondContext);
+  });
+});
+
+interface FilterActors {
+  readonly tutor: TestAccount;
+  readonly student: TestAccount;
+  readonly direct: string;
+  readonly groups: readonly string[];
+}
+
+async function seedFilterActors(deployment: Deployment, count = 1): Promise<FilterActors> {
+  const tutor = await seedVerifiedUser(deployment, 'Filter tutor', 'en');
+  const { student, cardId } = await seedActiveStudent(deployment, tutor, 'Filter student', 'en');
+  const direct = await channelOf(deployment, tutor, `/students/${cardId}`);
+  const token = await accessToken(deployment, student);
+  const additional = count > 30 ? await seedActiveStudent(deployment, tutor, 'Other sender', 'en') : null;
+  const additionalToken = additional === null ? token : await accessToken(deployment, additional.student);
+  const groups: string[] = [];
+  for (let index = 1; index <= count; index += 1) {
+    const group = await createGroup(
+      deployment,
+      tutor,
+      `Filter group ${String(index)}`,
+      additional === null ? [cardId] : [cardId, additional.cardId],
+    );
+    const channel = await channelOf(deployment, tutor, `/groups/${group}`);
+    const sent = await callApi(
+      deployment,
+      index > 30 ? additionalToken : token,
+      'POST',
+      `/channels/${channel}/messages`,
+      {
+        body: `Filter message ${String(index)}`,
+        attachment_ids: [],
+      },
+    );
+    if (sent.status !== 201) throw new Error('filter seed message failed');
+    groups.unshift(channel);
+  }
+  const listed = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'GET',
+    '/channels?filter=group&limit=100',
+  );
+  const body = listed.body;
+  if (
+    listed.status !== 200 ||
+    typeof body !== 'object' ||
+    body === null ||
+    !('items' in body) ||
+    !Array.isArray(body.items)
+  )
+    throw new Error('filter seed list failed');
+  const ordered = body.items.map((item: unknown) => {
+    if (
+      typeof item !== 'object' ||
+      item === null ||
+      !('id' in item) ||
+      typeof item.id !== 'string' ||
+      !groups.includes(item.id)
+    )
+      throw new Error('filter seed returned an unexpected channel');
+    return item.id;
+  });
+  if (ordered.length !== groups.length) throw new Error('filter seed list is incomplete');
+  return { tutor, student, direct, groups: ordered };
+}
+
+function filterButtons(page: Page): Locator {
+  return page.getByRole('group', { name: 'Chat filters', exact: true });
+}
+
+function channelRows(page: Page): Locator {
+  return page.getByRole('region', { name: 'Chats', exact: true }).getByRole('link');
+}
+
+async function openFilterList(page: Page, account: TestAccount, filter = ''): Promise<void> {
+  await signInThroughTheApi(page, account);
+  const ready = trafficAfterReady(page, ['/api/v1/channels']);
+  await ready.initialize();
+  await page.goto(`/messages${filter}`);
+  await expectRefetchedAfterTheSocketIsReady(ready);
+  await channelRows(page).first().waitFor();
+}
+
+const filterTest = test.extend<{ diagnostics: Diagnostics }, { filterActors: FilterActors }>({
+  filterActors: [
+    async ({ deployment }, use): Promise<void> => {
+      await use(await seedFilterActors(deployment, 31));
+    },
+    { scope: 'worker' },
+  ],
+});
+
+filterTest.describe('chat list filters and rows', () => {
+  filterTest.describe.configure({ mode: 'default' });
+  filterTest.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1280, height: 800 } });
+
+  filterTest(
+    'choosing Unread lists only unread chats and keeps focus on the filter',
+    async ({ page, filterActors }) => {
+      await openFilterList(page, filterActors.tutor);
+      const unread = filterButtons(page).getByRole('button', { name: 'Unread, 31', exact: true });
+
+      await unread.click();
+
+      await expect(unread).toBeFocused();
+      await expect(unread).toHaveAttribute('aria-pressed', 'true');
+      await expect(channelRows(page)).toHaveCount(30);
+      expect(await channelRows(page).evaluateAll((rows) => rows.map((row) => row.getAttribute('href')))).toEqual(
+        filterActors.groups.slice(0, 30).map((id) => `/messages/${id}?filter=unread`),
+      );
+    },
+  );
+
+  filterTest('Show more under Unread focuses the first new unread chat', async ({ page, filterActors }) => {
+    await openFilterList(page, filterActors.tutor, '?filter=unread');
+    const more = page.getByRole('button', { name: 'Show more', exact: true });
+
+    await more.click();
+
+    await expect(channelRows(page).nth(30)).toBeFocused();
+    await expect(channelRows(page)).toHaveCount(31);
+    await expect(channelRows(page).nth(30)).toHaveAttribute(
+      'href',
+      `/messages/${filterActors.groups[30] ?? ''}?filter=unread`,
+    );
+    await expect(more).toHaveCount(0);
+  });
+
+  filterTest(
+    'a student sees All, Tutors, Groups and Unread, and a group row shows no tick and no member name beyond the last sender',
+    async ({ page, filterActors }) => {
+      await signInThroughTheApi(page, filterActors.student);
+
+      await page.goto('/messages?filter=group');
+      await channelRows(page).first().waitFor();
+
+      await expect(filterButtons(page).getByRole('button')).toHaveCount(4);
+      for (const name of ['All', 'Tutors', 'Groups'])
+        await expect(filterButtons(page).getByRole('button', { name, exact: true })).toBeVisible();
+      await expect(filterButtons(page).getByRole('button', { name: /^Unread/ })).toBeVisible();
+      await expect(channelRows(page)).toHaveCount(30);
+      await expect(page.getByRole('region', { name: 'Chats', exact: true }).locator('[data-ticks]')).toHaveCount(0);
+      await expect(channelRows(page).first()).toContainText('Filter tutor');
+      await expect(channelRows(page).first()).toContainText(/(?:You|Other sender): Filter message/);
+      await expect(page.getByRole('region', { name: 'Chats', exact: true })).not.toContainText('Filter student');
+    },
+  );
+
+  filterTest('the Unread filter makes only its listed requests', async ({ page, filterActors }) => {
+    await signInThroughTheApi(page, filterActors.tutor);
+    const requests: string[] = [];
+    page.on('request', (request) => {
+      const url = new URL(request.url());
+      if (
+        url.pathname.startsWith('/api/v1/') &&
+        url.pathname !== '/api/v1/ws' &&
+        !url.pathname.startsWith('/api/v1/auth/')
+      )
+        requests.push(`${request.method()} ${url.pathname}${url.search}`);
+    });
+    const ready = trafficAfterReady(page, ['/api/v1/channels']);
+    await ready.initialize();
+
+    await page.goto('/messages?filter=unread');
+
+    await expectRefetchedAfterTheSocketIsReady(ready);
+    await channelRows(page).nth(29).waitFor();
+
+    const paths = requests.map((entry) => entry.split('?')[0]);
+    expect([...new Set(paths)].sort()).toEqual(
+      [
+        'GET /api/v1/channels',
+        'GET /api/v1/channels/unread',
+        'GET /api/v1/notifications',
+        'GET /api/v1/review-queue',
+        'GET /api/v1/users/me',
+      ].sort(),
+    );
+    expect(
+      requests
+        .filter((entry) => entry.startsWith('GET /api/v1/channels?'))
+        .every((entry) => new URL(entry.slice(4), 'https://ovc.invalid').searchParams.get('filter') === 'unread'),
+    ).toBe(true);
+    expect(requests.some((entry) => entry.includes('/api/v1/avatars/'))).toBe(false);
+  });
+});
+
+test.describe('chat list filters over their own chats', () => {
+  test.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1280, height: 800 } });
+
+  test('opening a chat under Groups keeps Groups pressed and the list filtered', async ({ page, deployment }) => {
+    const actors = await seedFilterActors(deployment);
+    await openFilterList(page, actors.tutor, '?filter=group');
+
+    await channelRows(page).first().click();
+
+    await expect(page.getByRole('heading', { level: 2, name: 'Filter group 1', exact: true })).toBeFocused();
+    await expect(filterButtons(page).getByRole('button', { name: 'Groups', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(channelRows(page)).toHaveCount(1);
+    await expect(page).toHaveURL(`/messages/${actors.groups[0] ?? ''}?filter=group`);
+  });
+
+  test('Back restores the previous filter', async ({ page, deployment }) => {
+    const actors = await seedFilterActors(deployment);
+    await openFilterList(page, actors.tutor);
+    await filterButtons(page).getByRole('button', { name: 'Groups', exact: true }).click();
+    await channelRows(page).first().waitFor();
+    await filterButtons(page).getByRole('button', { name: 'Students', exact: true }).click();
+    await page.getByRole('link', { name: 'Filter student', exact: true }).waitFor();
+    await channelRows(page).first().focus();
+
+    await page.goBack();
+
+    await expect(filterButtons(page).getByRole('button', { name: 'Groups', exact: true })).toBeFocused();
+    await expect(filterButtons(page).getByRole('button', { name: 'Groups', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(channelRows(page)).toHaveCount(1);
+    await expect(channelRows(page).first()).toContainText('Filter group 1');
+  });
+
+  test('reload keeps the filter', async ({ page, deployment }) => {
+    const actors = await seedFilterActors(deployment);
+    await openFilterList(page, actors.tutor, '?filter=group');
+
+    await page.reload();
+
+    await expect(filterButtons(page).getByRole('button', { name: 'Groups', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(channelRows(page)).toHaveCount(1);
+    await expect(channelRows(page).first()).toHaveAttribute('href', `/messages/${actors.groups[0] ?? ''}?filter=group`);
+  });
+
+  test('Back to the list at 360 px keeps the filter', async ({ page, deployment }) => {
+    const actors = await seedFilterActors(deployment);
+    await page.setViewportSize({ width: 360, height: 780 });
+    await openFilterList(page, actors.tutor, '?filter=group');
+    await channelRows(page).first().click();
+    await page.getByRole('heading', { level: 2, name: 'Filter group 1', exact: true }).waitFor();
+
+    await page.getByRole('link', { name: 'Back to the list', exact: true }).click();
+
+    await expect(page).toHaveURL('/messages?filter=group');
+    await expect(filterButtons(page).getByRole('button', { name: 'Groups', exact: true })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(channelRows(page)).toHaveCount(1);
+    await expect(page.getByRole('heading', { level: 1, name: 'Messages', exact: true })).toBeFocused();
+  });
+
+  test("the tutor's own last message in a direct row shows Read after the student opens the chat", async ({
+    page,
+    deployment,
+    observedBrowser,
+    diagnostics,
+  }) => {
+    const actors = await seedFilterActors(deployment);
+    const sent = await callApi(
+      deployment,
+      await accessToken(deployment, actors.tutor),
+      'POST',
+      `/channels/${actors.direct}/messages`,
+      { body: 'Please read this', attachment_ids: [] },
+    );
+    if (sent.status !== 201) throw new Error('tick seed failed');
+    await openFilterList(page, actors.tutor, '?filter=direct');
+    const row = channelRows(page).first();
+    await row.locator('[data-ticks="sent"]').waitFor();
+    const context = await studentContext(observedBrowser, deployment);
+    const studentPage = await context.newPage();
+    await diagnostics.watch(studentPage);
+    await signInThroughTheApi(studentPage, actors.student);
+
+    await studentPage.goto(`/messages/${actors.direct}`);
+
+    await expect(row.locator('[data-ticks="read"]')).toContainText('Read');
+    await expect(row.locator('[data-ticks="sent"]')).toHaveCount(0);
+    await diagnostics.closeContext(context);
   });
 });

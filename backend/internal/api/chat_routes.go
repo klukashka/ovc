@@ -19,9 +19,10 @@ const (
 )
 
 type channelListInput struct {
-	Q      string `query:"q" maxLength:"254"`
-	Limit  int32  `query:"limit" default:"30" minimum:"1" maximum:"100"`
-	Cursor string `query:"cursor" maxLength:"128"`
+	Filter domain.ChannelFilter `query:"filter" default:"all" enum:"all,direct,group,unread"`
+	Q      string               `query:"q" maxLength:"254"`
+	Limit  int32                `query:"limit" default:"30" minimum:"1" maximum:"100"`
+	Cursor string               `query:"cursor" maxLength:"128"`
 }
 
 type channelListOutput struct {
@@ -399,7 +400,7 @@ func messageBody(message chat.Message) schemas.Message {
 
 func (r *router) listChannels(ctx context.Context, input *channelListInput) (*channelListOutput, error) {
 	viewer := principalFrom(ctx).UserID
-	page, err := r.chat.List(ctx, viewer, chat.Query{Search: input.Q, Cursor: input.Cursor, Limit: input.Limit})
+	page, err := r.chat.List(ctx, viewer, chat.Query{Filter: input.Filter, Search: input.Q, Cursor: input.Cursor, Limit: input.Limit})
 	if err != nil {
 		return nil, r.chatError(ctx, "channels.list.failed", err)
 	}
@@ -467,7 +468,7 @@ func channelItemBody(channel chat.Channel) schemas.ChannelItem {
 	if last := channel.LastMessage; last != nil {
 		body.LastMessage = &schemas.ChannelLastMessage{
 			Seq: last.Seq, CreatedAt: last.CreatedAt.UTC(), Own: last.Own, SenderLabel: last.SenderLabel, SenderLabelKind: last.SenderLabelKind,
-			Preview: last.Preview, AttachmentCount: last.AttachmentCount,
+			Preview: last.Preview, AttachmentCount: last.AttachmentCount, PeerRead: last.PeerRead,
 		}
 	}
 	return body

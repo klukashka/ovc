@@ -548,24 +548,28 @@ LEFT JOIN relationships AS own_link
     ON own_link.tutor_id = members.tutor_id AND own_link.student_id = members.user_id AND own_link.state <> 'discarded'
 WHERE members.user_id = $2
     AND ($3::uuid IS NULL OR members.channel_id = $3::uuid)
+    AND ($4::text IS NULL OR members.kind = $4::text)
+    AND ($5::boolean IS NOT TRUE OR members.last_seq > members.last_read_seq)
     AND (
-        $4::text IS NULL
-        OR (members.tutor_id = members.user_id AND COALESCE(relationships.display_name, groups.name) ILIKE $4::text ESCAPE '\')
-        OR (members.tutor_id <> members.user_id AND members.kind = 'direct' AND tutors.name ILIKE $4::text ESCAPE '\')
-        OR (members.tutor_id <> members.user_id AND members.kind = 'group' AND groups.name ILIKE $4::text ESCAPE '\')
+        $6::text IS NULL
+        OR (members.tutor_id = members.user_id AND COALESCE(relationships.display_name, groups.name) ILIKE $6::text ESCAPE '\')
+        OR (members.tutor_id <> members.user_id AND members.kind = 'direct' AND tutors.name ILIKE $6::text ESCAPE '\')
+        OR (members.tutor_id <> members.user_id AND members.kind = 'group' AND groups.name ILIKE $6::text ESCAPE '\')
     )
     AND (
-        $5::timestamptz IS NULL
-        OR (members.last_activity_at, members.channel_id) < ($5::timestamptz, $6::uuid)
+        $7::timestamptz IS NULL
+        OR (members.last_activity_at, members.channel_id) < ($7::timestamptz, $8::uuid)
     )
 ORDER BY members.last_activity_at DESC, members.channel_id DESC
-LIMIT $7
+LIMIT $9
 `
 
 type ListChannelsOfMemberParams struct {
 	Now             time.Time
 	UserID          domain.UserID
 	ChannelID       pgtype.UUID
+	Kind            *string
+	UnreadOnly      *bool
 	Pattern         *string
 	AfterActivityAt *time.Time
 	AfterID         pgtype.UUID
@@ -600,6 +604,8 @@ func (q *Queries) ListChannelsOfMember(ctx context.Context, arg ListChannelsOfMe
 		arg.Now,
 		arg.UserID,
 		arg.ChannelID,
+		arg.Kind,
+		arg.UnreadOnly,
 		arg.Pattern,
 		arg.AfterActivityAt,
 		arg.AfterID,

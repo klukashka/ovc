@@ -14,6 +14,7 @@ type ChannelTutor struct {
 }
 
 type ChannelLastMessage struct {
+	PeerRead        *bool             `json:"peer_read" nullable:"true"`
 	Seq             int64             `json:"seq"`
 	CreatedAt       time.Time         `json:"created_at"`
 	Own             bool              `json:"own"`

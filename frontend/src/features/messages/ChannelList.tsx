@@ -1,18 +1,30 @@
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import { type ReactElement, useState, useRef, useLayoutEffect, useCallback, useSyncExternalStore } from 'react';
-import { Link } from 'react-router';
+import {
+  type ReactElement,
+  useState,
+  useRef,
+  useLayoutEffect,
+  useCallback,
+  useSyncExternalStore,
+  useEffect,
+} from 'react';
+import { Link, useLocation, useNavigate } from 'react-router';
 
-import { useDebouncedValue } from '../../app/clock.ts';
+import { useDebouncedValue, useScheduler, useLocalToday } from '../../app/clock.ts';
 import { useFocusAfterRemovedRow } from '../../components/ui/liveRows.ts';
 import { quietButtonClass } from '../../components/ui/Form.tsx';
-import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
+import { DelayedLoading, LoadFailed, focusIsLost } from '../../components/ui/LoadState.tsx';
 import { asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
-import { formatDateTime } from '../../lib/format/dates.ts';
+import { Avatar } from '../../components/ui/Avatar.tsx';
+import { ChannelFilters } from './ChannelFilters.tsx';
+import { type ChannelFilter, channelFilter, channelFilterSearch } from './filters.ts';
+import { compactTime } from './compactTime.ts';
+import { ReadTicksIcon } from './icons.tsx';
 import { type ChannelItem, type ChannelPage, fetchChannels } from './api.ts';
 import { channelScopeRevision, channelsScopeRevisionKey } from './cache.ts';
 import { channelLabel } from './channelLabel.ts';
-import { channelsKey } from './keys.ts';
+import { channelPageKey } from './keys.ts';
 import { useFirstChannelPage } from './firstPage.ts';
 import { ChannelPresence } from './PresenceSummary.tsx';
 import type { ChatTexts } from './translations.ts';
@@ -20,8 +32,46 @@ import type { ChatTexts } from './translations.ts';
 export function ChannelList({ texts }: { readonly texts: ChatTexts }): ReactElement {
   const [search, setSearch] = useState('');
   const q = useDebouncedValue(search, 200);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const filter = channelFilter(location.search);
+  const first = useFirstChannelPage(q, filter);
+  const [knownUnread, setKnownUnread] = useState(0);
+  const pageUnread = first.data?.unread_channels;
+  if (pageUnread !== undefined && pageUnread !== knownUnread) setKnownUnread(pageUnread);
+  const unreadCount = pageUnread ?? knownUnread;
+  const me = useSignedInAccount();
+  const container = useRef<HTMLDivElement>(null);
+  const focusedInside = useRef(false);
+  const previousFilter = useRef(filter);
+  useEffect(() => {
+    const record = (event: FocusEvent): void => {
+      focusedInside.current = event.target instanceof Node && container.current?.contains(event.target) === true;
+    };
+    document.addEventListener('focusin', record);
+    return (): void => {
+      document.removeEventListener('focusin', record);
+    };
+  }, []);
+  useLayoutEffect(() => {
+    if (previousFilter.current === filter) return;
+    previousFilter.current = filter;
+    if (focusedInside.current && focusIsLost()) {
+      container.current?.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')?.focus();
+    }
+  }, [filter]);
   return (
-    <div className="flex min-w-0 flex-col gap-3">
+    <div ref={container} className="flex min-w-0 flex-col gap-3">
+      <ChannelFilters
+        filter={filter}
+        unread={unreadCount}
+        student={me.role === 'student'}
+        texts={texts}
+        onChange={(next) => {
+          if (next === filter) return;
+          void navigate({ pathname: location.pathname, search: channelFilterSearch(next) });
+        }}
+      />
       <label className="flex flex-col gap-1">
         {texts.search}
         <input
@@ -33,7 +83,14 @@ export function ChannelList({ texts }: { readonly texts: ChatTexts }): ReactElem
           className="min-h-11 rounded-md border border-border-strong bg-surface px-3"
         />
       </label>
-      <ChannelPages key={q} texts={texts} q={q} rawSearch={search} />
+      <ChannelPages
+        key={JSON.stringify([q, filter])}
+        texts={texts}
+        q={q}
+        filter={filter}
+        first={first}
+        rawSearch={search}
+      />
     </div>
   );
 }
@@ -42,16 +99,21 @@ function ChannelPages({
   texts,
   q,
   rawSearch,
+  filter,
+  first,
 }: {
   readonly texts: ChatTexts;
   readonly q: string;
   readonly rawSearch: string;
+  readonly filter: ChannelFilter;
+  readonly first: ReturnType<typeof useFirstChannelPage>;
 }): ReactElement {
   const client = useApiClient();
   const me = useSignedInAccount();
   const session = useSession();
   const cache = useQueryClient();
-  const first = useFirstChannelPage(q);
+  const scheduler = useScheduler();
+  useLocalToday(me.timezone);
   const subscribeScope = useCallback(
     (changed: () => void): (() => void) =>
       cache.getQueryCache().subscribe((event) => {
@@ -84,9 +146,9 @@ function ChannelPages({
   }
   const tails = useQueries({
     queries: activeCursors.map((cursor) => ({
-      queryKey: [...channelsKey, q, scope, cursor],
+      queryKey: channelPageKey(q, filter, scope, cursor),
       queryFn: ({ signal }: { readonly signal: AbortSignal }): Promise<ChannelPage> =>
-        fetchChannels(client, q, cursor, signal),
+        fetchChannels(client, q, cursor, signal, filter),
       retry: false,
       refetchOnMount: 'always' as const,
     })),
@@ -147,47 +209,104 @@ function ChannelPages({
           }}
         />
       )}
-      {first.isSuccess && channels.length === 0 ? <p>{texts.empty}</p> : null}
+      {first.isSuccess && channels.length === 0 ? (
+        <p>
+          {q !== '' || filter === 'all'
+            ? texts.empty
+            : filter === 'unread'
+              ? texts.emptyUnread
+              : filter === 'group'
+                ? texts.emptyGroups
+                : me.role === 'student'
+                  ? texts.emptyTutors
+                  : texts.emptyStudents}
+        </p>
+      ) : null}
       <ul ref={list} className="flex flex-col border-t border-border">
         {channels.map((channel) => (
           <li key={channel.id} data-row={channel.id}>
             <Link
-              to={`/messages/${encodeURIComponent(channel.id)}`}
-              className="block border-b border-border px-2 py-3 [overflow-wrap:anywhere] hover:bg-hover"
+              to={`/messages/${encodeURIComponent(channel.id)}${channelFilterSearch(filter)}`}
+              className={`flex min-h-14 min-w-0 items-center gap-2 border-b border-border px-2 py-2 hover:bg-hover ${channel.writable ? '' : 'bg-hover text-text-muted'}`}
             >
-              <span dir="auto" className={channel.unread_count > 0 ? 'font-semibold' : ''}>
-                {channelLabel(channel, texts)}
-              </span>
-              <ChannelPresence
-                channel={channel}
-                me={me}
-                revision={
-                  queries.find((query) => query.data?.items.some((item) => item.id === channel.id))?.dataUpdatedAt ?? 0
-                }
-                onlineLabel={texts.online}
+              <Avatar
+                name={channel.label_kind === null ? channelLabel(channel, texts) : ''}
+                avatarId={null}
+                size="medium"
+                colour={channel.colour}
               />
-              {channel.tutor === null ? null : (
-                <span dir="auto" className="block text-small">
-                  {channel.tutor.name}
-                </span>
-              )}
-              {channel.unread_count > 0 ? (
-                <span className="ml-2">{channel.unread_count >= 99 ? '99+' : channel.unread_count}</span>
-              ) : null}
-              {channel.unconfirmed ? <span className="block text-small">{texts.unconfirmed}</span> : null}
-              {!channel.writable ? <span className="block text-small">{texts.readonly}</span> : null}
-              {channel.last_message === null ? null : (
-                <>
-                  <time dateTime={channel.last_message.created_at} className="block text-small">
-                    {formatDateTime(channel.last_message.created_at, me.language, me.timezone)}
-                  </time>
-                  <span dir="auto" className="block truncate text-small">
-                    {channel.last_message.own ? texts.you : (channel.last_message.sender_label ?? texts.deletedUser)}:{' '}
-                    {channel.last_message.preview ??
-                      (channel.last_message.attachment_count > 0 ? texts.attachment : texts.deleted)}
+              <span className="min-w-0 flex-1">
+                <span className="flex min-w-0 items-center gap-1">
+                  <span
+                    dir="auto"
+                    className={`min-w-0 flex-1 truncate ${channel.unread_count > 0 ? 'font-semibold' : ''}`}
+                  >
+                    {channelLabel(channel, texts)}
                   </span>
-                </>
-              )}
+                  <ChannelPresence
+                    channel={channel}
+                    me={me}
+                    revision={
+                      queries.find((query) => query.data?.items.some((item) => item.id === channel.id))
+                        ?.dataUpdatedAt ?? 0
+                    }
+                    onlineLabel={texts.online}
+                  />
+                  {channel.last_message === null ? null : (
+                    <time dateTime={channel.last_message.created_at} className="shrink-0 text-caption text-text-muted">
+                      {compactTime(channel.last_message.created_at, me.language, me.timezone, scheduler.wallClock())}
+                    </time>
+                  )}
+                </span>
+                <span className="flex min-w-0 items-center gap-1 text-small text-text-muted">
+                  <span dir="auto" className="min-w-0 flex-1 truncate">
+                    {channel.tutor === null ? null : (
+                      <>
+                        <bdi>{channel.tutor.name}</bdi> ·{' '}
+                      </>
+                    )}
+                    {channel.unconfirmed ? (
+                      <>
+                        <span>{texts.unconfirmed}</span> ·{' '}
+                      </>
+                    ) : null}
+                    {!channel.writable ? (
+                      <>
+                        <span>{texts.readonly}</span> ·{' '}
+                      </>
+                    ) : null}
+                    {channel.last_message === null ? null : (
+                      <span>
+                        <bdi>
+                          {channel.last_message.own
+                            ? texts.you
+                            : (channel.last_message.sender_label ?? texts.deletedUser)}
+                        </bdi>
+                        <bdi dir="ltr">
+                          :{' '}
+                          {channel.last_message.preview ??
+                            (channel.last_message.attachment_count > 0 ? texts.attachment : texts.deleted)}
+                        </bdi>
+                      </span>
+                    )}
+                  </span>
+                  {channel.unread_count > 0 ? (
+                    <span className="shrink-0 rounded-full bg-accent px-1 text-on-accent">
+                      {channel.unread_count >= 99 ? '99+' : channel.unread_count}
+                    </span>
+                  ) : channel.last_message?.peer_read != null ? (
+                    <span
+                      data-ticks={channel.last_message.peer_read ? 'read' : 'sent'}
+                      className="flex shrink-0 items-center"
+                    >
+                      <ReadTicksIcon read={channel.last_message.peer_read} />
+                      <span className="sr-only">
+                        {channel.last_message.peer_read ? texts.readTick : texts.sentTick}
+                      </span>
+                    </span>
+                  ) : null}
+                </span>
+              </span>
             </Link>
           </li>
         ))}

@@ -3,7 +3,8 @@ import { type UseQueryResult, skipToken, useQuery, useQueryClient } from '@tanst
 import { useApiClient } from '../../lib/api/client.ts';
 import { type ChannelPage, fetchChannels } from './api.ts';
 import { channelScopeRevision, channelsScopeRevisionKey } from './cache.ts';
-import { channelsKey } from './keys.ts';
+import type { ChannelFilter } from './filters.ts';
+import { channelPageKey } from './keys.ts';
 
 export type FirstChannelPage = ChannelPage & { readonly fetchedScopeRevision: number };
 
@@ -25,15 +26,15 @@ export async function firstPageInScope<Page extends object>(
   throw new ChannelScopeUnsettledError('the channel scope changed during every first page attempt');
 }
 
-export function useFirstChannelPage(q: string): UseQueryResult<FirstChannelPage> {
+export function useFirstChannelPage(q: string, filter: ChannelFilter): UseQueryResult<FirstChannelPage> {
   const client = useApiClient();
   const cache = useQueryClient();
   useQuery<number>({ queryKey: channelsScopeRevisionKey, queryFn: skipToken, enabled: false, initialData: 0 });
   return useQuery({
-    queryKey: [...channelsKey, q, null],
+    queryKey: channelPageKey(q, filter, 0, null),
     queryFn: ({ signal }): Promise<FirstChannelPage> =>
       firstPageInScope(
-        () => fetchChannels(client, q, null, signal),
+        () => fetchChannels(client, q, null, signal, filter),
         () => channelScopeRevision(cache),
       ),
     retry: false,

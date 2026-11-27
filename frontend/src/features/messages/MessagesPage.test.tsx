@@ -27,7 +27,7 @@ import { createI18n } from '../../lib/i18n/i18n.ts';
 import { formatDate } from '../../lib/format/dates.ts';
 import { type Channel, type Message, type MessagePage, deleteMessage, editMessage } from './api.ts';
 import { channelsScopeRevisionKey, channelScopeRevision, evictChannel } from './cache.ts';
-import { aroundKey, aroundPrefix, channelKey, channelsKey, messagesKey } from './keys.ts';
+import { channelPageKey, aroundKey, aroundPrefix, channelKey, channelsKey, messagesKey } from './keys.ts';
 import { DeleteMessageForm, MessageKeyContext } from './Conversation.tsx';
 import { chatTexts } from './texts.en.ts';
 import { MessagesPage } from './MessagesPage.tsx';
@@ -184,7 +184,7 @@ async function fixture(
     </PreferencesContext>
   );
   render(options.initialReadMode === 'strict' ? <StrictMode>{tree}</StrictMode> : tree);
-  await screen.findByRole('heading', { level: address === '/messages' ? 1 : 2 });
+  await screen.findByRole('heading', { level: address.split('?')[0] === '/messages' ? 1 : 2 });
   return { server, initialReads, api, cache, clock, connection, router, session };
 }
 
@@ -1471,7 +1471,7 @@ describe('Messages', () => {
 
     server.chat.addMessage('c-40', message(1));
     await act(async () => {
-      await cache.invalidateQueries({ queryKey: [...channelsKey, '', null], exact: true });
+      await cache.invalidateQueries({ queryKey: channelPageKey('', 'all', 0, null), exact: true });
     });
     await waitFor(() => {
       expect(screen.queryByText('Channel 60')).toBeNull();
@@ -2042,8 +2042,8 @@ describe('messenger layout', () => {
     const first = formatDate('2026-11-01T10:00:00Z', 'ru', 'Europe/Moscow');
     const second = formatDate('2026-11-02T10:00:00Z', 'ru', 'Europe/Moscow');
 
-    expect(screen.getAllByText(first)).toHaveLength(1);
-    expect(screen.getAllByText(second)).toHaveLength(1);
+    expect(within(screen.getByRole('list', { name: 'Messages' })).getAllByText(first)).toHaveLength(1);
+    expect(within(screen.getByRole('list', { name: 'Messages' })).getAllByText(second)).toHaveLength(1);
     expect(within(rowOf('Message 3')).queryByText(second)).not.toBeNull();
     expect(within(rowOf('Message 4')).queryByText(second)).toBeNull();
   });
@@ -2524,7 +2524,7 @@ describe('replies and the pinned message', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Show more' }));
     const row = await screen.findByRole('link', { name: 'Student' });
     row.focus();
-    const firstKey = [...channelsKey, '', null];
+    const firstKey = channelPageKey('', 'all', 0, null);
     const readsBefore = cache.getQueryState(firstKey)?.dataUpdateCount ?? 0;
     const scopeBefore = channelScopeRevision(cache);
     const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
@@ -2560,5 +2560,156 @@ describe('replies and the pinned message', () => {
     expect(within(bar).queryByRole('button', { name: 'Unpin' })).toBeNull();
     expect(bar.querySelector('i')).toBeNull();
     expect(bar.textContent).toContain('<i>Pinned</i>');
+  });
+});
+
+describe('chat list filters and rows', () => {
+  test('choosing a filter requests the first page with that filter and keeps focus on the pressed filter', async () => {
+    const { server } = await fixture(0, '/messages');
+    const button = await screen.findByRole('button', { name: 'Groups' });
+
+    fireEvent.click(button);
+    await screen.findByText('No group chats');
+
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(document.activeElement).toBe(button);
+    expect(
+      server.sentAddresses
+        .filter((url) => url.pathname === '/api/v1/channels')
+        .at(-1)
+        ?.searchParams.get('filter'),
+    ).toBe('group');
+  });
+
+  test('the filter is restored from the address', async () => {
+    const address = '/messages?filter=direct';
+
+    const { server } = await fixture(0, address);
+    const row = await screen.findByRole('link', { name: 'Student' });
+
+    expect(screen.getByRole('button', { name: 'Students' }).getAttribute('aria-pressed')).toBe('true');
+    expect(row.getAttribute('href')).toBe('/messages/channel-1?filter=direct');
+    expect(
+      server.sentAddresses
+        .filter((url) => url.pathname === '/api/v1/channels')
+        .at(-1)
+        ?.searchParams.get('filter'),
+    ).toBe('direct');
+  });
+
+  test('the search term is never written to the address', async () => {
+    const { router, clock, server } = await fixture(0, '/messages?filter=direct');
+    const search = await screen.findByRole('searchbox', { name: 'Search chats' });
+
+    fireEvent.change(search, { target: { value: 'private name' } });
+    act(() => {
+      clock.pass(200);
+    });
+    await screen.findByText('No chats');
+
+    expect(router.state.location.search).toBe('?filter=direct');
+    expect(new URLSearchParams(router.state.location.search).has('q')).toBe(false);
+    expect(
+      server.sentAddresses
+        .filter((url) => url.pathname === '/api/v1/channels')
+        .at(-1)
+        ?.searchParams.get('q'),
+    ).toBe('private name');
+  });
+
+  test('an unknown filter value in the address shows All and is not sent', async () => {
+    const value = '<script>private</script>';
+
+    const { server } = await fixture(0, `/messages?filter=${encodeURIComponent(value)}`);
+    await screen.findByRole('link', { name: 'Student' });
+
+    expect(screen.getByRole('button', { name: 'All' }).getAttribute('aria-pressed')).toBe('true');
+    expect(
+      server.sentAddresses
+        .filter((url) => url.pathname === '/api/v1/channels')
+        .every((url) => !url.searchParams.has('filter')),
+    ).toBe(true);
+    expect(document.body.textContent).not.toContain(value);
+  });
+
+  test("the Unread filter's name and badge show 99+ above 99", async () => {
+    const { server, cache } = await fixture(0, '/messages');
+    seedChannels(server, 100);
+    for (let index = 1; index <= 100; index += 1) server.chat.addMessage(`pagination-${String(index)}`, message(1));
+
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelsKey });
+    });
+
+    const button = await screen.findByRole('button', { name: 'Unread, 99+' });
+    expect(button.textContent).toBe('Unread99+');
+  });
+
+  test('a new message that moves a chat into the Unread first page detaches the loaded continuation pages', async () => {
+    const { server, cache, clock } = await fixture(0, '/messages?filter=unread');
+    seedChannels(server, 61);
+    for (let index = 60; index >= 1; index -= 1) server.chat.addMessage(`pagination-${String(index)}`, message(1));
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelsKey });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Show more' }));
+    await screen.findByText('Chat 60');
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+
+    server.chat.addMessage('pagination-61', message(2));
+    act(() => {
+      receive({ kind: 'entity', entity: 'channel', id: 'pagination-61' });
+      clock.pass(1000);
+    });
+    await screen.findByText('Chat 61');
+
+    expect(screen.queryByText('Chat 60')).toBeNull();
+    expect(within(screen.getByRole('region', { name: 'Chats' })).getAllByRole('link')).toHaveLength(30);
+    receive.cancel();
+  });
+
+  test("losing a channel's scope removes its row from a Groups page and its continuation", async () => {
+    const { server, cache } = await fixture(0, '/messages?filter=group');
+    for (let index = 31; index >= 1; index -= 1)
+      server.chat.addChannel({
+        channel: { ...channel, id: `group-${String(index)}`, label: `Group ${String(index)}`, kind: 'group' },
+        members: [{ accountId: tutor.id }],
+      });
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelsKey });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Show more' }));
+    await screen.findByText('Group 31');
+
+    server.chat.removeMember('group-1', tutor.id);
+    await act(async () => {
+      evictChannel(cache, 'group-1');
+      await cache.invalidateQueries({ queryKey: channelPageKey('', 'group', 0, null) });
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText('Group 1')).toBeNull();
+    });
+    expect(screen.queryByText('Group 31')).not.toBeNull();
+    for (const [, page] of cache.getQueriesData<import('./api.ts').ChannelPage>({ queryKey: channelsKey }))
+      expect(page?.items.some((item) => item.id === 'group-1')).toBe(false);
+  });
+
+  test('a history change of only the filter moves focus from the list to the pressed filter', async () => {
+    const { router } = await fixture(0, '/messages?filter=direct');
+    fireEvent.click(await screen.findByRole('button', { name: 'All' }));
+    const row = await screen.findByRole('link', { name: 'Student' });
+    row.focus();
+
+    await act(async () => {
+      await router.navigate(-1);
+      await Promise.resolve();
+    });
+    await screen.findByRole('link', { name: 'Student' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Students' }));
   });
 });

@@ -4,7 +4,7 @@ import { describe, expect, test } from 'vitest';
 import { assignmentListKey, submissionKey } from '../features/assignment/keys.ts';
 import { studentHomeKey, tutorHomeKey } from '../features/home/api.ts';
 import { issueKey, issueListKey } from '../features/homework/api.ts';
-import { channelKey, channelsKey, unreadChannelsKey, messagesKey } from '../features/messages/keys.ts';
+import { channelPageKey, channelKey, unreadChannelsKey, messagesKey } from '../features/messages/keys.ts';
 import { queuePanelKey, reviewSubmissionKey } from '../features/review/keys.ts';
 import { lessonKey } from '../features/schedule/keys.ts';
 import { manualScheduler } from '../lib/api/fakeTransport.ts';
@@ -77,8 +77,8 @@ describe('chat event refetches', () => {
     const scheduler = manualScheduler();
     const keys = [
       unreadChannelsKey,
-      [...channelsKey, '', null],
-      [...channelsKey, '', 'older'],
+      channelPageKey('', 'all', 0, null),
+      channelPageKey('', 'all', 0, 'older'),
       messagesKey('a'),
       messagesKey('b'),
     ];
@@ -196,8 +196,8 @@ describe('pin change refetches', () => {
     readonly read: number;
   }
 
-  const firstKey = [...channelsKey, '', null];
-  const laterKey = [...channelsKey, '', 0, 'later'];
+  const firstKey = channelPageKey('', 'all', 0, null);
+  const laterKey = channelPageKey('', 'all', 0, 'later');
 
   async function watchPinQueries(
     client: FollowingQueryClient,
@@ -330,8 +330,8 @@ test('channel changes evict inactive private data and previews from every cached
   } as const;
   client.setQueryData(['channel', 'a'], channel);
   client.setQueryData(messagesKey('a'), { items: [{ body: 'Private history' }], next_cursor: null });
-  const firstKey = [...channelsKey, '', null];
-  const laterKey = [...channelsKey, '', 'later'];
+  const firstKey = channelPageKey('', 'all', 0, null);
+  const laterKey = channelPageKey('', 'all', 0, 'later');
   client.setQueryData(firstKey, { items: [channel], next_cursor: 'later', unread_channels: 0 });
   client.setQueryData(laterKey, { items: [channel, { ...channel, id: 'b' }], next_cursor: null, unread_channels: 0 });
   const onEvent = liveRefetch(client, new NotificationArrivals(), scheduler);

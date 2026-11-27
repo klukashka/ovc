@@ -199,6 +199,8 @@ LEFT JOIN relationships AS own_link
     ON own_link.tutor_id = members.tutor_id AND own_link.student_id = members.user_id AND own_link.state <> 'discarded'
 WHERE members.user_id = @user_id
     AND (sqlc.narg(channel_id)::uuid IS NULL OR members.channel_id = sqlc.narg(channel_id)::uuid)
+    AND (sqlc.narg(kind)::text IS NULL OR members.kind = sqlc.narg(kind)::text)
+    AND (sqlc.narg(unread_only)::boolean IS NOT TRUE OR members.last_seq > members.last_read_seq)
     AND (
         sqlc.narg(pattern)::text IS NULL
         OR (members.tutor_id = members.user_id AND COALESCE(relationships.display_name, groups.name) ILIKE sqlc.narg(pattern)::text ESCAPE '\')
