@@ -156,7 +156,15 @@
       "Bash(sudo *)",
       "Edit(//etc/**)",
       "Edit(//usr/**)",
-      "Edit(//System/**)"
+      "Edit(//System/**)",
+      "mcp__plugin_design_asana__*",
+      "mcp__plugin_design_atlassian__*",
+      "mcp__plugin_design_figma__*",
+      "mcp__plugin_design_intercom__*",
+      "mcp__plugin_design_linear__*",
+      "mcp__plugin_design_notion__*",
+      "mcp__plugin_design_slack__*",
+      "mcp__plugin_ui-design-review_uxkin__*"
     ]
   },
   "attribution": {
