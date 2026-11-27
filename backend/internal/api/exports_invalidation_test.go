@@ -770,3 +770,50 @@ func (h *authHarness) unverifiedSinceBeforeTheCleanup(t *testing.T, student doma
 		t.Fatal(err)
 	}
 }
+
+func TestDeletingOrBlockingAFormerGroupMemberWithdrawsTheRemainingMembersExports(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []struct {
+		name  string
+		cause domain.ExportInvalidationCause
+	}{
+		{name: "a deleted former member", cause: domain.ExportCauseAccountDeleted},
+		{name: "a blocked former member", cause: domain.ExportCauseAccountBlocked},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			t.Parallel()
+			h := newAuthHarness(t)
+			world := h.exportWorld(t)
+			channel := h.groupChannel(t, world.group.ID)
+			body := "A former group member's message retained in the archive"
+			h.sent(t, world.first.token, channel.ID, body)
+			h.mustAnswer(t, h.groupCall(t, world.tutor.token, http.MethodPatch, world.group.ID, "", fmt.Sprintf(`{"remove":[%q]}`, world.firstCard.ID)), http.StatusOK)
+			second := h.readyExportOf(t, world.second)
+			outsider := h.readyExportOf(t, world.outsider)
+			tutor := h.readyExportOf(t, world.tutor)
+			minted, address := h.mintExport(t, world.second.token)
+			h.mustAnswer(t, minted, http.StatusOK)
+			archive := openStudentArchive(t, downloadArchive(t, address.URL))
+			if archive.messageRow(body) == nil {
+				t.Fatal("the remaining member's archive must contain the former member's message before invalidation")
+			}
+
+			var deleted response
+			if scenario.cause == domain.ExportCauseAccountDeleted {
+				deleted = h.deleteMe(t, world.first.token, world.first.password)
+			} else {
+				if _, err := h.operators().Block(context.Background(), world.first.email); err != nil {
+					t.Fatal(err)
+				}
+			}
+			h.tick(t)
+
+			if scenario.cause == domain.ExportCauseAccountDeleted {
+				h.mustAnswer(t, deleted, http.StatusNoContent)
+			}
+			h.assertWithdrawn(t, second, scenario.cause, true)
+			h.assertWithdrawn(t, tutor, scenario.cause, true)
+			h.assertStillReady(t, outsider)
+		})
+	}
+}

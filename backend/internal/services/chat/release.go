@@ -175,10 +175,12 @@ func (r Release) clearPinsOfErased(ctx context.Context, repos repositories.Repos
 	if err := signalPinChanged(ctx, repos, channels); err != nil {
 		return err
 	}
-	for _, pin := range cleared {
-		r.Logger.LogAttrs(ctx, slog.LevelInfo, "chat.message.unpinned", channelAttribute(pin.Channel), messageAttribute(pin.Message),
-			userAttribute(pin.Tutor), slog.String("cause", string(domain.UnpinPurged)))
-	}
+	repos.AfterCommit(ctx, func(ctx context.Context) {
+		for _, pin := range cleared {
+			r.Logger.LogAttrs(ctx, slog.LevelInfo, "chat.message.unpinned", channelAttribute(pin.Channel), messageAttribute(pin.Message),
+				userAttribute(pin.Tutor), slog.String("cause", string(domain.UnpinPurged)))
+		}
+	})
 	return nil
 }
 

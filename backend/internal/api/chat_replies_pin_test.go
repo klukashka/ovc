@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"ovc/backend/internal/domain"
+	"ovc/backend/internal/repositories"
+	"ovc/backend/internal/services/tutoring"
 )
 
 const replyField = "body.reply_to_message_id:not_found"
@@ -553,5 +556,41 @@ func TestQuotesAndThePinCarryTheReclaimCueForBothSides(t *testing.T) {
 	}
 	if !strings.Contains(previewOfQuote(pinForOwner), "whoever held the account") || !pinForOwner.Own {
 		t.Fatalf("the owner sees the pin %+v", pinForOwner)
+	}
+}
+
+func TestARolledBackStudentPurgeBatchRecordsNoUnpin(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	parties := h.activeStudentInAGroup(t)
+	direct := h.directChannel(t, parties.card.ID)
+	message := h.sent(t, parties.studentToken, direct.ID, "Pinned before the rolled-back purge")
+	h.mustAnswer(t, h.pin(t, parties.tutorToken, direct.ID, message.ID), http.StatusNoContent)
+	h.mustAnswer(t, h.deleteMe(t, parties.studentToken, accountPassword), http.StatusNoContent)
+	batches := tutoring.New(tutoring.Dependencies{Store: h.store, Random: randomPerTest(t), Logger: h.logger, Exports: h.effects, PurgeBatchRows: 2})
+	rollback := errors.New("roll back the student purge batch")
+	var erased int64
+
+	err := h.store.WithTx(context.Background(), func(repos repositories.Repositories) error {
+		count, purgeErr := batches.PurgeBatch(context.Background(), repos, parties.student, domain.RoleStudent, h.now(t))
+		if purgeErr != nil {
+			return purgeErr
+		}
+		erased = count
+		return rollback
+	})
+
+	if !errors.Is(err, rollback) || erased != 1 {
+		t.Fatalf("the rolled-back batch erased %d messages and returned %v", erased, err)
+	}
+	if h.countLogs(`"msg":"chat.message.unpinned"`, message.ID, `"cause":"purged"`) != 0 {
+		t.Fatal("the rolled-back purge recorded an unpin")
+	}
+	var pinned *string
+	if err := h.database.Pool.QueryRow(context.Background(), "SELECT pinned_message_id::text FROM channels WHERE id = $1::uuid", direct.ID).Scan(&pinned); err != nil {
+		t.Fatal(err)
+	}
+	if pinned == nil || *pinned != message.ID {
+		t.Fatal("the rolled-back purge changed the channel's pin")
 	}
 }

@@ -289,3 +289,43 @@ func TestExportBuildStoppedByAWorkerShutdownRequestsCleanup(t *testing.T) {
 		t.Fatalf("a build stopped by the worker's shutdown left the export %s, its intent open %v", row.State, open)
 	}
 }
+
+func TestExportPublicationThatFailsSetsTheExportFailedAndCleansItsObject(t *testing.T) {
+	t.Parallel()
+	h := newAuthHarness(t)
+	user, token := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	h.readyExport(t, token)
+	h.at(t, authStart.Add(24*time.Hour))
+	token = h.relogin(t, tutorEmail)
+	h.buildingExport(t, user, token)
+	release := h.holdRow(t, "SELECT "+lockedRowPosition+" FROM export_limits WHERE user_id = $1::uuid FOR UPDATE", user.String())
+
+	building := h.tickInBackground(t)
+	h.waitForLockWaiters(t, 1)
+	h.cancelLockWaiters(t, 1)
+	awaitTick(t, building)
+	release()
+
+	row, found := h.exportOf(t, user)
+	if !found || row.State != domain.ExportFailed || row.Failure == nil || *row.Failure != domain.ExportFailureError {
+		t.Fatalf("a failed publication left the export %s with failure %v", row.State, row.Failure)
+	}
+	if row.BuildID == nil || row.StorageKey == nil {
+		t.Fatal("the failed export lost its build identifier or storage key")
+	}
+	if h.exportNotifications(t, user, domain.NotificationExportFailed) != 1 {
+		t.Fatal("the failed publication did not notify its owner exactly once")
+	}
+	if _, open := h.intentOf(t, *row.BuildID); open || h.objectExists(t, *row.StorageKey) || h.openUploads(t, *row.StorageKey) != 0 {
+		t.Fatal("the failed publication left its intent, object or open upload")
+	}
+	if h.exportCapacityUsed(t) != 0 {
+		t.Fatal("the failed publication kept export capacity")
+	}
+	if h.countLogs(`"msg":"export.failed"`, row.BuildID.String(), `"failure":"error"`, `"level":"ERROR"`, `"kind":`) != 1 {
+		t.Fatal("the failed publication was not recorded exactly once with its failure and kind")
+	}
+	if h.countLogs(`"msg":"worker.claim_lane.failed"`) != 0 || h.countLogs(`"msg":"export.built"`, row.BuildID.String()) != 0 {
+		t.Fatal("the failed publication escaped to the claim lane or was recorded as built")
+	}
+}

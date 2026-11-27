@@ -187,6 +187,10 @@ UNION
 SELECT others.user_id::uuid FROM channel_members AS mine
 JOIN channel_members AS others ON others.channel_id = mine.channel_id
 WHERE mine.user_id = $1::uuid AND others.user_id <> $1::uuid
+UNION
+SELECT readers.user_id::uuid FROM (SELECT DISTINCT messages.channel_id FROM messages WHERE messages.sender_id = $1::uuid) AS sent
+JOIN channel_members AS readers ON readers.channel_id = sent.channel_id
+WHERE readers.user_id <> $1::uuid
 ORDER BY user_id
 `
 

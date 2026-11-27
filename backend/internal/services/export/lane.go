@@ -102,7 +102,11 @@ func (s *Service) Build(ctx context.Context, claim Claim) error {
 		err = s.complete(bounded, claim, upload)
 	}
 	if err == nil {
-		return s.publish(ctx, claim, archive, started)
+		err = s.publish(ctx, claim, archive, started)
+		if err == nil {
+			return nil
+		}
+		return s.settleFailure(ctx, claim, domain.ExportFailureError, err, started, objectCompleted)
 	}
 	result := classify(err)
 	if bounded.Err() != nil && ctx.Err() == nil && !result.stopped {
@@ -271,7 +275,18 @@ func (s *Service) withdrawAtPurgeDue(ctx context.Context, repos repositories.Rep
 	return nil
 }
 
+type objectState bool
+
+const (
+	objectOpen      objectState = false
+	objectCompleted objectState = true
+)
+
 func (s *Service) fail(ctx context.Context, claim Claim, failure domain.ExportFailure, cause error, started time.Time) error {
+	return s.settleFailure(ctx, claim, failure, cause, started, objectOpen)
+}
+
+func (s *Service) settleFailure(ctx context.Context, claim Claim, failure domain.ExportFailure, cause error, started time.Time, object objectState) error {
 	settled, cancel := s.settlement(ctx)
 	defer cancel()
 	now, err := s.deps.Clock.Instant(settled)
@@ -281,20 +296,25 @@ func (s *Service) fail(ctx context.Context, claim Claim, failure domain.ExportFa
 	failed := false
 	err = s.deps.Store.WithTx(settled, func(repos repositories.Repositories) error {
 		row, err := repos.Exports.Lock(settled, claim.Export.ID)
-		if errors.Is(err, repositories.ErrNotFound) {
-			return nil
-		}
-		if err != nil {
+		found := err == nil
+		if err != nil && !errors.Is(err, repositories.ErrNotFound) {
 			return err
 		}
-		if !stillBuilding(row, true, claim.Build) {
+		if object == objectCompleted {
+			if err := s.confirmCleanupIfOpen(settled, repos, claim.Build, now); err != nil {
+				return err
+			}
+		}
+		if !stillBuilding(row, found, claim.Build) {
 			return nil
 		}
 		if _, err := repos.Exports.Fail(settled, row.ID, failure, now); err != nil {
 			return err
 		}
-		if err := s.requestCleanupIfOpen(settled, repos, claim.Build, now); err != nil {
-			return err
+		if object == objectOpen {
+			if err := s.requestCleanupIfOpen(settled, repos, claim.Build, now); err != nil {
+				return err
+			}
 		}
 		failed = true
 		return s.notifyOwner(settled, repos, row, claim.Build, domain.NotificationExportFailed, now)
@@ -313,6 +333,17 @@ func (s *Service) fail(ctx context.Context, claim Claim, failure domain.ExportFa
 		s.deps.Logger.LogAttrs(ctx, level, "export.failed", attributes...)
 	}
 	return nil
+}
+
+func (s *Service) confirmCleanupIfOpen(ctx context.Context, repos repositories.Repositories, build domain.ExportBuildID, now time.Time) error {
+	_, err := repos.UploadIntents.Lock(ctx, build.Identity())
+	if errors.Is(err, repositories.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return s.deps.Cleanup.ConfirmAndCleanExport(ctx, repos, build, now)
 }
 
 func (s *Service) notifyOwner(ctx context.Context, repos repositories.Repositories, row repositories.Export, build domain.ExportBuildID, event domain.NotificationEvent, now time.Time) error {
