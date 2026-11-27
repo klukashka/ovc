@@ -1,4 +1,4 @@
-import type { ReactElement } from 'react';
+import { type ReactElement, useLayoutEffect, useRef } from 'react';
 
 import type { ChannelFilter } from './filters.ts';
 import type { ChatTexts } from './translations.ts';
@@ -23,8 +23,37 @@ export function ChannelFilters({
     unread: texts.filterUnread,
   };
   const count = unread > 99 ? '99+' : String(unread);
+  const row = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const container = row.current;
+    const pressed = container?.querySelector<HTMLElement>('[aria-pressed="true"]');
+    if (!container || !pressed) return;
+    function reveal(scroller: HTMLElement, target: HTMLElement): void {
+      const visible = scroller.getBoundingClientRect();
+      const box = target.getBoundingClientRect();
+      if (box.right > visible.right) scroller.scrollLeft += Math.ceil(box.right - visible.right);
+      if (box.left < visible.left) scroller.scrollLeft -= Math.ceil(visible.left - box.left);
+    }
+    reveal(container, pressed);
+    const observer =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            reveal(container, pressed);
+          });
+    observer?.observe(pressed);
+    observer?.observe(container);
+    return (): void => {
+      observer?.disconnect();
+    };
+  }, [filter]);
   return (
-    <div role="group" aria-label={texts.filters} className="flex min-w-0 max-w-full flex-wrap gap-1">
+    <div
+      ref={row}
+      role="group"
+      aria-label={texts.filters}
+      className="relative flex min-w-0 max-w-full flex-nowrap gap-1 overflow-x-auto [scrollbar-width:none] after:block after:w-px after:shrink-0 after:content-['']"
+    >
       {(['all', 'direct', 'group', 'unread'] as const).map((value) => (
         <button
           key={value}
