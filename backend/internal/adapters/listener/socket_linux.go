@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"syscall"
 	"time"
+
+	"golang.org/x/sys/unix"
 )
 
 func socketControl(userTimeout time.Duration) func(string, string, syscall.RawConn) error {
@@ -14,7 +16,7 @@ func socketControl(userTimeout time.Duration) func(string, string, syscall.RawCo
 		}
 		var optionErr error
 		if err := raw.Control(func(descriptor uintptr) {
-			optionErr = syscall.SetsockoptInt(int(descriptor), syscall.IPPROTO_TCP, syscall.TCP_USER_TIMEOUT, milliseconds)
+			optionErr = unix.SetsockoptInt(int(descriptor), unix.IPPROTO_TCP, unix.TCP_USER_TIMEOUT, milliseconds)
 		}); err != nil {
 			return fmt.Errorf("reach the listener socket: %w", err)
 		}
