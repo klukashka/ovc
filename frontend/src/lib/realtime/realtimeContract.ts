@@ -9,6 +9,7 @@ export interface RealtimeContractSubject {
   readonly closeSockets: (code: typeof closeCodes.tooMany | typeof closeCodes.reconnect) => Promise<void>;
   readonly changeRelationship: () => Promise<void>;
   readonly changeChannel: () => Promise<void>;
+  readonly pinMessage: () => Promise<void>;
   readonly issueAssignment: () => Promise<void>;
   readonly assignmentStudent: () => Promise<{ readonly token: string; readonly submit: () => Promise<void> }>;
   readonly exchangeMessage: () => Promise<void>;
@@ -355,6 +356,15 @@ export const realtimeContract: Readonly<Record<string, RealtimeContractScenario>
 
       const frame = await connection.frameOfType('entity.changed');
       check(frame.type === 'entity.changed' && frame.kind === 'channel', 'expected a channel change');
+    }),
+  'a pin change arrives as entity.changed of kind channel_pin': (subject) =>
+    withConnection(subject, async (connection) => {
+      await connection.authenticated(await subject.token());
+
+      await subject.pinMessage();
+
+      const frame = await connection.changeOfKind('channel_pin');
+      check(frame.type === 'entity.changed' && frame.id !== '', 'expected a pin change naming its channel');
     }),
   'an issued assignment arrives as entity.changed of kinds issue and submission, the issue naming its lesson': (
     subject,

@@ -20,6 +20,7 @@ interface HistoryOwner {
 
 interface ChatRefetch {
   readonly changed: (channelId?: string, event?: Extract<RealtimeEvent, { readonly kind: 'message' }>) => void;
+  readonly pinChanged: (channelId: string) => void;
   readonly read: () => void;
   readonly mount: (channelId: string, owner: HistoryOwner) => () => void;
   readonly cancel: () => void;
@@ -79,6 +80,13 @@ export function chatRefetch(queryClient: QueryClient, scheduler: Scheduler): Cha
     },
     read: (): void => {
       if (!suspended) schedule();
+    },
+    pinChanged: (channelId): void => {
+      if (suspended) return;
+      for (const query of queryClient.getQueryCache().getAll()) {
+        if (query.queryKey[0] === 'channel' && query.queryKey[1] === channelId) pending.add(query.queryHash);
+      }
+      schedule();
     },
     changed: (channelId, event): void => {
       if (suspended) return;

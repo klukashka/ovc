@@ -226,6 +226,8 @@ export const homeworkTexts = {
     removeFile: 'Remove {name}',
     attachedFiles: 'Attached files',
     fileTooLarge: 'File is larger than 100 MB',
+    wrongType: 'This file type is not allowed here',
+    folderRefused: "Folders can't be attached. Choose the files inside.",
     questions: 'Questions',
     counts: '{total} · automatically {automatic} · you check {manual}',
     noQuestions: 'No questions yet.',

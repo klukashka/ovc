@@ -4,6 +4,7 @@ export const entityKinds = [
   'notification',
   'lesson',
   'channel',
+  'channel_pin',
   'issue',
   'submission',
 ] as const;

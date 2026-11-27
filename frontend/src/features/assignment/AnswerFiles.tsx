@@ -3,12 +3,15 @@ import { useTranslation } from 'react-i18next';
 
 import { FormAlert, linkClass, quietButtonClass, textButtonClass } from '../../components/ui/Form.tsx';
 import { downloadAddress } from '../../lib/files/downloadAddress.ts';
+import { carriesFiles, holdsFolder } from '../../lib/files/dropGuard.ts';
 import { type ApiError, apiErrorFrom, useApiClient } from '../../lib/api/client.ts';
 import { useSession } from '../../lib/api/session.ts';
 import { formatStorage } from '../settings/storageAmount.ts';
 import { UploadQueue } from '../messages/UploadQueue.ts';
 import type { AnswerFile, QuestionBlock } from './api.ts';
 import { type FileRefusal, acceptList, fileRefusal, pictureAcceptList } from './fileKinds.ts';
+
+export { useFileDropGuard } from '../../lib/files/dropGuard.ts';
 
 export type FileQuestion = Extract<QuestionBlock, { readonly type: 'file' }>;
 
@@ -62,40 +65,6 @@ function useAnswerUploads(submissionId: string, questionId: string): UploadQueue
     };
   }, [queue, session, epoch]);
   return queue;
-}
-
-function carriesFiles(event: { readonly dataTransfer: DataTransfer | null }): boolean {
-  return event.dataTransfer?.types.includes('Files') ?? false;
-}
-
-function holdsFolder(transfer: DataTransfer): boolean {
-  return Array.from(transfer.items).some((item) => item.webkitGetAsEntry()?.isDirectory === true);
-}
-
-function outsideDropZone(event: globalThis.DragEvent): boolean {
-  const target = event.target;
-  const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
-  return element?.closest('[data-drop-zone]') === null || element === null;
-}
-
-export function useFileDropGuard(): void {
-  useEffect(() => {
-    const guard = (event: globalThis.DragEvent): void => {
-      if (!carriesFiles(event)) {
-        return;
-      }
-      event.preventDefault();
-      if (event.type === 'dragover' && event.dataTransfer !== null && outsideDropZone(event)) {
-        event.dataTransfer.dropEffect = 'none';
-      }
-    };
-    window.addEventListener('dragover', guard);
-    window.addEventListener('drop', guard);
-    return (): void => {
-      window.removeEventListener('dragover', guard);
-      window.removeEventListener('drop', guard);
-    };
-  }, []);
 }
 
 function focusFirst(candidates: readonly (HTMLElement | null | undefined)[]): void {

@@ -11,6 +11,8 @@ import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fake
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import { StudentsPage } from './StudentsPage.tsx';
+import { studentListTexts as englishStudentListTexts } from './listTexts.en.ts';
+import { studentListTexts as russianStudentListTexts } from './listTexts.ru.ts';
 
 const origin = 'https://ovc.example';
 
@@ -26,6 +28,8 @@ async function showFailingJoinRequests(address: string): Promise<FakeAuthServer>
   server.failJoinRequestReads(2);
   await session.signIn('maria@example.org', 'a long password');
   const i18n = await createI18n('en');
+  i18n.addResourceBundle('en', 'translation', { studentList: englishStudentListTexts }, true, true);
+  i18n.addResourceBundle('ru', 'translation', { studentList: russianStudentListTexts }, true, true);
   const router = createMemoryRouter(
     [{ path: '/students', element: <StudentsPage />, handle: { title: 'page.students' } satisfies RouteHandle }],
     { initialEntries: [address] },

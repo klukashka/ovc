@@ -1,0 +1,17 @@
+export const invitationPageTexts = {
+  invites: '{name} invites you to study on OVC.',
+  createAccount: 'Create account',
+  signInToAccept: 'Sign in to accept',
+  signUpSubmit: 'Create account and join',
+  signInSubmit: 'Sign in',
+  checkEmailOrSignIn: 'Check your email, or sign in to accept.',
+  signedInAs: 'You are signed in as {email}.',
+  accept: 'Accept',
+  useAnotherAccount: 'Use another account',
+  reclaimWaiting: 'You have links waiting for your choice',
+  tutorAccount: 'Tutor accounts cannot study. To accept this invitation, sign out and use a student account.',
+  signOutForStudent: 'Sign out to use a student account',
+  invalid: 'This invitation is no longer valid — ask your tutor for a new link.',
+  emailMismatch: 'This invitation is for another email address.',
+  openLinkAgain: 'Open the link from your tutor again.',
+};

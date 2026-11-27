@@ -1,10 +1,16 @@
-import type { BrowserContext, Page } from '@playwright/test';
+import type { BrowserContext, Locator, Page } from '@playwright/test';
 
 import type { ObservedBrowser } from './browser-diagnostics.ts';
 
 import { type TestAccount, newTestAccount, signInThroughTheApi } from './accounts.ts';
 import type { Deployment } from './deployment.ts';
-import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor } from './fixtures.ts';
+import {
+  type TestControl,
+  diagnosedTest as test,
+  expect,
+  seedVerifiedUser,
+  signUpAndConfirmTutor,
+} from './fixtures.ts';
 import { createReadyTemplate, issueThroughTheApi } from './homework.ts';
 import { recordShownRegion, shownRegion } from './observers.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
@@ -188,6 +194,37 @@ async function tutorWithStudent(deployment: Deployment): Promise<TutorWithStuden
   return { maria, cardId };
 }
 
+interface NightWeek {
+  readonly maria: TestAccount;
+  readonly date: LocalDate;
+}
+
+const nightTitle = 'Ночной урок';
+const afternoonTitle = 'Дневной урок';
+
+async function weekWithANightLesson(deployment: Deployment, control: TestControl): Promise<NightWeek> {
+  const { maria, cardId } = await tutorWithStudent(deployment);
+  await setTimezone(deployment, maria, moscow);
+  const date = await moscowTomorrow(control.now);
+  for (const [title, start] of [
+    [nightTitle, '00:35'],
+    [afternoonTitle, '15:00'],
+  ] as const) {
+    await scheduleLessons(deployment, maria, { relationship_id: cardId, title, date, start, duration_minutes: 60 });
+  }
+  return { maria, date };
+}
+
+async function shownInTheHoursArea(lesson: Locator): Promise<boolean> {
+  return lesson.evaluate((link) => {
+    const hours = link.closest('[data-part="hours"]');
+    if (hours === null) throw new Error('the lesson is not in the hours area');
+    const pane = hours.getBoundingClientRect();
+    const block = link.getBoundingClientRect();
+    return block.top >= pane.top && block.bottom <= pane.bottom;
+  });
+}
+
 test.describe('schedule for a tutor in Russian', () => {
   test.use({ locale: 'ru-RU', timezoneId: moscow, viewport: { width: 1280, height: 800 } });
 
@@ -301,6 +338,64 @@ test.describe('schedule for a tutor in Russian', () => {
     expect(shownWithoutScrolling).toBe(true);
     expect(blockText).not.toContain('Запланирован');
     await expect(page.getByRole('main').getByText('Запланирован', { exact: true })).toBeVisible();
+  });
+
+  test('schedule › a week whose 00:35 lesson has not ended opens at 00:00 with the lesson in view', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { maria, date } = await weekWithANightLesson(deployment, control);
+    await page.clock.install({ time: await control.now() });
+    await signInThroughTheApi(page, maria);
+
+    await page.goto(weekAddress(date));
+
+    const night = lessonLinks(page).filter({ hasText: nightTitle });
+    await night.waitFor();
+    expect(await night.evaluate((link) => link.closest('[data-part="hours"]')?.scrollTop)).toBe(0);
+    expect(await shownInTheHoursArea(night)).toBe(true);
+  });
+
+  test('schedule › a week whose 00:35 lesson has ended opens before its next lesson, above which the 00:35 lesson sits', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { maria, date } = await weekWithANightLesson(deployment, control);
+    await control.advance(Math.ceil((moscowInstant(date, '02:00') - (await control.now())) / 1000));
+    await page.clock.install({ time: await control.now() });
+    await signInThroughTheApi(page, maria);
+
+    await page.goto(weekAddress(date));
+
+    const night = lessonLinks(page).filter({ hasText: nightTitle });
+    const afternoon = lessonLinks(page).filter({ hasText: afternoonTitle });
+    await afternoon.waitFor();
+    expect(await shownInTheHoursArea(afternoon)).toBe(true);
+    expect(await shownInTheHoursArea(night)).toBe(false);
+  });
+
+  test('schedule › in a week whose 00:35 lesson has ended, scrolling the hours up to 00:00 reaches the 00:35 lesson', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const { maria, date } = await weekWithANightLesson(deployment, control);
+    await control.advance(Math.ceil((moscowInstant(date, '02:00') - (await control.now())) / 1000));
+    await page.clock.install({ time: await control.now() });
+    await signInThroughTheApi(page, maria);
+    await page.goto(weekAddress(date));
+    const night = lessonLinks(page).filter({ hasText: nightTitle });
+    await lessonLinks(page).filter({ hasText: afternoonTitle }).waitFor();
+    const hours = page.locator('section[aria-label="Уроки недели"] [data-part="hours"]');
+
+    await hours.evaluate((element) => {
+      element.scrollTop = 0;
+    });
+
+    await expect.poll(() => shownInTheHoursArea(night)).toBe(true);
+    expect(await hours.evaluate((element) => element.scrollTop)).toBe(0);
   });
 
   test('schedule › Ends on starts from the first date the tutor chose', async ({ page, deployment, control }) => {

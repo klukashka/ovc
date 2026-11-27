@@ -37,7 +37,7 @@ import { refusalText } from '../../components/ui/Refusal.tsx';
 import { StatusWord } from '../../components/ui/StatusWord.tsx';
 import { type ApiClient, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type Me, useSignedInAccount } from '../../lib/api/session.ts';
-import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
+import { type FeatureTexts, useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { formatDate, formatDateTime } from '../../lib/format/dates.ts';
 import {
   addDays,
@@ -761,7 +761,15 @@ function useHeadingWhenMenuLeaves(shown: boolean): void {
   }, [shown]);
 }
 
-function IssueContent({ issueId }: { readonly issueId: string }): ReactElement {
+function IssueContent({
+  issueId,
+  texts,
+  verified,
+}: {
+  readonly issueId: string;
+  readonly texts: FeatureTexts;
+  readonly verified: boolean;
+}): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const queryClient = useQueryClient();
@@ -776,6 +784,7 @@ function IssueContent({ issueId }: { readonly issueId: string }): ReactElement {
   const query = useQuery({
     queryKey: key,
     queryFn: ({ signal }) => fetchIssue(client, issueId, signal),
+    enabled: verified,
     retry: false,
   });
   const queryError = query.isError ? asApiError(query.error) : null;
@@ -829,6 +838,20 @@ function IssueContent({ issueId }: { readonly issueId: string }): ReactElement {
     },
   };
 
+  if (!texts.ready) {
+    return (
+      <Page>
+        {texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />}
+      </Page>
+    );
+  }
+  if (!verified) {
+    return (
+      <Page>
+        <ConfirmEmailPrompt />
+      </Page>
+    );
+  }
   if (notFound) {
     return (
       <Page title="page.notFound" focusTitle>
@@ -971,19 +994,5 @@ export function IssuePage(): ReactElement {
   const { issueId = '' } = useParams();
   const texts = useFeatureTexts('homework', homeworkTextLoaders);
   const me = useSignedInAccount();
-  if (!texts.ready) {
-    return (
-      <Page>
-        {texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />}
-      </Page>
-    );
-  }
-  if (!me.email_verified) {
-    return (
-      <Page>
-        <ConfirmEmailPrompt />
-      </Page>
-    );
-  }
-  return <IssueContent key={`${me.id}:${issueId}`} issueId={issueId} />;
+  return <IssueContent key={`${me.id}:${issueId}`} issueId={issueId} texts={texts} verified={me.email_verified} />;
 }

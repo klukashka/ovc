@@ -354,3 +354,71 @@ test.describe('My data in English on a computer', () => {
     expectDownloadedArchive(evidence);
   });
 });
+
+async function openMyDataInRussian(page: Page, control: TestControl, account: TestAccount): Promise<void> {
+  await page.clock.install({ time: await control.now() });
+  await signInThroughTheApi(page, account);
+  await page.goto('/settings/data');
+  await page.getByRole('heading', { level: 1, name: 'Мои данные' }).waitFor();
+}
+
+function russianExportSection(page: Page): Locator {
+  return page.getByRole('region', { name: 'Выгрузка ваших данных' });
+}
+
+async function insideThePageWidth(page: Page, control: Locator): Promise<boolean> {
+  const box = await control.boundingBox();
+  const width = await page.evaluate(() => document.documentElement.clientWidth);
+  return box !== null && box.x >= 0 && box.x + box.width <= width;
+}
+
+async function scrollsSideways(page: Page): Promise<boolean> {
+  return page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+}
+
+test.describe('My data in Russian on a phone', () => {
+  test.use({ locale: 'ru-RU', timezoneId: 'Europe/Moscow', viewport: { width: 360, height: 780 } });
+
+  test('a ready export shows its state in Russian with Download and Export actions inside the 360 px width', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Мария');
+    await seedReadyExport(deployment, control, tutor);
+    await page.clock.install({ time: await control.now() });
+    await signInThroughTheApi(page, tutor);
+
+    await page.goto('/settings/data');
+
+    const section = russianExportSection(page);
+    await expect(page.getByRole('heading', { level: 1, name: 'Мои данные' })).toBeVisible();
+    await expect(section.getByText('Выгрузка готова.')).toBeVisible();
+    await expect(section.getByText(/^Доступна до .+\.$/)).toBeVisible();
+    expect(await insideThePageWidth(page, section.getByRole('button', { name: 'Скачать' }))).toBe(true);
+    expect(
+      await insideThePageWidth(page, section.getByRole('button', { name: 'Действия с выгрузкой', exact: true })),
+    ).toBe(true);
+    expect(await scrollsSideways(page)).toBe(false);
+  });
+
+  test('a request in Russian closes the dialog and the notice takes focus without sideways scrolling', async ({
+    page,
+    deployment,
+    control,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Мария');
+    await openMyDataInRussian(page, control, tutor);
+    await russianExportSection(page).getByRole('button', { name: 'Запросить выгрузку' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Запросить выгрузку' });
+    await dialog.getByLabel('Текущий пароль').fill(tutor.password);
+
+    await dialog.getByRole('button', { name: 'Запросить выгрузку' }).click();
+
+    await expect(dialog).toBeHidden();
+    await expect(
+      russianExportSection(page).getByText('Выгрузка запрошена. Мы уведомим вас, когда она будет готова.'),
+    ).toBeFocused();
+    expect(await scrollsSideways(page)).toBe(false);
+  });
+});

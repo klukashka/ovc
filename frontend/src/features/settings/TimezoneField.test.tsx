@@ -7,6 +7,8 @@ import { type ManualScheduler, manualScheduler } from '../../lib/api/fakeTranspo
 import type { Language } from '../../lib/i18n/resources.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import { TimezoneField } from './TimezoneField.tsx';
+import { settingsTexts as englishSettingsTexts } from './settingsTexts.en.ts';
+import { settingsTexts as russianSettingsTexts } from './settingsTexts.ru.ts';
 
 interface SubmittedZones {
   readonly values: string[];
@@ -20,6 +22,8 @@ function schedulerAt(instant: number): ManualScheduler {
 
 async function showField(language: Language, current: string): Promise<SubmittedZones> {
   const i18n = await createI18n(language);
+  i18n.addResourceBundle('en', 'translation', { settings: englishSettingsTexts }, true, true);
+  i18n.addResourceBundle('ru', 'translation', { settings: russianSettingsTexts }, true, true);
   const submitted: SubmittedZones = { values: [] };
   await act(async () => {
     render(

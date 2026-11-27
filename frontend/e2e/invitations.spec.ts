@@ -671,6 +671,48 @@ async function scrollsSideways(page: Page): Promise<boolean> {
 test.describe('an invitation on a phone in Russian', () => {
   test.use({ locale: 'ru-RU', viewport: { width: 360, height: 780 }, colorScheme: 'dark' });
 
+  test('invitations › on a phone in Russian the privacy policy link fits the width without sideways scrolling', async ({
+    page,
+    deployment,
+  }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария', 'ru');
+    const card = await createCard(deployment, maria, 'Борис', null);
+    const policyLink = page.getByRole('link', { name: 'Политика конфиденциальности (откроется в новой вкладке)' });
+
+    await page.goto(card.link);
+
+    await page.waitForURL('**/invite');
+    await policyLink.waitFor();
+    const linkBox = await policyLink.boundingBox();
+    const pageWidth = await page.evaluate(() => document.documentElement.clientWidth);
+    expect(linkBox !== null && linkBox.x >= 0 && linkBox.x + linkBox.width <= pageWidth).toBe(true);
+    expect(await scrollsSideways(page)).toBe(false);
+  });
+
+  test('invitations › on a phone in Russian the privacy policy link opens the Russian policy in a new tab', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    const maria = await seedVerifiedUser(deployment, 'Мария', 'ru');
+    const card = await createCard(deployment, maria, 'Борис', null);
+    await page.goto(card.link);
+    await page.waitForURL('**/invite');
+    const policyLink = page.getByRole('link', { name: 'Политика конфиденциальности (откроется в новой вкладке)' });
+    await policyLink.waitFor();
+    const openedTab = page.context().waitForEvent('page');
+
+    await policyLink.click();
+
+    const policy = await openedTab;
+    await diagnostics.watch(policy);
+    await expect(policy.getByRole('heading', { level: 1 })).toHaveText('Политика конфиденциальности');
+    expect(policy.url()).toBe(`${deployment.origin}/privacy`);
+    expect(await policy.evaluate(() => document.documentElement.lang)).toBe('ru');
+    await expect(policyLink).toHaveAttribute('target', '_blank');
+    await policy.close();
+  });
+
   test('invitations › on a phone the tutor stacks above the invitation, the choices and Accept are full width and the token stays out', async ({
     page,
     deployment,

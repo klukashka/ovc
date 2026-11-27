@@ -19,7 +19,7 @@ import { useFormPreset, useLeaveFormRoute } from '../../components/ui/formRoute.
 import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { type ApiClient, asApiError, useApiClient } from '../../lib/api/client.ts';
-import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
+import { type FeatureTexts, useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { NotFoundContent } from '../../routes/NotFoundPage.tsx';
 import { type Me, useSignedInAccount } from '../../lib/api/session.ts';
 import { formatDateTime } from '../../lib/format/dates.ts';
@@ -545,7 +545,7 @@ function backLinkKey(address: string): BackLinkKey {
 
 const templateIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function IssueAssignmentContent(): ReactElement {
+function IssueAssignmentContent({ texts }: { readonly texts: FeatureTexts }): ReactElement {
   const { t } = useTranslation();
   const client = useApiClient();
   const me = useSignedInAccount();
@@ -563,7 +563,7 @@ function IssueAssignmentContent(): ReactElement {
     retry: false,
   });
   const templateError = template.error === null || template.data !== undefined ? null : asApiError(template.error);
-  const notFound = !templateIdValid || templateError?.code === 'not_found';
+  const notFound = texts.ready && (!templateIdValid || templateError?.code === 'not_found');
   const backLink = (
     <p>
       <Link
@@ -580,6 +580,9 @@ function IssueAssignmentContent(): ReactElement {
   );
 
   function body(): ReactElement {
+    if (!texts.ready) {
+      return texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />;
+    }
     if (!me.email_verified) {
       return <ConfirmEmailPrompt />;
     }
@@ -641,7 +644,7 @@ function IssueAssignmentContent(): ReactElement {
 
   return (
     <Page width="reading" {...(notFound ? { title: 'page.notFound' as const } : {})} focusTitle={notFound}>
-      {backLink}
+      {texts.ready ? backLink : null}
       {body()}
     </Page>
   );
@@ -649,12 +652,5 @@ function IssueAssignmentContent(): ReactElement {
 
 export function IssueAssignmentPage(): ReactElement {
   const texts = useFeatureTexts('homework', homeworkTextLoaders);
-  if (!texts.ready) {
-    return (
-      <Page width="reading">
-        {texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />}
-      </Page>
-    );
-  }
-  return <IssueAssignmentContent />;
+  return <IssueAssignmentContent texts={texts} />;
 }

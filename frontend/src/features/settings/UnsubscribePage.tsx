@@ -12,11 +12,14 @@ import {
   primaryButtonClass,
   retryAfterSeconds,
 } from '../../components/ui/Form.tsx';
-import { LoadFailed } from '../../components/ui/LoadState.tsx';
+import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { type ApiClient, type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { components } from '../../lib/api/schema.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { useAddressToken } from '../auth/AddressToken.tsx';
+import { emailSettingsTextLoaders } from './emailSettingsTexts.ts';
+import { unsubscribeTextLoaders } from './unsubscribeTexts.ts';
 
 type EmailGroup = components['schemas']['UnsubscribePreview']['group'];
 
@@ -81,7 +84,28 @@ function InvalidLinkMessage(): ReactElement {
 
 export function UnsubscribePage(): ReactElement {
   const token = useAddressToken();
-  return <Page width="reading">{token === null ? <InvalidLinkMessage /> : <Confirmation token={token} />}</Page>;
+  const emailTexts = useFeatureTexts('emailSettings', emailSettingsTextLoaders);
+  const unsubscribeTexts = useFeatureTexts('unsubscribe', unsubscribeTextLoaders);
+
+  function body(): ReactElement {
+    if (emailTexts.failed || unsubscribeTexts.failed) {
+      return (
+        <LoadFailed
+          error={asApiError(undefined)}
+          onRetry={() => {
+            emailTexts.retry();
+            unsubscribeTexts.retry();
+          }}
+        />
+      );
+    }
+    if (!emailTexts.ready || !unsubscribeTexts.ready) {
+      return <DelayedLoading />;
+    }
+    return token === null ? <InvalidLinkMessage /> : <Confirmation token={token} />;
+  }
+
+  return <Page width="reading">{body()}</Page>;
 }
 
 function GroupLine({ group }: { readonly group: EmailGroup }): ReactElement {

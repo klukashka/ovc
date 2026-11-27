@@ -114,15 +114,22 @@ describe('the error summary of a form with four fields', () => {
     expect(inlineMessage('city')).toBe('Enter a city.');
   });
 
-  test('each summary link moves focus to its field', async () => {
+  test('a summary link moves focus to its field', async () => {
     await renderForm();
     await submit();
 
     screen.getByRole('link', { name: 'Enter a city.' }).click();
-    const cityFocused = document.activeElement;
+
+    expect(document.activeElement).toBe(screen.getByLabelText('city'));
+  });
+
+  test('another summary link then moves focus to its own field', async () => {
+    await renderForm();
+    await submit();
+    screen.getByRole('link', { name: 'Enter a city.' }).click();
+
     screen.getByRole('link', { name: 'Enter a phone number.' }).click();
 
-    expect(cityFocused).toBe(screen.getByLabelText('city'));
     expect(document.activeElement).toBe(screen.getByLabelText('phone'));
   });
 
@@ -138,7 +145,7 @@ describe('the error summary of a form with four fields', () => {
     expect(inlineMessage('city')).toBe('Enter a city.');
   });
 
-  test('a server refusal stays until its field changes', async () => {
+  test('a server refusal stays when another field changes', async () => {
     await renderForm({ field: 'email', message: 'This address is already used.', source: 'server' });
     for (const field of fields) {
       fill(field, 'x');
@@ -146,10 +153,20 @@ describe('the error summary of a form with four fields', () => {
     await submit();
 
     fill('name', 'Anna');
-    const afterOtherField = inlineMessage('email');
+
+    expect(inlineMessage('email')).toBe('This address is already used.');
+  });
+
+  test('a server refusal goes once its own field changes', async () => {
+    await renderForm({ field: 'email', message: 'This address is already used.', source: 'server' });
+    for (const field of fields) {
+      fill(field, 'x');
+    }
+    await submit();
+    fill('name', 'Anna');
+
     fill('email', 'y');
 
-    expect(afterOtherField).toBe('This address is already used.');
     expect(inlineMessage('email')).toBeNull();
     expect(screen.queryByRole('alert')).toBeNull();
   });

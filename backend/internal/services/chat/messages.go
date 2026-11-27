@@ -425,7 +425,7 @@ func (s *Service) Delete(ctx context.Context, author Author, id domain.MessageID
 			return err
 		}
 		if unpinned {
-			if err := signalMembers(ctx, repos, []domain.ChannelID{scope.ChannelID}, everyMember); err != nil {
+			if err := signalPinChanged(ctx, repos, []domain.ChannelID{scope.ChannelID}); err != nil {
 				return err
 			}
 		}

@@ -8,7 +8,8 @@ import { attachmentsFolderOf, materialTitleOf } from './newTask.ts';
 export const uploadsInFlight = 4;
 
 export type AttachmentRefusal =
-  | { readonly kind: 'tooLarge' }
+  | { readonly kind: 'tooLarge'; readonly limit: Extract<UploadState, { kind: 'tooLarge' }>['limit'] }
+  | { readonly kind: 'wrongType' }
   | { readonly kind: 'failed'; readonly error: ApiError; readonly retryAfter: number | null };
 
 export type AttachmentState =
@@ -219,9 +220,12 @@ export class TaskAttachments {
         this.settle(entry, { kind: 'uploading', loaded: state.loaded, total: state.total });
         return;
       case 'tooLarge':
+        this.stopUpload(entry);
+        this.settle(entry, { kind: 'refused', refusal: { kind: 'tooLarge', limit: state.limit }, retryable: false });
+        return;
       case 'wrongType':
         this.stopUpload(entry);
-        this.settle(entry, { kind: 'refused', refusal: { kind: 'tooLarge' }, retryable: false });
+        this.settle(entry, { kind: 'refused', refusal: { kind: 'wrongType' }, retryable: false });
         return;
       case 'refused':
         this.stopUpload(entry);

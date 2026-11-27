@@ -12,6 +12,12 @@ import { createI18n } from '../../lib/i18n/i18n.ts';
 import { AddressTokenHolder } from '../auth/AddressToken.tsx';
 import { NotificationSettingsPage } from './NotificationSettingsPage.tsx';
 import { UnsubscribePage } from './UnsubscribePage.tsx';
+import { settingsTexts as englishSettingsTexts } from './settingsTexts.en.ts';
+import { settingsTexts as russianSettingsTexts } from './settingsTexts.ru.ts';
+import { emailSettingsTexts as englishEmailSettingsTexts } from './emailSettingsTexts.en.ts';
+import { emailSettingsTexts as russianEmailSettingsTexts } from './emailSettingsTexts.ru.ts';
+import { unsubscribeTexts as englishUnsubscribeTexts } from './unsubscribeTexts.en.ts';
+import { unsubscribeTexts as russianUnsubscribeTexts } from './unsubscribeTexts.ru.ts';
 
 const origin = 'https://ovc.example';
 const email = 'student@example.org';
@@ -29,6 +35,12 @@ function sessionOn(server: FakeAuthServer): Session {
 
 async function show(session: Session, element: ReactElement, address: string): Promise<QueryClient> {
   const i18n = await createI18n('ru');
+  i18n.addResourceBundle('en', 'translation', { settings: englishSettingsTexts }, true, true);
+  i18n.addResourceBundle('ru', 'translation', { settings: russianSettingsTexts }, true, true);
+  i18n.addResourceBundle('en', 'translation', { emailSettings: englishEmailSettingsTexts }, true, true);
+  i18n.addResourceBundle('ru', 'translation', { emailSettings: russianEmailSettingsTexts }, true, true);
+  i18n.addResourceBundle('en', 'translation', { unsubscribe: englishUnsubscribeTexts }, true, true);
+  i18n.addResourceBundle('ru', 'translation', { unsubscribe: russianUnsubscribeTexts }, true, true);
   const router = createMemoryRouter([{ element: <AddressTokenHolder />, children: [{ path: '*', element }] }], {
     initialEntries: [address],
   });

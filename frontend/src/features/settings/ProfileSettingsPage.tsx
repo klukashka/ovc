@@ -15,13 +15,16 @@ import {
   stringField,
 } from '../../components/ui/Form.tsx';
 import { LiveNotice } from '../../components/ui/LiveNotice.tsx';
+import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { useStoredValue, valueAccess } from '../../components/ui/serverValue.ts';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type components } from '../../lib/api/schema.ts';
 import { type Me, useSession, useSignedInAccount } from '../../lib/api/session.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { SettingsNav } from './SettingsNav.tsx';
 import { SettingsSection } from './SettingsRow.tsx';
+import { settingsTextLoaders } from './settingsTexts.ts';
 
 type Saving =
   | { readonly kind: 'idle' }
@@ -299,6 +302,16 @@ function DetailsSection({ me, work }: { readonly me: Me; readonly work: PendingW
 export function ProfileSettingsPage(): ReactElement {
   const me = useSignedInAccount();
   const work = usePendingWork();
+  const texts = useFeatureTexts('settings', settingsTextLoaders);
+
+  if (!texts.ready) {
+    return (
+      <Page>
+        {texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />}
+      </Page>
+    );
+  }
+
   return (
     <Page>
       <SettingsNav />

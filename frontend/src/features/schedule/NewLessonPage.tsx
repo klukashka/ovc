@@ -21,10 +21,12 @@ import {
 import { ErrorSummary, type FieldProblem, namedField, useFieldProblems } from '../../components/ui/FormProblems.tsx';
 import { useFormPreset, useLeaveFormRoute } from '../../components/ui/formRoute.ts';
 import { ConfirmationPrompt } from '../../components/ui/ConfirmationPrompt.tsx';
+import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { Refusal, refusalText } from '../../components/ui/Refusal.tsx';
-import { type ApiError, useApiClient } from '../../lib/api/client.ts';
+import { type ApiError, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { isLocalDate } from '../../lib/time/localDates.ts';
 import { type NewLesson, lessonDurationLimits, seriesCountLimit } from './api.ts';
 import { type Audience, AudiencePicker, audienceOf } from './AudiencePicker.tsx';
@@ -35,6 +37,7 @@ import { useMaterialTexts } from './materialTexts.ts';
 import { MaterialsField } from './MaterialPicker.tsx';
 import { type PickedMaterial, idsOf } from './materials.ts';
 import { type LessonPrefill, nextFullHour } from './newLesson.ts';
+import { newLessonFormTextLoaders } from './newLessonTexts.ts';
 import { OverlapWarning } from './OverlapWarning.tsx';
 
 const defaultDurationMinutes = 60;
@@ -45,8 +48,8 @@ type SeriesEnd = 'date' | 'count';
 
 function defaultTitle(t: TFunction, audience: Audience | null): string {
   return audience?.kind === 'group'
-    ? t('newLesson.defaultGroupTitle', { group: audience.name })
-    : t('newLesson.defaultTitle');
+    ? t('newLessonForm.defaultGroupTitle', { group: audience.name })
+    : t('newLessonForm.defaultTitle');
 }
 
 function lessonRefusal(t: TFunction, state: ActionState, materialGone: string | null): string | null {
@@ -61,7 +64,7 @@ function lessonRefusal(t: TFunction, state: ActionState, materialGone: string | 
     return materialGone;
   }
   if (error.code === 'audience_not_active' || error.code === 'not_found') {
-    return t('newLesson.audienceChanged');
+    return t('newLessonForm.audienceChanged');
   }
   return refusalText(t, error, state.retryAfter, undefined);
 }
@@ -91,7 +94,7 @@ function SeriesFields({
         className="flex flex-col gap-2"
       >
         <legend id={weekdaysId} className="text-label">
-          {t('newLesson.weekdays')}
+          {t('newLessonForm.weekdays')}
         </legend>
         <ul className="flex flex-wrap gap-2">
           {weekdays.map((weekday) => (
@@ -118,7 +121,7 @@ function SeriesFields({
       </fieldset>
       <fieldset aria-labelledby={endsId} className="flex flex-col gap-2">
         <legend id={endsId} className="text-label">
-          {t('newLesson.ends')}
+          {t('newLessonForm.ends')}
         </legend>
         <label className="inline-flex min-h-11 items-center gap-2 text-small">
           <input
@@ -131,7 +134,7 @@ function SeriesFields({
             }}
             className="size-4 accent-accent"
           />
-          {t('newLesson.afterCount')}
+          {t('newLessonForm.afterCount')}
         </label>
         <label className="inline-flex min-h-11 items-center gap-2 text-small">
           <input
@@ -145,12 +148,12 @@ function SeriesFields({
             }}
             className="size-4 accent-accent"
           />
-          {t('newLesson.endsOn')}
+          {t('newLessonForm.endsOn')}
         </label>
         {end === 'count' ? (
           <InputField
             key="count"
-            label={t('newLesson.count')}
+            label={t('newLessonForm.count')}
             name="count"
             type="number"
             defaultValue="8"
@@ -162,7 +165,7 @@ function SeriesFields({
         ) : (
           <InputField
             key="end_date"
-            label={t('newLesson.endDate')}
+            label={t('newLessonForm.endDate')}
             name="end_date"
             type="date"
             defaultValue={endDefault}
@@ -183,7 +186,7 @@ function DurationPresets({
 }): ReactElement {
   const { t } = useTranslation();
   return (
-    <ul aria-label={t('newLesson.durationPresets')} className="flex flex-wrap gap-2">
+    <ul aria-label={t('newLessonForm.durationPresets')} className="flex flex-wrap gap-2">
       {durationPresets.map((preset) => (
         <li key={preset}>
           <button
@@ -196,7 +199,7 @@ function DurationPresets({
             }}
             className="min-h-11 rounded-md border border-border-strong px-3 text-small hover:border-accent"
           >
-            {t('newLesson.minutes', { count: preset })}
+            {t('newLessonForm.minutes', { count: preset })}
           </button>
         </li>
       ))}
@@ -231,7 +234,7 @@ function DescriptionField({ error }: { readonly error: string | undefined }): Re
           }}
           className={quietButtonClass}
         >
-          {t('newLesson.addDescription')}
+          {t('newLessonForm.addDescription')}
         </button>
       </p>
     );
@@ -351,7 +354,7 @@ function NewLessonForm({
   const titleError = problems.message('title');
 
   function weekdaysProblem(data: FormData): string | undefined {
-    return repeat && data.getAll('weekday').length === 0 ? t('newLesson.weekdaysRequired') : undefined;
+    return repeat && data.getAll('weekday').length === 0 ? t('newLessonForm.weekdaysRequired') : undefined;
   }
 
   function summaryTarget(field: string): HTMLElement | null {
@@ -369,7 +372,7 @@ function NewLessonForm({
     const data = new FormData(element);
     const missing: FieldProblem[] = [];
     if (audience === null) {
-      missing.push({ field: 'audience', message: t('newLesson.audienceRequired'), source: 'client' });
+      missing.push({ field: 'audience', message: t('newLessonForm.audienceRequired'), source: 'client' });
     }
     const weekdays = weekdaysProblem(data);
     if (weekdays !== undefined) {
@@ -541,7 +544,7 @@ function NewLessonForm({
             }}
             className="size-4 accent-accent"
           />
-          {t('newLesson.repeat')}
+          {t('newLessonForm.repeat')}
         </label>
         {repeat ? (
           <SeriesFields
@@ -581,7 +584,7 @@ function NewLessonForm({
           unavailable={action.busy}
           className={primaryButtonClass}
         >
-          {t('newLesson.submit')}
+          {t('newLessonForm.submit')}
         </ActionButton>
         <ActionButton busy={false} unavailable={action.busy} onClick={onCancel} className={quietButtonClass}>
           {t('newLesson.cancel')}
@@ -626,26 +629,26 @@ export function lessonPrefillOf(preset: unknown, queryDate: string | null, fallb
 }
 
 type BackLinkKey =
-  | 'newLesson.back.schedule'
-  | 'newLesson.back.today'
-  | 'newLesson.back.student'
-  | 'newLesson.back.group'
-  | 'newLesson.back.lesson';
+  | 'newLessonForm.back.schedule'
+  | 'newLessonForm.back.today'
+  | 'newLessonForm.back.student'
+  | 'newLessonForm.back.group'
+  | 'newLessonForm.back.lesson';
 
 function backLinkKey(address: string): BackLinkKey {
   if (address.startsWith('/today')) {
-    return 'newLesson.back.today';
+    return 'newLessonForm.back.today';
   }
   if (address.startsWith('/students/')) {
-    return 'newLesson.back.student';
+    return 'newLessonForm.back.student';
   }
   if (address.startsWith('/groups/')) {
-    return 'newLesson.back.group';
+    return 'newLessonForm.back.group';
   }
   if (address.startsWith('/lessons/')) {
-    return 'newLesson.back.lesson';
+    return 'newLessonForm.back.lesson';
   }
-  return 'newLesson.back.schedule';
+  return 'newLessonForm.back.schedule';
 }
 
 export function NewLessonPage(): ReactElement {
@@ -663,6 +666,16 @@ export function NewLessonPage(): ReactElement {
       leave({ kind: 'lessonScheduled' });
     }
   });
+  const texts = useFeatureTexts('newLessonForm', newLessonFormTextLoaders);
+
+  if (!texts.ready) {
+    return (
+      <Page width="reading">
+        {texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />}
+      </Page>
+    );
+  }
+
   return (
     <Page width="reading">
       <p>

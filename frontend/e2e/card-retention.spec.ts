@@ -1,6 +1,9 @@
 import { newTestAccount, signInThroughTheApi } from './accounts.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
-import { createCard } from './tutoring.ts';
+import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
+import { accessToken, callApi, createCard } from './tutoring.ts';
+
+const retentionSeconds = 90 * 24 * 60 * 60;
 
 test.use({ locale: 'en-GB', colorScheme: 'dark', clockMovedFarAhead: true });
 
@@ -64,4 +67,45 @@ test('student card › an expired link keeps Create a new link as a visible butt
     page.getByRole('status').filter({ hasText: 'A new link was created. The old one no longer works.' }),
   ).toBeFocused();
   await expect(main.getByText(/\/invite\//)).toBeVisible();
+});
+
+test('student card › an email erased while Create a new invitation link? is open moves focus to the changed-meanwhile notice', async ({
+  page,
+  deployment,
+  control,
+}) => {
+  const pavel = await seedVerifiedUser(deployment, 'Pavel', 'en');
+  const card = await createCard(deployment, pavel, 'Boris', newTestAccount('Boris', 'student').email);
+  await control.advance(retentionSeconds - 5 * 60);
+  const regenerated = await callApi(
+    deployment,
+    await accessToken(deployment, pavel),
+    'POST',
+    `/students/${encodeURIComponent(card.id)}/invitation`,
+  );
+  if (regenerated.status !== 200) {
+    throw new Error(`creating a new link answered ${String(regenerated.status)}`);
+  }
+  await signInThroughTheApi(page, pavel);
+  const traffic = trafficAfterReady(page, [`/api/v1/students/${card.id}`]);
+  await traffic.initialize();
+  await page.goto(`/students/${card.id}`);
+  const main = page.getByRole('main');
+  await main.getByRole('button', { name: 'Invitation actions' }).waitFor();
+  await expectRefetchedAfterTheSocketIsReady(traffic);
+  await main.getByRole('button', { name: 'Invitation actions' }).click();
+  await page.getByRole('button', { name: 'Create a new link', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Create a new invitation link?' });
+  await dialog.waitFor();
+  await control.advance(5 * 60 + 60);
+
+  await control.tick();
+
+  await expect(
+    page
+      .getByRole('status')
+      .filter({ hasText: 'This card changed in the meantime. Its current state is shown below.' }),
+  ).toBeFocused();
+  await expect(dialog).toBeHidden();
+  await expect(main.getByRole('button', { name: 'Enter email' })).toBeVisible();
 });

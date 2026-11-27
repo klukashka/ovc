@@ -1482,14 +1482,16 @@ test.describe('homework on the student card and the group page', () => {
 test.describe('issuing on a phone', () => {
   test.use({ viewport: { width: 360, height: 780 } });
 
-  test('Issue assignment opens a one-column page on its heading, keeps its actions at the end and returns with Back', async ({
+  test('Issue assignment opens a one-column page on its heading and keeps its actions at the end', async ({
     page,
     deployment,
   }) => {
     const { pavel } = await pavelWithAnna(deployment);
     await createReadyTemplate(deployment, pavel, 'Fractions');
     await openLibrary(page, pavel);
+
     await chooseRowAction(page, 'Fractions', 'Issue assignment');
+
     await expect(issueHeading(page)).toBeFocused();
     const search = await layoutBox(audienceSearch(page));
     const deadline = await layoutBox(issueDialog(page).getByRole('checkbox', { name: 'Set a deadline' }));
@@ -1499,14 +1501,22 @@ test.describe('issuing on a phone', () => {
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
-
-    await page.goBack();
-
-    await expect(rowMenuButton(page, 'Fractions')).toBeFocused();
     expect(deadline.y).toBeGreaterThan(search.y + search.height);
     for (const action of actions) {
       expect(action.y).toBeGreaterThan(deadline.y + deadline.height);
     }
     expect(overflow).toBeLessThanOrEqual(0);
+  });
+
+  test('Back from Issue assignment returns focus to the row menu', async ({ page, deployment }) => {
+    const { pavel } = await pavelWithAnna(deployment);
+    await createReadyTemplate(deployment, pavel, 'Fractions');
+    await openLibrary(page, pavel);
+    await chooseRowAction(page, 'Fractions', 'Issue assignment');
+    await audienceSearch(page).waitFor();
+
+    await page.goBack();
+
+    await expect(rowMenuButton(page, 'Fractions')).toBeFocused();
   });
 });

@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import type { ReactElement } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import { afterEach, describe, expect, test } from 'vitest';
 
@@ -49,6 +50,23 @@ async function showFilter(listed: readonly MyTutor[], chosen: string | null): Pr
     </I18nextProvider>,
   );
   return { choices };
+}
+
+async function showChangingFilter(
+  listed: readonly MyTutor[],
+  chosen: string | null,
+): Promise<(next: readonly MyTutor[]) => void> {
+  const i18n = await createI18n('en');
+  const shown = (current: readonly MyTutor[]): ReactElement => (
+    <I18nextProvider i18n={i18n}>
+      <button type="button">Elsewhere</button>
+      <TutorFilter tutors={current} chosen={chosen} onChoose={() => undefined} />
+    </I18nextProvider>
+  );
+  const view = render(shown(listed));
+  return (next: readonly MyTutor[]): void => {
+    view.rerender(shown(next));
+  };
 }
 
 function tutorSelect(): HTMLSelectElement {
@@ -124,5 +142,34 @@ describe('the tutor filter', () => {
     fireEvent.click(screen.getByRole('button', { name: 'All tutors' }));
 
     expect(shown.choices).toEqual([null]);
+  });
+});
+
+describe('the focus of the tutor filter when it changes form', () => {
+  test('a fourth tutor turns the focused segments into the select, which takes the focus', async () => {
+    const change = await showChangingFilter(tutors(3), relationshipId(1));
+    screen.getByRole('button', { name: 'Pavel' }).focus();
+
+    change(tutors(4));
+
+    expect(document.activeElement).toBe(tutorSelect());
+  });
+
+  test('a tutor leaving turns the focused select into segments, and the pressed segment takes the focus', async () => {
+    const change = await showChangingFilter(tutors(4), relationshipId(1));
+    tutorSelect().focus();
+
+    change(tutors(3));
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Pavel', pressed: true }));
+  });
+
+  test('a change of form while the focus is elsewhere leaves the focus where it was', async () => {
+    const change = await showChangingFilter(tutors(3), null);
+    screen.getByRole('button', { name: 'Elsewhere' }).focus();
+
+    change(tutors(4));
+
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Elsewhere' }));
   });
 });

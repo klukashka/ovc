@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useId } from 'react';
+import { type ReactElement, useCallback, useEffect, useId, useLayoutEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { SelectChevron, selectClass } from '../../components/ui/Form.tsx';
@@ -15,17 +15,29 @@ function asChoice(value: string): string | null {
   return value === allTutors ? null : value;
 }
 
-function TutorSelect({
-  tutors,
-  chosen,
-  onChoose,
-}: {
+function useBeforeRemoval(onRemoval: () => void): void {
+  useLayoutEffect(() => onRemoval, [onRemoval]);
+}
+
+function filterControl(holder: HTMLElement): HTMLElement | null {
+  return (
+    holder.querySelector<HTMLElement>('select') ??
+    holder.querySelector<HTMLElement>('button[aria-pressed="true"]') ??
+    holder.querySelector<HTMLElement>('button')
+  );
+}
+
+interface FilterFormProps {
   readonly tutors: readonly MyTutor[];
   readonly chosen: string | null;
   readonly onChoose: (tutor: string | null) => void;
-}): ReactElement {
+  readonly onRemoval: () => void;
+}
+
+function TutorSelect({ tutors, chosen, onChoose, onRemoval }: FilterFormProps): ReactElement {
   const { t } = useTranslation();
   const selectId = useId();
+  useBeforeRemoval(onRemoval);
   const listed = tutors.some((tutor) => tutor.relationship_id === chosen);
   const unlisted = chosen !== null && !listed;
   const shown = chosen === null ? allTutors : listed ? chosen : unlistedChoice;
@@ -61,17 +73,10 @@ function TutorSelect({
   );
 }
 
-function TutorSegments({
-  tutors,
-  chosen,
-  onChoose,
-}: {
-  readonly tutors: readonly MyTutor[];
-  readonly chosen: string | null;
-  readonly onChoose: (tutor: string | null) => void;
-}): ReactElement {
+function TutorSegments({ tutors, chosen, onChoose, onRemoval }: FilterFormProps): ReactElement {
   const { t } = useTranslation();
   const labelId = useId();
+  useBeforeRemoval(onRemoval);
   return (
     <div className="flex flex-col gap-2 tablet:flex-row tablet:flex-wrap tablet:items-center tablet:gap-3">
       <span id={labelId} className="text-label text-text-muted">
@@ -112,15 +117,34 @@ export function TutorFilter({
   readonly chosen: string | null;
   readonly onChoose: (tutor: string | null) => void;
 }): ReactElement {
+  const holder = useRef<HTMLDivElement>(null);
+  const focusLeaving = useRef(false);
+  const segmented = tutors.length + 1 <= mostSegments;
   useEffect(
     () => (): void => {
       window.requestAnimationFrame(focusHeadingIfLost);
     },
     [],
   );
-  return tutors.length + 1 > mostSegments ? (
-    <TutorSelect tutors={tutors} chosen={chosen} onChoose={onChoose} />
-  ) : (
-    <TutorSegments tutors={tutors} chosen={chosen} onChoose={onChoose} />
+  const noteFocusLeaving = useCallback((): void => {
+    if (holder.current?.contains(document.activeElement) === true) {
+      focusLeaving.current = true;
+    }
+  }, []);
+  useLayoutEffect(() => {
+    if (!focusLeaving.current || holder.current === null) {
+      return;
+    }
+    focusLeaving.current = false;
+    filterControl(holder.current)?.focus();
+  }, [segmented]);
+  return (
+    <div ref={holder} className="contents">
+      {segmented ? (
+        <TutorSegments tutors={tutors} chosen={chosen} onChoose={onChoose} onRemoval={noteFocusLeaving} />
+      ) : (
+        <TutorSelect tutors={tutors} chosen={chosen} onChoose={onChoose} onRemoval={noteFocusLeaving} />
+      )}
+    </div>
   );
 }

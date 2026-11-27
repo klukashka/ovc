@@ -8,7 +8,6 @@ import { Avatar } from '../../components/ui/Avatar.tsx';
 import {
   DataTable,
   type TableColumn,
-  endCellClass,
   narrowOnlyClass,
   primaryCellClass,
   secondaryCellClass,
@@ -34,15 +33,20 @@ import type { components } from '../../lib/api/schema.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
 import { type CopyResult, copyText } from '../../lib/clipboard.ts';
 import { formatDate } from '../../lib/format/dates.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { StorageUsage } from './StorageUsage.tsx';
 import { SettingsNav } from './SettingsNav.tsx';
 import { SettingsSection } from './SettingsRow.tsx';
+import { settingsTextLoaders } from './settingsTexts.ts';
+import { teachingSettingsTextLoaders } from './teachingTexts.ts';
 import { fetchTutorCode, tutorCodeKey } from './tutorCode.ts';
 
 type BlockedRequesterPage = components['schemas']['BlockedRequesterPage'];
 type BlockedRequester = components['schemas']['BlockedRequester'];
 
 const blockedKey = ['tutor', 'blocked-requesters'] as const;
+
+const unblockCellClass = 'px-2 py-3 text-right';
 
 async function fetchBlockedPage(client: ApiClient, cursor: string | null): Promise<BlockedRequesterPage> {
   const { data, error, response } = await client.GET('/api/v1/tutor/blocked-requesters', {
@@ -64,8 +68,9 @@ function CodeNoticeMessage({ notice }: { readonly notice: CodeNotice }): ReactEl
     case 'copyFailed':
       return <FormAlert>{t('teaching.copyFailed')}</FormAlert>;
     case 'copied':
+      return <FormNotice takeFocus>{t('teaching.copied')}</FormNotice>;
     case 'regenerated':
-      return <FormNotice takeFocus>{t(`teaching.${notice}`)}</FormNotice>;
+      return <FormNotice takeFocus>{t('teachingSettings.regenerated')}</FormNotice>;
   }
 }
 
@@ -139,7 +144,7 @@ function TutorCodeSection(): ReactElement {
     return (
       <>
         <p className="font-mono text-title tracking-wider">{code.code}</p>
-        <p className="text-small text-text-muted">{t('teaching.codeHint')}</p>
+        <p className="text-small text-text-muted">{t('teachingSettings.codeHint')}</p>
         {confirmingCode === null ? (
           <Refusal state={action.state} dailyLimit="code" confirmation="regenerateCode" />
         ) : null}
@@ -154,13 +159,13 @@ function TutorCodeSection(): ReactElement {
         >
           <div className="flex flex-col gap-4">
             <h2 id={dialogHeadingId} className="text-heading">
-              {t('teaching.regenerateTitle')}
+              {t('teachingSettings.regenerateTitle')}
             </h2>
-            <p id={consequenceId}>{t('teaching.regenerateConsequence')}</p>
+            <p id={consequenceId}>{t('teachingSettings.regenerateConsequence')}</p>
             <Refusal state={action.state} dailyLimit="code" confirmation="regenerateCode" />
             <FormActions>
               <ActionButton busy={action.busy} onClick={regenerate} className={dangerFilledButtonClass}>
-                {t('teaching.regenerate')}
+                {t('teachingSettings.regenerate')}
               </ActionButton>
               <ActionButton
                 ref={keepCode}
@@ -169,7 +174,7 @@ function TutorCodeSection(): ReactElement {
                 onClick={closeConfirmation}
                 className={quietButtonClass}
               >
-                {t('teaching.cancel')}
+                {t('teachingSettings.cancel')}
               </ActionButton>
             </FormActions>
           </div>
@@ -187,13 +192,13 @@ function TutorCodeSection(): ReactElement {
           </button>
           {code.active ? (
             <ActionMenu
-              label={t('teaching.codeActions')}
+              label={t('teachingSettings.codeActions')}
               busy={action.busy && confirmingCode === null}
               unavailable={action.busy}
               buttonRef={menuButton}
               items={[
                 {
-                  label: t('teaching.regenerate'),
+                  label: t('teachingSettings.regenerate'),
                   danger: true,
                   onChoose: (): void => {
                     setNotice('none');
@@ -208,7 +213,7 @@ function TutorCodeSection(): ReactElement {
           ) : null}
         </div>
         {code.active ? (
-          <p className="text-small text-text-muted">{t('teaching.regenerateHint')}</p>
+          <p className="text-small text-text-muted">{t('teachingSettings.regenerateHint')}</p>
         ) : (
           <>
             <p className="text-small text-text-muted">{t('teaching.inactive')}</p>
@@ -219,7 +224,7 @@ function TutorCodeSection(): ReactElement {
     );
   }
 
-  return <SettingsSection heading={t('teaching.code')}>{body()}</SettingsSection>;
+  return <SettingsSection heading={t('teachingSettings.code')}>{body()}</SettingsSection>;
 }
 
 function BlockedRow({
@@ -235,13 +240,13 @@ function BlockedRow({
 }): ReactElement {
   const { t } = useTranslation();
   const me = useSignedInAccount();
-  const name = student.name ?? t('teaching.deletedAccount');
+  const name = student.name ?? t('teachingSettings.deletedAccount');
   const blockedDate = formatDate(student.blocked_at, me.language, me.timezone);
-  const blockedAt = t('teaching.blockedAt', { date: blockedDate });
+  const blockedAt = t('teachingSettings.blockedAt', { date: blockedDate });
   const unblockLabel =
     student.name === null
-      ? t('teaching.unblockDeleted', { date: blockedDate })
-      : t('teaching.unblockNamed', { name: student.name });
+      ? t('teachingSettings.unblockDeleted', { date: blockedDate })
+      : t('teachingSettings.unblockNamed', { name: student.name });
   return (
     <tr data-row={student.student_id} className={tableRowClass}>
       <th scope="row" className={primaryCellClass}>
@@ -258,15 +263,15 @@ function BlockedRow({
       <td className={secondaryCellClass}>
         <span className="tabular text-small text-text-muted">{blockedAt}</span>
       </td>
-      <td className={endCellClass}>
+      <td className={unblockCellClass}>
         <ActionButton
           busy={busy}
           unavailable={unavailable}
           label={unblockLabel}
           onClick={onUnblock}
-          className={quietButtonClass}
+          className={`${quietButtonClass} shrink-0 whitespace-nowrap`}
         >
-          {t('teaching.unblock')}
+          {t('teachingSettings.unblock')}
         </ActionButton>
       </td>
     </tr>
@@ -289,9 +294,9 @@ function BlockedStudentsSection(): ReactElement {
   });
   const students = query.data?.pages.flatMap((page) => page.items) ?? [];
   const blockedColumns: readonly TableColumn[] = [
-    { key: 'student', label: t('teaching.columns.student'), width: 'w-2/3 tablet:w-1/2' },
-    { key: 'blocked', label: t('teaching.columns.blocked'), secondary: true, width: 'w-1/4' },
-    { key: 'actions', label: t('teaching.columns.actions'), visuallyHidden: true, width: 'w-1/3 tablet:w-1/4' },
+    { key: 'student', label: t('teachingSettings.columns.student'), width: 'w-2/3 tablet:w-1/2' },
+    { key: 'blocked', label: t('teachingSettings.columns.blocked'), secondary: true, width: 'w-1/4' },
+    { key: 'actions', label: t('teachingSettings.columns.actions'), visuallyHidden: true, width: 'w-1/3 tablet:w-1/4' },
   ];
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLTableSectionElement>(
     students.length,
@@ -339,15 +344,15 @@ function BlockedStudentsSection(): ReactElement {
     return (
       <>
         {showsStaleData(action.state) ? (
-          <FormAlert key={refusals}>{t('teaching.unblockChanged')}</FormAlert>
+          <FormAlert key={refusals}>{t('teachingSettings.unblockChanged')}</FormAlert>
         ) : (
           <Refusal state={action.state} />
         )}
-        {action.state.kind === 'done' ? <FormNotice takeFocus>{t('teaching.unblocked')}</FormNotice> : null}
+        {action.state.kind === 'done' ? <FormNotice takeFocus>{t('teachingSettings.unblocked')}</FormNotice> : null}
         {students.length === 0 ? (
-          <p className="text-text-muted">{t('teaching.blockedEmpty')}</p>
+          <p className="text-text-muted">{t('teachingSettings.blockedEmpty')}</p>
         ) : (
-          <DataTable label={t('teaching.blocked')} columns={blockedColumns} bodyRef={listRef}>
+          <DataTable label={t('teachingSettings.blocked')} columns={blockedColumns} bodyRef={listRef}>
             {students.map((student) => (
               <BlockedRow
                 key={student.student_id}
@@ -375,7 +380,7 @@ function BlockedStudentsSection(): ReactElement {
               }}
               className={quietButtonClass}
             >
-              {t('teaching.showMore')}
+              {t('teachingSettings.showMore')}
             </button>
           </p>
         ) : null}
@@ -384,13 +389,34 @@ function BlockedStudentsSection(): ReactElement {
   }
 
   return (
-    <SettingsSection heading={t('teaching.blocked')} description={t('teaching.blockedHint')}>
+    <SettingsSection heading={t('teachingSettings.blocked')} description={t('teachingSettings.blockedHint')}>
       {body()}
     </SettingsSection>
   );
 }
 
 export function TeachingSettingsPage(): ReactElement {
+  const settingsTexts = useFeatureTexts('settings', settingsTextLoaders);
+  const teachingTexts = useFeatureTexts('teachingSettings', teachingSettingsTextLoaders);
+
+  if (!settingsTexts.ready || !teachingTexts.ready) {
+    return (
+      <Page>
+        {settingsTexts.failed || teachingTexts.failed ? (
+          <LoadFailed
+            error={asApiError(undefined)}
+            onRetry={() => {
+              settingsTexts.retry();
+              teachingTexts.retry();
+            }}
+          />
+        ) : (
+          <DelayedLoading />
+        )}
+      </Page>
+    );
+  }
+
   return (
     <Page>
       <SettingsNav />

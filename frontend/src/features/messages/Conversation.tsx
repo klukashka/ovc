@@ -337,7 +337,7 @@ export function Conversation({
     const previousSeq = lastShownSeq.current;
     lastShown.current = latestMessage.id;
     lastShownSeq.current = Math.max(previousSeq, latestMessage.seq);
-    if (opening || atBottom.current || latestMessage.own) {
+    if (opening || (detached === null && (atBottom.current || latestMessage.own))) {
       element.scrollTop = element.scrollHeight;
       atBottom.current = true;
       reachedBottom();
@@ -345,7 +345,7 @@ export function Conversation({
       const arrived = messages.filter((message) => message.seq > previousSeq && !message.own).length;
       if (arrived > 0) setUnseen((count) => count + arrived);
     }
-  }, [latestMessage, messages]);
+  }, [latestMessage, messages, detached]);
   function jumpToLatest(): void {
     if (detached !== null) {
       returning.current = true;
@@ -437,7 +437,7 @@ export function Conversation({
       field.removeEventListener('beforeinput', sendInsteadOfLineBreak);
     };
   }, [unavailable]);
-  useAttachmentExpiry(messages, refreshAttachments, isAlive);
+  useAttachmentExpiry(detached === null ? messages : [...messages, ...windowItems], refreshAttachments, isAlive);
   useEffect(() => {
     const first = messages[0];
     if (first !== undefined) oldestShown.current = first.seq;
@@ -541,7 +541,9 @@ export function Conversation({
         .getQueriesData<MessagePage>({ queryKey: aroundPrefix(channel.id), type: 'active' })
         .map(([, page]) => page),
     ];
-    return pages.some((page) => page?.items.some((item) => item.id === messageId && !item.deleted) ?? false);
+    return pages.some(
+      (page) => page?.items.some((item) => item.id === messageId && !item.deleted && !item.erased) ?? false,
+    );
   }
   function focusMessage(messageId: string): void {
     for (const row of list.current?.querySelectorAll<HTMLElement>('[data-row]') ?? []) {
@@ -591,7 +593,10 @@ export function Conversation({
           resolve(false);
           return;
         }
-        void cache.invalidateQueries({ queryKey: messagesKey(channel.id) }, { cancelRefetch: false }).then(() => {
+        void Promise.all([
+          cache.invalidateQueries({ queryKey: messagesKey(channel.id) }, { cancelRefetch: false }),
+          cache.invalidateQueries({ queryKey: aroundPrefix(channel.id) }, { cancelRefetch: false }),
+        ]).then(() => {
           fileRefresh.current = null;
           resolve(isAlive() && !fileRefreshPaused.current && document.visibilityState !== 'hidden');
         });

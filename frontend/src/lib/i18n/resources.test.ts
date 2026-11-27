@@ -3,6 +3,8 @@ import { describe, expect, test } from 'vitest';
 
 import { assignmentTexts as assignmentEnglish } from '../../features/assignment/texts.en.ts';
 import { assignmentTexts as assignmentRussian } from '../../features/assignment/texts.ru.ts';
+import { invitationPageTexts as invitationPageEnglish } from '../../features/auth/invitationTexts.en.ts';
+import { invitationPageTexts as invitationPageRussian } from '../../features/auth/invitationTexts.ru.ts';
 import { builderTexts as builderEnglish } from '../../features/builder/texts.en.ts';
 import { builderTexts as builderRussian } from '../../features/builder/texts.ru.ts';
 import { groupsTexts as groupsEnglish } from '../../features/groups/texts.en.ts';
@@ -11,10 +13,22 @@ import { homeworkPanelTexts as homeworkPanelsEnglish } from '../../features/home
 import { homeworkPanelTexts as homeworkPanelsRussian } from '../../features/home/panelTexts.ru.ts';
 import { libraryTexts as libraryEnglish } from '../../features/library/texts.en.ts';
 import { libraryTexts as libraryRussian } from '../../features/library/texts.ru.ts';
+import { newLessonFormTexts as newLessonFormEnglish } from '../../features/schedule/newLessonTexts.en.ts';
+import { newLessonFormTexts as newLessonFormRussian } from '../../features/schedule/newLessonTexts.ru.ts';
+import { emailSettingsTexts as emailSettingsEnglish } from '../../features/settings/emailSettingsTexts.en.ts';
+import { emailSettingsTexts as emailSettingsRussian } from '../../features/settings/emailSettingsTexts.ru.ts';
 import { myDataTexts as myDataEnglish } from '../../features/settings/myDataTexts.en.ts';
 import { myDataTexts as myDataRussian } from '../../features/settings/myDataTexts.ru.ts';
+import { settingsTexts as settingsEnglish } from '../../features/settings/settingsTexts.en.ts';
+import { settingsTexts as settingsRussian } from '../../features/settings/settingsTexts.ru.ts';
+import { teachingSettingsTexts as teachingSettingsEnglish } from '../../features/settings/teachingTexts.en.ts';
+import { teachingSettingsTexts as teachingSettingsRussian } from '../../features/settings/teachingTexts.ru.ts';
+import { unsubscribeTexts as unsubscribeEnglish } from '../../features/settings/unsubscribeTexts.en.ts';
+import { unsubscribeTexts as unsubscribeRussian } from '../../features/settings/unsubscribeTexts.ru.ts';
 import { studentCardTexts as studentCardEnglish } from '../../features/students/cardTexts.en.ts';
 import { studentCardTexts as studentCardRussian } from '../../features/students/cardTexts.ru.ts';
+import { studentListTexts as studentListEnglish } from '../../features/students/listTexts.en.ts';
+import { studentListTexts as studentListRussian } from '../../features/students/listTexts.ru.ts';
 import { myTutorsTexts as myTutorsEnglish } from '../../features/tutors/texts.en.ts';
 import { myTutorsTexts as myTutorsRussian } from '../../features/tutors/texts.ru.ts';
 import { en } from './en.ts';
@@ -48,6 +62,13 @@ const catalogues = {
     myData: myDataRussian,
     myTutors: myTutorsRussian,
     homeworkPanels: homeworkPanelsRussian,
+    invitationPage: invitationPageRussian,
+    settings: settingsRussian,
+    emailSettings: emailSettingsRussian,
+    unsubscribe: unsubscribeRussian,
+    teachingSettings: teachingSettingsRussian,
+    studentList: studentListRussian,
+    newLessonForm: newLessonFormRussian,
   }),
   en: messages({
     ...en,
@@ -59,6 +80,13 @@ const catalogues = {
     myData: myDataEnglish,
     myTutors: myTutorsEnglish,
     homeworkPanels: homeworkPanelsEnglish,
+    invitationPage: invitationPageEnglish,
+    settings: settingsEnglish,
+    emailSettings: emailSettingsEnglish,
+    unsubscribe: unsubscribeEnglish,
+    teachingSettings: teachingSettingsEnglish,
+    studentList: studentListEnglish,
+    newLessonForm: newLessonFormEnglish,
   }),
 };
 

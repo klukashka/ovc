@@ -8,7 +8,10 @@ import { Page } from '../../components/ui/Page.tsx';
 import { type ApiClient, type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type SessionState, useSession } from '../../lib/api/session.ts';
 import type { components } from '../../lib/api/schema.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
+import { emailSettingsTextLoaders } from './emailSettingsTexts.ts';
 import { SettingsNav } from './SettingsNav.tsx';
+import { settingsTextLoaders } from './settingsTexts.ts';
 
 type EmailPreferences = components['schemas']['EmailPreferences'];
 type EmailPreference = components['schemas']['EmailPreference'];
@@ -220,6 +223,8 @@ export function NotificationSettingsPage(): ReactElement {
     queryFn: () => fetchEmailPreferences(client),
     retry: false,
   });
+  const settingsTexts = useFeatureTexts('settings', settingsTextLoaders);
+  const emailTexts = useFeatureTexts('emailSettings', emailSettingsTextLoaders);
 
   function body(): ReactElement {
     if (query.isPending) {
@@ -236,6 +241,24 @@ export function NotificationSettingsPage(): ReactElement {
       );
     }
     return <EmailSwitches preferences={query.data} />;
+  }
+
+  if (!settingsTexts.ready || !emailTexts.ready) {
+    return (
+      <Page>
+        {settingsTexts.failed || emailTexts.failed ? (
+          <LoadFailed
+            error={asApiError(undefined)}
+            onRetry={() => {
+              settingsTexts.retry();
+              emailTexts.retry();
+            }}
+          />
+        ) : (
+          <DelayedLoading />
+        )}
+      </Page>
+    );
   }
 
   return (

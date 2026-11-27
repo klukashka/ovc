@@ -84,6 +84,8 @@ function DelayedOrigin(): ReactElement {
   );
 }
 
+let renderedRoutes = 0;
+
 function renderRoutes(
   origin: ReactElement,
   initialEntries: readonly string[] = ['/origin'],
@@ -100,7 +102,12 @@ function renderRoutes(
         ],
       },
     ],
-    { initialEntries: [...initialEntries] },
+    {
+      initialEntries: initialEntries.map((pathname) => ({
+        pathname,
+        key: `${pathname}-${String((renderedRoutes += 1))}`,
+      })),
+    },
   );
   render(<RouterProvider router={router} />);
 }
@@ -117,34 +124,46 @@ afterEach(() => {
 });
 
 describe('a form route opened from a control', () => {
-  test('arriving focuses the form heading, and Cancel returns focus to the opening control', async () => {
+  test('arriving from a control focuses the form heading', async () => {
     renderRoutes(<OriginPage holdsOpener />);
 
     await press('Issue');
-    const arrivedOn = document.activeElement;
-    const formHeading = screen.getByRole('heading', { name: 'Issue assignment' });
+
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Issue assignment' }));
+  });
+
+  test('Cancel returns focus to the opening control', async () => {
+    renderRoutes(<OriginPage holdsOpener />);
+    await press('Issue');
+
     await press('Cancel');
 
-    expect(arrivedOn).toBe(formHeading);
     await waitFor(() => {
       expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Issue' }));
     });
+  });
+
+  test('Cancel leaves focus on the origin heading while the origin page is still loading', async () => {
+    renderRoutes(<DelayedOrigin />);
+    await press('Finish loading');
+    await press('Issue');
+
+    await press('Cancel');
+
+    expect(document.activeElement).toBe(screen.getByRole('heading', { name: 'Library' }));
   });
 
   test('focus returns to the opener once the origin page renders it again', async () => {
     renderRoutes(<DelayedOrigin />);
     await press('Finish loading');
     await press('Issue');
-
     await press('Cancel');
-    const whileLoading = document.activeElement;
-    const loadingHeading = screen.getByRole('heading', { name: 'Library' });
+
     await act(async () => {
       screen.getByRole('button', { name: 'Finish loading' }).dispatchEvent(new MouseEvent('click', { bubbles: true }));
       await Promise.resolve();
     });
 
-    expect(whileLoading).toBe(loadingHeading);
     await waitFor(() => {
       expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Issue' }));
     });

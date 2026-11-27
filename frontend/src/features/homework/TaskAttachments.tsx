@@ -5,11 +5,18 @@ import { useTranslation } from 'react-i18next';
 import { FormAlert, textButtonClass } from '../../components/ui/Form.tsx';
 import { CrossIcon, DocumentIcon, FileKindIcon, ImageIcon } from '../../components/ui/icons.tsx';
 import { refusalText } from '../../components/ui/Refusal.tsx';
+import { carriesFiles, holdsFolder } from '../../lib/files/dropGuard.ts';
 import { extensionTile } from '../../lib/files/extension.ts';
 import type { Attachment, AttachmentRefusal, TaskAttachments } from './attachmentQueue.ts';
 
 function refusalOf(t: TFunction, refusal: AttachmentRefusal): string {
-  if (refusal.kind === 'tooLarge' || refusal.error.code === 'payload_too_large') {
+  if (refusal.kind === 'tooLarge') {
+    return refusal.limit === 'webp' ? t('fieldErrors.webp_too_large') : t('homework.newTask.fileTooLarge');
+  }
+  if (refusal.kind === 'wrongType') {
+    return t('homework.newTask.wrongType');
+  }
+  if (refusal.error.code === 'payload_too_large') {
     return t('homework.newTask.fileTooLarge');
   }
   if (refusal.error.code === 'email_not_verified') {
@@ -118,6 +125,7 @@ export function TaskAttachmentsField({
   const input = useRef<HTMLInputElement>(null);
   const attachments = useSyncExternalStore(store.subscribe, store.snapshot);
   const [dragging, setDragging] = useState(false);
+  const [folderRefusal, setFolderRefusal] = useState(0);
 
   const chooseButton = useRef<HTMLButtonElement>(null);
   const pendingFocus = useRef<string | null>(null);
@@ -132,12 +140,25 @@ export function TaskAttachmentsField({
     element?.focus();
   });
 
+  function add(files: readonly File[]): void {
+    if (files.length === 0) {
+      return;
+    }
+    setFolderRefusal(0);
+    store.add(files);
+  }
+
   function dropped(event: DragEvent<HTMLButtonElement>): void {
     event.preventDefault();
     setDragging(false);
-    if (!locked) {
-      store.add(Array.from(event.dataTransfer.files));
+    if (locked || !carriesFiles(event)) {
+      return;
     }
+    if (holdsFolder(event.dataTransfer)) {
+      setFolderRefusal((previous) => previous + 1);
+      return;
+    }
+    add(Array.from(event.dataTransfer.files));
   }
 
   function remove(index: number): void {
@@ -166,7 +187,7 @@ export function TaskAttachmentsField({
               input.current?.click();
             }}
             onDragOver={(event) => {
-              if (event.dataTransfer.types.includes('Files')) {
+              if (carriesFiles(event)) {
                 event.preventDefault();
                 setDragging(true);
               }
@@ -182,6 +203,9 @@ export function TaskAttachmentsField({
           <p id={hintId} className="text-small text-text-muted">
             {t('homework.newTask.attachHint')}
           </p>
+          {folderRefusal === 0 ? null : (
+            <FormAlert key={folderRefusal}>{t('homework.newTask.folderRefused')}</FormAlert>
+          )}
           <input
             ref={input}
             type="file"
@@ -190,7 +214,7 @@ export function TaskAttachmentsField({
             aria-hidden="true"
             className="sr-only"
             onChange={(event) => {
-              store.add(Array.from(event.target.files ?? []));
+              add(Array.from(event.target.files ?? []));
               event.target.value = '';
             }}
           />

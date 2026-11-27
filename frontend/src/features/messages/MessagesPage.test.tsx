@@ -25,7 +25,7 @@ import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fake
 import { Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import { formatDate } from '../../lib/format/dates.ts';
-import { type Channel, type Message, deleteMessage, editMessage } from './api.ts';
+import { type Channel, type Message, type MessagePage, deleteMessage, editMessage } from './api.ts';
 import { channelsScopeRevisionKey, channelScopeRevision, evictChannel } from './cache.ts';
 import { aroundKey, aroundPrefix, channelKey, channelsKey, messagesKey } from './keys.ts';
 import { DeleteMessageForm, MessageKeyContext } from './Conversation.tsx';
@@ -81,6 +81,7 @@ async function fixture(
     readonly role?: 'tutor' | 'student';
     readonly reclaimed?: boolean;
     readonly initialReadMode?: 'strict' | 'single';
+    readonly followingQueryClient?: boolean;
     readonly mediaQueries?: MediaQueries;
     readonly kind?: Channel['kind'];
     readonly seeds?: readonly (Message & { readonly senderId: string; readonly replyTo?: string })[];
@@ -112,7 +113,9 @@ async function fixture(
   connection.readiness(1, true);
   const queryOptions = { defaultOptions: { queries: { retry: false } } };
   const cache =
-    options.initialReadMode === undefined ? new QueryClient(queryOptions) : new FollowingQueryClient(queryOptions);
+    options.initialReadMode === undefined && options.followingQueryClient !== true
+      ? new QueryClient(queryOptions)
+      : new FollowingQueryClient(queryOptions);
   const initialReads =
     options.initialReadMode === undefined ? null : server.chat.observeInitialReads(origin, channel.id);
   const state = session.snapshot();
@@ -982,6 +985,24 @@ describe('Messages', () => {
 
     expect(await screen.findByText('Type at least 2 characters')).toBeTruthy();
     expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test.each([
+    { reclaimed: true, cue: 1 },
+    { reclaimed: false, cue: 0 },
+  ])('search shows the reclaim cue only when sent_before_reclaim: $reclaimed', async ({ reclaimed, cue }) => {
+    await fixture(0, '/messages/channel-1', true, {
+      seeds: [{ ...message(1), body: 'Reclaim needle', sent_before_reclaim: reclaimed, senderId: tutor.id }],
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Search in this chat' }));
+    const field = await screen.findByRole('searchbox', { name: 'Search messages' });
+    fireEvent.change(field, { target: { value: 'needle' } });
+
+    fireEvent.keyDown(field, { key: 'Enter' });
+
+    const result = await within(await screen.findByRole('list', { name: 'Search results' })).findByRole('button');
+    expect(within(result).queryAllByText(chatTexts.reclaimed)).toHaveLength(cue);
+    expect(result.textContent).toContain('Reclaim needle');
   });
 
   test('results render as text and opening one focuses its message', async () => {
@@ -2372,6 +2393,88 @@ describe('replies and the pinned message', () => {
     });
   });
 
+  test('an own message sent from another tab while a window is open neither scrolls nor clears the new count', async () => {
+    const { server, cache, clock } = await fixture(60, '/messages/channel-1', true, {
+      seeds: [{ ...message(61), body: 'Reply far back', replyTo: 'message-1' }],
+    });
+    await screen.findByText('Reply far back');
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+    fireEvent.click(within(rowOf('Reply far back')).getByRole('button', { name: /Message 1$/ }));
+    await waitFor(() => {
+      expect(document.activeElement?.getAttribute('data-row')).toBe('message-1');
+    });
+    server.chat.addMessage(channel.id, { ...fromOther(62, 'Student', '2026-11-01T00:01:00Z'), id: 'message-62' });
+    act(() => {
+      receive({ kind: 'message', change: 'new', channelId: channel.id, messageId: 'message-62', seq: 62 });
+      clock.pass(1000);
+    });
+    await screen.findByRole('button', { name: 'Jump to latest, 1 new' });
+    const windowRow = document.activeElement;
+    server.chat.addMessage(channel.id, { ...message(63), body: 'Sent from another tab' });
+
+    act(() => {
+      receive({ kind: 'message', change: 'new', channelId: channel.id, messageId: 'message-63', seq: 63 });
+      clock.pass(1000);
+    });
+
+    await waitFor(() => {
+      expect(cache.getQueryData<MessagePage>(messagesKey(channel.id))?.items.some((item) => item.seq === 63)).toBe(
+        true,
+      );
+    });
+    expect(screen.getByRole('button', { name: 'Jump to latest, 1 new' })).toBeTruthy();
+    expect(windowRow?.closest('[hidden]')).toBeNull();
+    expect(document.activeElement).toBe(windowRow);
+    receive.cancel();
+  });
+
+  test('the attachment addresses of a window around an older message are refreshed before they expire', async () => {
+    const withPicture = {
+      ...message(1),
+      attachments: [
+        {
+          id: 'old-picture',
+          filename: 'old-picture.png',
+          media_type: 'image/png',
+          width: 2,
+          height: 2,
+          size_bytes: 24,
+          url: '/api/v1/files/old-picture?t=test',
+          expires_at: new Date(60_000).toISOString(),
+        },
+      ],
+    };
+    const { server, clock } = await fixture(0, '/messages/channel-1', true, {
+      seeds: [
+        withPicture,
+        ...Array.from({ length: 59 }, (_, index) => message(index + 2)),
+        { ...message(61), body: 'Reply far back', replyTo: 'message-1' },
+      ],
+    });
+    await screen.findByText('Reply far back');
+    fireEvent.click(within(rowOf('Reply far back')).getByRole('button', { name: /Message 1$/ }));
+    await screen.findByRole('img', { name: 'old-picture.png' });
+    await act(async () => {
+      await Promise.resolve();
+    });
+    const aroundReads = (): number =>
+      server.sentAddresses.filter(
+        (address) =>
+          address.pathname === `/api/v1/channels/${channel.id}/messages` && address.searchParams.has('around_seq'),
+      ).length;
+    const before = aroundReads();
+
+    await act(async () => {
+      clock.pass(30_000);
+      clock.pass(1000);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(aroundReads()).toBeGreaterThan(before);
+    });
+  });
+
   test('losing the channel drops every window around its messages', async () => {
     const { cache } = await fixture(1);
     act(() => {
@@ -2410,6 +2513,35 @@ describe('replies and the pinned message', () => {
     await waitFor(() => {
       expect(document.activeElement).toBe(screen.getByRole('heading', { level: 2 }));
     });
+  });
+
+  test('a pin change keeps the pinned chat’s row, its continuation page and the focus on the row', async () => {
+    const { server, cache, clock } = await fixture(0, '/messages', true, { followingQueryClient: true });
+    seedChannels(server, 31);
+    await act(async () => {
+      await cache.invalidateQueries({ queryKey: channelsKey });
+    });
+    fireEvent.click(await screen.findByRole('button', { name: 'Show more' }));
+    const row = await screen.findByRole('link', { name: 'Student' });
+    row.focus();
+    const firstKey = [...channelsKey, '', null];
+    const readsBefore = cache.getQueryState(firstKey)?.dataUpdateCount ?? 0;
+    const scopeBefore = channelScopeRevision(cache);
+    const receive = liveRefetch(cache, { arrived: (): void => undefined }, clock);
+
+    act(() => {
+      receive({ kind: 'entity', entity: 'channel_pin', id: channel.id });
+      clock.pass(1000);
+    });
+
+    await waitFor(() => {
+      expect(cache.getQueryState(firstKey)?.dataUpdateCount ?? 0).toBeGreaterThan(readsBefore);
+    });
+    expect(screen.getByRole('link', { name: 'Student' })).toBe(row);
+    expect(document.activeElement).toBe(row);
+    expect(screen.getByRole('link', { name: 'Chat 31' })).toBeDefined();
+    expect(channelScopeRevision(cache)).toBe(scopeBefore);
+    receive.cancel();
   });
 
   test('a student sees the pinned message without Unpin and its quote of markup as text', async () => {

@@ -510,6 +510,19 @@ async function showUnconfirmedSections(link: ProvisionalLink): Promise<(next: Pr
   };
 }
 
+describe('the busy mark of the unconfirmed sections while their texts load', () => {
+  test('a busy status shows until the texts load, and the section then takes its place', async () => {
+    await showUnconfirmedSections({ kind: 'known', linked: false });
+    const busyBefore = screen.queryByRole('status')?.getAttribute('aria-busy') ?? null;
+
+    const section = await screen.findByRole('region', { name: unconfirmedHeading });
+
+    expect(busyBefore).toBe('true');
+    expect(within(section).getByText(withoutLinkText)).toBeTruthy();
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
 describe("an unconfirmed student's Home says which sections arrive after confirming", () => {
   test.each([
     { linked: false, shown: withoutLinkText, other: withLinkText },

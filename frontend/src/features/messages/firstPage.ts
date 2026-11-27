@@ -9,16 +9,20 @@ export type FirstChannelPage = ChannelPage & { readonly fetchedScopeRevision: nu
 
 export const firstPageScopeAttempts = 3;
 
+export class ChannelScopeUnsettledError extends Error {
+  override readonly name = 'ChannelScopeUnsettledError';
+}
+
 export async function firstPageInScope<Page extends object>(
   fetchPage: () => Promise<Page>,
   revision: () => number,
 ): Promise<Page & { readonly fetchedScopeRevision: number }> {
-  for (let attempt = 1; ; attempt += 1) {
+  for (let attempt = 1; attempt <= firstPageScopeAttempts; attempt += 1) {
     const fetchedScopeRevision = revision();
     const page = await fetchPage();
-    if (revision() === fetchedScopeRevision || attempt === firstPageScopeAttempts)
-      return { ...page, fetchedScopeRevision };
+    if (revision() === fetchedScopeRevision) return { ...page, fetchedScopeRevision };
   }
+  throw new ChannelScopeUnsettledError('the channel scope changed during every first page attempt');
 }
 
 export function useFirstChannelPage(q: string): UseQueryResult<FirstChannelPage> {

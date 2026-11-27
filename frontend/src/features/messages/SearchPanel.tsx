@@ -203,6 +203,9 @@ export function SearchPanel({
                 <span dir="auto" className="line-clamp-3 whitespace-pre-wrap [overflow-wrap:anywhere]">
                   {item.body}
                 </span>
+                {item.sent_before_reclaim ? (
+                  <span className="text-small text-text-muted">{texts.reclaimed}</span>
+                ) : null}
               </button>
             </li>
           ))}

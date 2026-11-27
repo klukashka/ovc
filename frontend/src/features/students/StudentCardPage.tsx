@@ -1103,6 +1103,20 @@ function CardWithLessons({
   );
 }
 
+interface DialogSubject {
+  readonly id: string;
+  readonly state: StudentCardDetail['state'];
+  readonly emailErased: boolean;
+}
+
+function subjectOf(id: string, card: StudentCardDetail): DialogSubject {
+  return { id, state: card.state, emailErased: card.email_erased };
+}
+
+function subjectChanged(subject: DialogSubject, card: StudentCardDetail): boolean {
+  return card.state !== subject.state || card.email_erased !== subject.emailErased;
+}
+
 export function StudentCardPage(): ReactElement {
   const { studentId = '' } = useParams();
   const client = useApiClient();
@@ -1180,10 +1194,10 @@ export function StudentCardPage(): ReactElement {
   const error = refetchError === null ? queryError : null;
   const gone = error?.code === 'not_found' && query.data !== undefined;
   const notFound = error?.code === 'not_found' && !gone;
-  const [dialogSubject, setDialogSubject] = useState<{ readonly id: string; readonly state: string } | null>(null);
+  const [dialogSubject, setDialogSubject] = useState<DialogSubject | null>(null);
   if (
     dialogSubject !== null &&
-    (dialogSubject.id !== studentId || gone || (query.data !== undefined && query.data.state !== dialogSubject.state))
+    (dialogSubject.id !== studentId || gone || (query.data !== undefined && subjectChanged(dialogSubject, query.data)))
   ) {
     setDialogSubject(null);
     if (dialogSubject.id === studentId && !gone) {
@@ -1225,11 +1239,11 @@ export function StudentCardPage(): ReactElement {
       setLeavingCard(leaving ? studentId : null);
     },
     onDialog: (open) => {
-      setDialogSubject(open && query.data !== undefined ? { id: studentId, state: query.data.state } : null);
+      setDialogSubject(open && query.data !== undefined ? subjectOf(studentId, query.data) : null);
     },
     onEnterEmail: () => {
       setSavedCard(null);
-      setDialogSubject(query.data === undefined ? null : { id: studentId, state: query.data.state });
+      setDialogSubject(query.data === undefined ? null : subjectOf(studentId, query.data));
       setDetailsRequests((count) => count + 1);
     },
     onRemoved: (newCard) => {

@@ -65,6 +65,17 @@ func (m Mirror) TutorRenamed(ctx context.Context, repos repositories.Repositorie
 func signalMembers(
 	ctx context.Context, repos repositories.Repositories, channels []domain.ChannelID, addressed func(repositories.ActiveMember) bool,
 ) error {
+	return signalActiveMembers(ctx, repos, domain.EntityChannel, channels, addressed)
+}
+
+func signalPinChanged(ctx context.Context, repos repositories.Repositories, channels []domain.ChannelID) error {
+	return signalActiveMembers(ctx, repos, domain.EntityChannelPin, channels, everyMember)
+}
+
+func signalActiveMembers(
+	ctx context.Context, repos repositories.Repositories, entity domain.EntityKind, channels []domain.ChannelID,
+	addressed func(repositories.ActiveMember) bool,
+) error {
 	rows, err := repos.Channels.ActiveMembers(ctx, channels)
 	if err != nil {
 		return err
@@ -78,7 +89,7 @@ func signalMembers(
 	signals := make([]domain.EntitySignal, 0, len(recipients))
 	for _, channel := range channels {
 		if users := recipients[channel]; len(users) > 0 {
-			signals = append(signals, domain.EntitySignal{Users: users, Entity: domain.EntityChannel, ID: domain.EntityID(channel)})
+			signals = append(signals, domain.EntitySignal{Users: users, Entity: entity, ID: domain.EntityID(channel)})
 		}
 	}
 	return repos.Signals.Entities(ctx, signals)

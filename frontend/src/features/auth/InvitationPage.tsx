@@ -26,10 +26,12 @@ import { Refusal } from '../../components/ui/Refusal.tsx';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import type { components } from '../../lib/api/schema.ts';
 import { type Me, useSession, useSessionState, useSignOut } from '../../lib/api/session.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { isLanguage } from '../../lib/i18n/resources.ts';
 import { reclaimAddress } from '../../routes/access.ts';
 import { myTutorsKey } from '../tutors/api.ts';
 import { CheckEmail } from './CheckEmail.tsx';
+import { invitationPageTextLoaders } from './invitationTexts.ts';
 import { useInvitationToken } from './InvitationToken.tsx';
 import { type SignInRefusal, RefusalMessage, refusalOf } from './SignInPage.tsx';
 import { AcceptanceLine, ConsentField, LanguageChoice, LegalLink, browserTimezone } from './SignUpPages.tsx';
@@ -444,6 +446,7 @@ function AcceptPanel({
 export function InvitationPage(): ReactElement {
   const { t } = useTranslation();
   const { token } = useInvitationToken();
+  const texts = useFeatureTexts('invitationPage', invitationPageTextLoaders);
   const client = useApiClient();
   const session = useSession();
   const sessionState = useSessionState();
@@ -516,6 +519,9 @@ export function InvitationPage(): ReactElement {
   }
 
   function body(): ReactElement | null {
+    if (!texts.ready) {
+      return texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />;
+    }
     if (token === null) {
       return <p>{t('invitationPage.openLinkAgain')}</p>;
     }

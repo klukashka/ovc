@@ -9,6 +9,8 @@ import { Session } from '../../lib/api/session.ts';
 import type { Language } from '../../lib/i18n/resources.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import { StorageUsage } from './StorageUsage.tsx';
+import { teachingSettingsTexts as englishTeachingSettingsTexts } from './teachingTexts.en.ts';
+import { teachingSettingsTexts as russianTeachingSettingsTexts } from './teachingTexts.ru.ts';
 
 const origin = 'https://ovc.example';
 const tutorEmail = 'tutor@example.org';
@@ -34,6 +36,8 @@ async function tutorWithUsage(usedBytes: number): Promise<Session> {
 
 async function showUsage(session: Session, language: Language): Promise<void> {
   const i18n = await createI18n(language);
+  i18n.addResourceBundle('en', 'translation', { teachingSettings: englishTeachingSettingsTexts }, true, true);
+  i18n.addResourceBundle('ru', 'translation', { teachingSettings: russianTeachingSettingsTexts }, true, true);
   await act(async () => {
     render(
       <ApiClientContext value={createApiClient(origin, session.authorizedFetch)}>

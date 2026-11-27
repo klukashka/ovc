@@ -21,7 +21,7 @@ export function StorageUsage(): ReactElement {
     retry: false,
   });
   return (
-    <SettingsSection heading={t('teaching.storage')}>
+    <SettingsSection heading={t('teachingSettings.storage')}>
       {query.isPending ? <DelayedLoading /> : null}
       {query.isError ? (
         <LoadFailed
@@ -37,11 +37,11 @@ export function StorageUsage(): ReactElement {
             min={0}
             max={Math.max(1, query.data.file_quota_bytes)}
             value={query.data.file_usage_bytes}
-            aria-label={t('teaching.files')}
+            aria-label={t('teachingSettings.files')}
             className="w-full"
           />
           <p>
-            {t('teaching.storageAmount', {
+            {t('teachingSettings.storageAmount', {
               used: formatStorage(query.data.file_usage_bytes, i18n.language),
               quota: formatStorage(query.data.file_quota_bytes, i18n.language),
             })}

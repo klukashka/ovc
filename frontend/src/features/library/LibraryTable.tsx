@@ -8,7 +8,6 @@ import { useReturnFocus } from '../../components/ui/formRoute.ts';
 import {
   DataTable,
   type TableColumn,
-  endCellClass,
   narrowOnlyClass,
   primaryCellClass,
   rowLinkClass,
@@ -32,6 +31,8 @@ export interface RowHandlers {
   readonly issuable: boolean;
   readonly onCommand: (command: RowCommand, target: LibraryTarget, control: RowControl) => void;
 }
+
+const actionsCellClass = 'px-2 py-3 text-right';
 
 export function folderAddress(folderId: string | null): string {
   return folderId === null ? '/homework/library' : `/homework/library?folder=${encodeURIComponent(folderId)}`;
@@ -108,7 +109,7 @@ function VisibleAction({
   useReturnFocus(libraryRowOpener(key, 'visible'), button);
   const unavailable = handlers.busyRow !== null;
   return (
-    <span className="hidden tablet:inline-flex">
+    <span className="hidden shrink-0 tablet:inline-flex">
       <button
         ref={button}
         type="button"
@@ -119,7 +120,7 @@ function VisibleAction({
             handlers.onCommand(command, target, 'visible');
           }
         }}
-        className={quietButtonClass}
+        className={`${quietButtonClass} shrink-0 whitespace-nowrap`}
       >
         {command === 'issue' ? t('library.issueRow') : t('library.open')}
         <span className="sr-only">
@@ -159,7 +160,7 @@ function FolderRow({
       <td className={secondaryCellClass} />
       <td className={secondaryCellClass} />
       <td className={secondaryCellClass} />
-      <td className={endCellClass}>
+      <td className={actionsCellClass}>
         <RowMenu target={target} label={folder.name} commands={['rename', 'move', 'delete']} handlers={handlers} />
       </td>
     </tr>
@@ -273,7 +274,7 @@ function ItemRow({
       <td className={secondaryCellClass}>
         <ItemDate item={item} me={me} />
       </td>
-      <td className={endCellClass}>
+      <td className={actionsCellClass}>
         <span className="flex items-center justify-end gap-2">
           {visible === null ? null : (
             <VisibleAction target={target} label={item.title} command={visible} handlers={handlers} />

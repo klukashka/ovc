@@ -34,6 +34,7 @@ import { RouteTabs } from '../../components/ui/Tabs.tsx';
 import { useAddressValue } from '../../components/ui/serverValue.ts';
 import { type ApiError, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSignedInAccount } from '../../lib/api/session.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { fetchGroups, groupsKey } from '../groups/api.ts';
 import { NextLessonLine } from '../schedule/LessonList.tsx';
 import { fetchTutorCode, tutorCodeKey } from '../settings/tutorCode.ts';
@@ -50,6 +51,7 @@ import {
 } from './api.ts';
 import { GroupDots } from './GroupDots.tsx';
 import { JoinRequests, useJoinRequestsSettled } from './JoinRequests.tsx';
+import { studentListTextLoaders } from './listTexts.ts';
 import { StateBadge } from './StateBadge.tsx';
 
 interface ListView {
@@ -74,13 +76,13 @@ function Tabs({ view }: { readonly view: ListView }): ReactElement {
   const { t } = useTranslation();
   return (
     <RouteTabs
-      label={t('students.lists')}
+      label={t('studentList.lists')}
       inFilterRow
       current={view.state}
       tabs={studentListStates.map((state) => ({
         key: state,
         to: listAddress({ ...view, state }),
-        label: t(`students.tabs.${state}`),
+        label: t(`studentList.tabs.${state}`),
       }))}
     />
   );
@@ -104,14 +106,14 @@ function GroupFilter({ group }: { readonly group: string }): ReactElement | null
   return (
     <div className="flex w-full flex-col gap-1 tablet:w-auto tablet:min-w-48">
       <label htmlFor={selectId} className="text-label">
-        {t('students.group')}
+        {t('studentList.group')}
       </label>
       <div className="relative">
         <select ref={select} id={selectId} name="group" defaultValue={group} className={selectClass}>
-          <option value="">{t('students.allGroups')}</option>
+          <option value="">{t('studentList.allGroups')}</option>
           {groups.data.map((option) => (
             <option key={option.id} value={option.id}>
-              {option.archived_at === null ? option.name : t('students.archivedGroup', { name: option.name })}
+              {option.archived_at === null ? option.name : t('studentList.archivedGroup', { name: option.name })}
             </option>
           ))}
         </select>
@@ -143,13 +145,13 @@ function SearchForm({ view, inputId }: { readonly view: ListView; readonly input
   return (
     <form
       role="search"
-      aria-label={t('students.search')}
+      aria-label={t('studentList.search')}
       onSubmit={submit}
       className="flex flex-1 flex-wrap items-end gap-3"
     >
       <div className="flex w-full flex-col gap-1 tablet:w-auto tablet:min-w-60 tablet:flex-1">
         <label htmlFor={inputId} className="text-label">
-          {t('students.searchLabel')}
+          {t('studentList.searchLabel')}
         </label>
         <input
           ref={searchField}
@@ -163,7 +165,7 @@ function SearchForm({ view, inputId }: { readonly view: ListView; readonly input
       </div>
       <GroupFilter group={view.group} />
       <button type="submit" className={`${quietButtonClass} w-full tablet:w-auto`}>
-        {t('students.searchSubmit')}
+        {t('studentList.searchSubmit')}
       </button>
       {filtered ? (
         <Link
@@ -173,7 +175,7 @@ function SearchForm({ view, inputId }: { readonly view: ListView; readonly input
           }}
           className={linkClass}
         >
-          {t('students.clearSearch')}
+          {t('studentList.clearSearch')}
         </Link>
       ) : null}
     </form>
@@ -211,7 +213,7 @@ function StudentRow({ card }: { readonly card: StudentCardSummary }): ReactEleme
             )}
             {lesson === null ? null : <span className={narrowOnlyClass}>{lesson}</span>}
             <span className={`text-small text-text-muted ${narrowOnlyClass}`}>
-              {t('students.openAssignments', { count: card.open_assignments })}
+              {t('studentList.openAssignments', { count: card.open_assignments })}
             </span>
           </span>
         </span>
@@ -252,29 +254,31 @@ function EmptyList({ view, actions }: { readonly view: ListView; readonly action
   if (filtered) {
     return (
       <div className="flex flex-col items-start gap-2">
-        <p className="text-text-muted">{t('students.noMatches')}</p>
+        <p className="text-text-muted">{t('studentList.noMatches')}</p>
         <Link
           to={listAddress({ ...view, search: '', group: '' })}
           onClick={actions.onClearFilter}
           className={linkClass}
         >
-          {t('students.clearFilter')}
+          {t('studentList.clearFilter')}
         </Link>
       </div>
     );
   }
   if (!firstStudent) {
     return (
-      <p className="text-text-muted">{t(state === 'invited' ? 'students.emptyInvited' : 'students.emptyEnded')}</p>
+      <p className="text-text-muted">
+        {t(state === 'invited' ? 'studentList.emptyInvited' : 'studentList.emptyEnded')}
+      </p>
     );
   }
   return (
     <section className="flex flex-col items-start gap-3">
-      <h2 className="text-heading">{t('students.emptyTitle')}</h2>
-      <p className="text-text-muted">{t('students.emptyBody')}</p>
+      <h2 className="text-heading">{t('studentList.emptyTitle')}</h2>
+      <p className="text-text-muted">{t('studentList.emptyBody')}</p>
       {code.isSuccess ? (
         <p className="text-text-muted">
-          {t('students.emptyCode')} <span className="font-mono text-text">{code.data.code}</span>
+          {t('studentList.emptyCode')} <span className="font-mono text-text">{code.data.code}</span>
         </p>
       ) : null}
       {code.isError ? (
@@ -320,12 +324,12 @@ function StudentList({
   });
   const cards = query.data?.pages.flatMap((page) => page.items) ?? [];
   const columns: readonly TableColumn[] = [
-    { key: 'name', label: t('students.columns.name'), width: 'w-2/3 tablet:w-3/12' },
-    { key: 'email', label: t('students.columns.email'), secondary: true, width: 'w-2/12' },
-    { key: 'state', label: t('students.columns.state'), width: 'w-1/3 tablet:w-2/12' },
-    { key: 'groups', label: t('students.columns.groups'), secondary: true, width: 'w-2/12' },
-    { key: 'lesson', label: t('students.columns.nextLesson'), secondary: true, width: 'w-2/12' },
-    { key: 'open', label: t('students.columns.openAssignments'), secondary: true, width: 'w-1/12' },
+    { key: 'name', label: t('studentList.columns.name'), width: 'w-2/3 tablet:w-3/12' },
+    { key: 'email', label: t('studentList.columns.email'), secondary: true, width: 'w-2/12' },
+    { key: 'state', label: t('studentList.columns.state'), width: 'w-1/3 tablet:w-2/12' },
+    { key: 'groups', label: t('studentList.columns.groups'), secondary: true, width: 'w-2/12' },
+    { key: 'lesson', label: t('studentList.columns.nextLesson'), secondary: true, width: 'w-2/12' },
+    { key: 'open', label: t('studentList.columns.openAssignments'), secondary: true, width: 'w-1/12' },
   ];
   const { listRef, loadingMore } = useFocusOnFirstNewRow<HTMLTableSectionElement>(
     cards.length,
@@ -349,12 +353,12 @@ function StudentList({
     if (unusable !== null) {
       return (
         <div className="flex flex-col items-start gap-1">
-          <p>{t(unusable === 'group' ? 'students.groupNotFound' : 'students.searchInvalid')}</p>
+          <p>{t(unusable === 'group' ? 'studentList.groupNotFound' : 'studentList.searchInvalid')}</p>
           <Link
             to={listAddress(unusable === 'group' ? { ...view, group: '' } : { ...view, search: '' })}
             className={linkClass}
           >
-            {t(unusable === 'group' ? 'students.allGroups' : 'students.withoutSearch')}
+            {t(unusable === 'group' ? 'studentList.allGroups' : 'studentList.withoutSearch')}
           </Link>
         </div>
       );
@@ -373,7 +377,7 @@ function StudentList({
   }
   return (
     <div aria-busy={query.isPlaceholderData} className="flex flex-col items-start gap-4">
-      <DataTable label={t(`students.tabs.${state}`)} columns={columns} bodyRef={listRef}>
+      <DataTable label={t(`studentList.tabs.${state}`)} columns={columns} bodyRef={listRef}>
         {cards.map((card) => (
           <StudentRow key={card.id} card={card} />
         ))}
@@ -391,7 +395,7 @@ function StudentList({
           }}
           className={quietButtonClass}
         >
-          {t('students.showMore')}
+          {t('studentList.showMore')}
         </button>
       ) : null}
     </div>
@@ -422,6 +426,7 @@ export function StudentsPage(): ReactElement {
   const opener = useRef<HTMLElement | null>(null);
   const searchInputId = useId();
   const requestsSettled = useJoinRequestsSettled();
+  const texts = useFeatureTexts('studentList', studentListTextLoaders);
 
   function openAddDialog(element: HTMLElement): void {
     opener.current = element;
@@ -443,7 +448,7 @@ export function StudentsPage(): ReactElement {
         }}
         className={primaryButtonClass}
       >
-        {t('students.add')}
+        {t('studentList.add')}
       </button>
     );
   const emptyActions: EmptyActions = {
@@ -452,9 +457,18 @@ export function StudentsPage(): ReactElement {
     },
   };
 
+  if (!texts.ready) {
+    return (
+      <Page>
+        <LiveNotice message={null} />
+        {texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />}
+      </Page>
+    );
+  }
+
   return (
     <Page action={addButton ?? undefined}>
-      <LiveNotice message={withdrawnView === null ? null : t('students.withdrawn')} />
+      <LiveNotice message={withdrawnView === null ? null : t('studentList.withdrawn')} />
       <JoinRequests hideWhenEmpty />
       {requestsSettled ? null : <DelayedLoading />}
       <div hidden={!requestsSettled} className="flex flex-col gap-6">

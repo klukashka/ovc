@@ -4,7 +4,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { FollowingQueryClient } from '../../app/queryClient.ts';
 import { manualScheduler } from '../../lib/api/fakeTransport.ts';
 import { channelScopeRevision, evictChannel } from './cache.ts';
-import { firstPageInScope } from './firstPage.ts';
+import { ChannelScopeUnsettledError, firstPageInScope, firstPageScopeAttempts } from './firstPage.ts';
 import { channelsKey } from './keys.ts';
 import { chatRefetch } from './refetch.ts';
 
@@ -124,6 +124,25 @@ describe('the chat list across live channel signals', () => {
     expect(shown.flat()).not.toContain('removed');
     expect(server.requests.map((request) => request.signal.aborted)).toEqual([false, false]);
     expect(queryClient.getQueryData<ScopedPage>(listKey)?.fetchedScopeRevision).toBe(channelScopeRevision(queryClient));
+  });
+
+  test('a list whose scope changes during every attempt ends in the retry state and never caches the stale page', async () => {
+    const queryClient = newClient();
+    const server = listServer();
+    const shown = openList(queryClient, server.fetchList);
+    await settle(() => server.requests.length === 1);
+
+    for (let attempt = 1; attempt <= firstPageScopeAttempts; attempt += 1) {
+      evictChannel(queryClient, `removed-${String(attempt)}`, true);
+      server.requests[attempt - 1]?.answer(`attempt ${String(attempt)}`, [`removed-${String(attempt)}`, 'kept']);
+      await settle(() => server.requests.length > attempt || queryClient.getQueryState(listKey)?.status === 'error');
+    }
+
+    expect(server.requests).toHaveLength(firstPageScopeAttempts);
+    expect(queryClient.getQueryState(listKey)?.status).toBe('error');
+    expect(queryClient.getQueryState(listKey)?.error).toBeInstanceOf(ChannelScopeUnsettledError);
+    expect(versionOf(queryClient)).toBeUndefined();
+    expect(shown.flat()).toEqual([]);
   });
 
   test('removing a channel from the caller’s scope still cancels a running list request', async () => {

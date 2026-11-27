@@ -7,6 +7,7 @@ import { expectDangerConfirmation, expectLastDangerItem, openedMenu } from './da
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { busyControls, recordBusyControls } from './observers.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
+import { visibleLabelLines } from './textLines.ts';
 import { accessToken, callApi, deleteAccount, seedBlockedStudent, seedBlockedStudents, tutorCode } from './tutoring.ts';
 
 const codePattern = /^[2-9A-HJKMNP-Z]{4}-[2-9A-HJKMNP-Z]{4}$/;
@@ -171,6 +172,21 @@ test('teaching settings › a second refused unblock while the alert shows takes
   await expect(alert).toBeFocused();
   await expect(section.getByText('Вы никого не заблокировали.')).toBeVisible();
   await expect(section.getByRole('status')).toHaveCount(0);
+});
+
+test('teaching settings › at 800 px the Unblock button keeps its label on one line', async ({ page, deployment }) => {
+  const maria = await seedVerifiedUser(deployment, 'Мария');
+  const blocked = await seedBlockedStudent(deployment, maria, 'Ученик с довольно длинным именем и фамилией');
+  await signInThroughTheApi(page, maria);
+  await page.setViewportSize({ width: 800, height: 1000 });
+
+  await page.goto('/settings/teaching');
+
+  const unblock = page
+    .getByRole('region', { name: 'Заблокированные ученики' })
+    .getByRole('button', { name: `Разблокировать: ${blocked.name}` });
+  await expect(unblock).toBeVisible();
+  expect(await visibleLabelLines(unblock)).toBe(1);
 });
 
 test('teaching settings › a blocked student who deleted their account is listed without the account', async ({

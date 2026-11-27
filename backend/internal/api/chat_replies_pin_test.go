@@ -329,9 +329,9 @@ func TestOnlyTheChannelsTutorPinsAndActiveMembersLearnOfIt(t *testing.T) {
 		}
 	}
 	h.mustAnswer(t, pinned, http.StatusNoContent)
-	channelFrame := []sentFrame{{kind: string(domain.EntityChannel), id: group.ID}}
-	if !slices.Equal(framesTo(frames, parties.student), channelFrame) || !hasFrame(frames, parties.tutor, domain.EntityChannel, group.ID) ||
-		len(framesTo(frames, removed)) != 0 {
+	pinFrame := []sentFrame{{kind: string(domain.EntityChannelPin), id: group.ID}}
+	if !slices.Equal(framesTo(frames, parties.student), pinFrame) || !hasFrame(frames, parties.tutor, domain.EntityChannelPin, group.ID) ||
+		hasFrame(frames, parties.tutor, domain.EntityChannel, group.ID) || len(framesTo(frames, removed)) != 0 {
 		t.Fatalf("the pin sent the student %v, the tutor %v and the removed member %v", framesTo(frames, parties.student),
 			framesTo(frames, parties.tutor), framesTo(frames, removed))
 	}
@@ -372,9 +372,9 @@ func TestDeletingThePinnedMessageUnpinsItAndAReadOnlyChatKeepsOnlyUnpinning(t *t
 	again := h.unpin(t, parties.tutorToken, direct.ID)
 	againFrames := log.settle(t, h)
 
-	channelFrame := []sentFrame{{kind: string(domain.EntityChannel), id: direct.ID}}
-	if afterDelete != nil || !slices.Equal(entityOnly(framesTo(deleteFrames, parties.tutor)), channelFrame) ||
-		!slices.Equal(entityOnly(framesTo(deleteFrames, parties.student)), channelFrame) {
+	pinFrame := []sentFrame{{kind: string(domain.EntityChannelPin), id: direct.ID}}
+	if afterDelete != nil || !slices.Equal(channelKindsOnly(framesTo(deleteFrames, parties.tutor)), pinFrame) ||
+		!slices.Equal(channelKindsOnly(framesTo(deleteFrames, parties.student)), pinFrame) {
 		t.Fatalf("after the delete the pin is %+v and the frames were %v", afterDelete, deleteFrames)
 	}
 	if h.countLogs(`"msg":"chat.message.unpinned"`, first.ID, `"cause":"deleted"`) != 1 {
@@ -385,7 +385,8 @@ func TestDeletingThePinnedMessageUnpinsItAndAReadOnlyChatKeepsOnlyUnpinning(t *t
 	}
 	h.mustAnswer(t, unpinned, http.StatusNoContent)
 	h.mustAnswer(t, again, http.StatusNoContent)
-	if !slices.Equal(entityOnly(framesTo(unpinFrames, parties.student)), channelFrame) || len(againFrames) != 0 {
+	if !slices.Equal(channelKindsOnly(framesTo(unpinFrames, parties.student)), pinFrame) ||
+		!slices.Equal(channelKindsOnly(framesTo(unpinFrames, parties.tutor)), pinFrame) || len(againFrames) != 0 {
 		t.Fatalf("the unpin sent %v and the repeated unpin %v", unpinFrames, againFrames)
 	}
 	if h.countLogs(`"msg":"chat.message.unpinned"`, second.ID) != 1 || h.pinnedIn(t, parties.studentToken, direct.ID) != nil {
@@ -393,14 +394,39 @@ func TestDeletingThePinnedMessageUnpinsItAndAReadOnlyChatKeepsOnlyUnpinning(t *t
 	}
 }
 
-func entityOnly(frames []sentFrame) []sentFrame {
+func channelKindsOnly(frames []sentFrame) []sentFrame {
 	kept := make([]sentFrame, 0, len(frames))
 	for _, frame := range frames {
-		if frame.kind == string(domain.EntityChannel) {
+		if frame.kind == string(domain.EntityChannel) || frame.kind == string(domain.EntityChannelPin) {
 			kept = append(kept, frame)
 		}
 	}
 	return kept
+}
+
+func TestAPinChangeSkipsASuspendedReclaimPendingMember(t *testing.T) {
+	t.Parallel()
+	h := newFlowHarness(t)
+	tutor, tutorToken := h.signedInAs(t, domain.RoleTutor, domain.AccountActive, 1, tutorEmail)
+	card, squatter := h.squat(t, tutorToken, newcomerEmail, newcomerEmail)
+	channel := h.directChannel(t, card.ID)
+	squatterToken := accessToken(t, h.login(t, newcomerEmail, newcomerPassword))
+	message := h.sent(t, squatterToken, channel.ID, "Pinned before the reclaim")
+	h.mustAnswer(t, h.pin(t, tutorToken, channel.ID, message.ID), http.StatusNoContent)
+	h.reclaimed(t, newcomerEmail)
+	tutorAgain := h.relogin(t, tutorEmail)
+	log := h.recordFrames(t)
+
+	unpinned := h.unpin(t, tutorAgain, channel.ID)
+	frames := log.settle(t, h)
+
+	h.mustAnswer(t, unpinned, http.StatusNoContent)
+	if !slices.Equal(channelKindsOnly(framesTo(frames, tutor)), []sentFrame{{kind: string(domain.EntityChannelPin), id: channel.ID}}) {
+		t.Fatalf("the unpin sent the tutor %v", framesTo(frames, tutor))
+	}
+	if got := framesTo(frames, squatter); len(got) != 0 {
+		t.Fatalf("the unpin sent the suspended reclaim_pending member %v", got)
+	}
 }
 
 func TestPinsCountAsMessageWrites(t *testing.T) {
@@ -456,8 +482,10 @@ func TestPurgesAndTheErasureJobClearThePin(t *testing.T) {
 		h.mustAnswer(t, h.pin(t, parties.tutorToken, direct.ID, message.ID), http.StatusNoContent)
 		h.mustAnswer(t, h.deleteMe(t, parties.studentToken, accountPassword), http.StatusNoContent)
 		h.advance(t, domain.DeletedAccountRetention+time.Hour)
+		log := h.recordFrames(t)
 
 		h.tick(t)
+		frames := log.settle(t, h)
 		after := h.pinnedIn(t, h.relogin(t, tutorEmail), direct.ID)
 
 		if h.userExists(t, studentEmail) || after != nil || h.countRows(t, "SELECT count(id) FROM channels WHERE id = $1::uuid AND pinned_message_id IS NOT NULL", direct.ID) != 0 {
@@ -465,6 +493,9 @@ func TestPurgesAndTheErasureJobClearThePin(t *testing.T) {
 		}
 		if h.countLogs(`"msg":"chat.message.unpinned"`, message.ID, `"cause":"purged"`) != 1 {
 			t.Fatal("the purge's unpin was not recorded")
+		}
+		if got := framesOfKind(framesTo(frames, parties.tutor), domain.EntityChannelPin); !slices.Equal(got, []sentFrame{{kind: string(domain.EntityChannelPin), id: direct.ID}}) {
+			t.Fatalf("the purge's unpin sent the tutor the pin frames %v", got)
 		}
 	})
 	t.Run("the erasure job", func(t *testing.T) {
@@ -478,14 +509,19 @@ func TestPurgesAndTheErasureJobClearThePin(t *testing.T) {
 		h.mustAnswer(t, h.pin(t, tutorToken, channel.ID, message.ID), http.StatusNoContent)
 		h.mustAnswer(t, h.removeStudent(t, tutorToken, card.ID), http.StatusOK)
 		h.advance(t, time.Minute)
+		log := h.recordFrames(t)
 
 		h.tick(t)
+		frames := log.settle(t, h)
 
 		if h.messageCount(t, channel.ID) != 0 || h.directChannel(t, card.ID).ErasePending {
 			t.Fatalf("the erasure left %d messages:\n%s", h.messageCount(t, channel.ID), h.failures())
 		}
 		if h.countLogs(`"msg":"chat.message.unpinned"`, message.ID, `"cause":"erased"`) != 1 {
 			t.Fatal("the erasure's unpin was not recorded")
+		}
+		if got := framesOfKind(frames, domain.EntityChannelPin); len(got) != 0 {
+			t.Fatalf("the erasure job sent the pin frames %v", got)
 		}
 	})
 }

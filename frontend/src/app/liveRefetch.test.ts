@@ -10,6 +10,8 @@ import { lessonKey } from '../features/schedule/keys.ts';
 import { manualScheduler } from '../lib/api/fakeTransport.ts';
 import { latestNotificationsKey } from '../features/notifications/api.ts';
 import { eventually } from '../lib/eventually.ts';
+import { channelScopeRevision } from '../features/messages/cache.ts';
+import { type HistoryIntent, chatRefetch } from '../features/messages/refetch.ts';
 import { liveRefetch } from './liveRefetch.ts';
 import { FollowingQueryClient } from './queryClient.ts';
 import { NotificationArrivals } from './notificationArrivals.ts';
@@ -183,6 +185,128 @@ describe('chat event refetches', () => {
     expect(client.getQueryState(unreadChannelsKey)?.isInvalidated).toBe(false);
     expect(client.getQueryData(unreadChannelsKey)).toBe(7);
     expect(scheduler.pendingDelays()).toEqual([]);
+    client.clear();
+  });
+});
+
+describe('pin change refetches', () => {
+  interface PinPage {
+    readonly items: readonly { readonly id: string }[];
+    readonly next_cursor: string | null;
+    readonly read: number;
+  }
+
+  const firstKey = [...channelsKey, '', null];
+  const laterKey = [...channelsKey, '', 0, 'later'];
+
+  async function watchPinQueries(
+    client: FollowingQueryClient,
+    scheduler: ReturnType<typeof manualScheduler>,
+  ): Promise<{
+    readonly reads: () => Record<string, number>;
+    readonly intents: HistoryIntent[];
+    readonly stop: () => void;
+  }> {
+    const watched: Record<string, readonly unknown[]> = {
+      detail: channelKey('a'),
+      first: firstKey,
+      later: laterKey,
+      history: messagesKey('a'),
+    };
+    const counts: Record<string, number> = { detail: 0, first: 0, later: 0, history: 0 };
+    const observers = Object.entries(watched).map(
+      ([name, queryKey]) =>
+        new QueryObserver(client, {
+          queryKey,
+          queryFn: (): Promise<PinPage> => {
+            const read = (counts[name] ?? 0) + 1;
+            counts[name] = read;
+            const items = name === 'later' ? [{ id: 'c' }, { id: 'a' }] : [{ id: 'a' }];
+            return Promise.resolve({ items, next_cursor: null, read });
+          },
+          staleTime: Number.POSITIVE_INFINITY,
+        }),
+    );
+    const unsubscribes = observers.map((observer) => observer.subscribe(() => undefined));
+    await eventually(() => {
+      expect(observers.every((observer) => observer.getCurrentResult().status === 'success')).toBe(true);
+    });
+    const intents: HistoryIntent[] = [];
+    const unmount = chatRefetch(client, scheduler).mount('a', {
+      changed: (intent) => {
+        intents.push(intent);
+      },
+      flush: (): void => undefined,
+      cancel: (): void => undefined,
+      suspend: (): void => undefined,
+      resume: (): void => undefined,
+    });
+    return {
+      reads: (): Record<string, number> => ({ ...counts }),
+      intents,
+      stop: (): void => {
+        unmount();
+        for (const unsubscribe of unsubscribes) unsubscribe();
+      },
+    };
+  }
+
+  test('a channel_pin frame keeps the list pages and refreshes the detail once without re-reading the history', async () => {
+    const scheduler = manualScheduler();
+    const client = new FollowingQueryClient({ defaultOptions: { queries: { retry: false } } });
+    const queries = await watchPinQueries(client, scheduler);
+    const onEvent = liveRefetch(client, new NotificationArrivals(), scheduler);
+
+    onEvent({ kind: 'entity', entity: 'channel_pin', id: 'a' });
+    scheduler.pass(1000);
+
+    await eventually(() => {
+      expect(queries.reads()).toEqual({ detail: 2, first: 2, later: 1, history: 1 });
+    });
+    expect(client.getQueryData<PinPage>(firstKey)?.items).toEqual([{ id: 'a' }]);
+    expect(client.getQueryData<PinPage>(laterKey)).toEqual({
+      items: [{ id: 'c' }, { id: 'a' }],
+      next_cursor: null,
+      read: 1,
+    });
+    expect(channelScopeRevision(client)).toBe(0);
+    expect(queries.intents).toEqual([]);
+    expect(scheduler.pendingDelays()).toEqual([]);
+    queries.stop();
+    onEvent.cancel();
+    client.clear();
+  });
+
+  test('a channel_pin frame refreshes nothing before the coalescer’s second has passed', () => {
+    const scheduler = manualScheduler();
+    const client = new FollowingQueryClient();
+    client.setQueryData(channelKey('a'), { id: 'a' });
+    client.setQueryData(unreadChannelsKey, 1);
+    const onEvent = liveRefetch(client, new NotificationArrivals(), scheduler);
+
+    onEvent({ kind: 'entity', entity: 'channel_pin', id: 'a' });
+    scheduler.pass(999);
+
+    expect(client.getQueryState(channelKey('a'))?.isInvalidated).toBe(false);
+    expect(client.getQueryState(unreadChannelsKey)?.isInvalidated).toBe(false);
+    expect(client.getQueryData(channelKey('a'))).toEqual({ id: 'a' });
+    onEvent.cancel();
+    client.clear();
+  });
+
+  test('a channel_pin frame while the coalescer is suspended schedules nothing', () => {
+    const scheduler = manualScheduler();
+    const client = new FollowingQueryClient();
+    client.setQueryData(channelKey('a'), { id: 'a' });
+    const onEvent = liveRefetch(client, new NotificationArrivals(), scheduler);
+    onEvent.suspend();
+
+    onEvent({ kind: 'entity', entity: 'channel_pin', id: 'a' });
+
+    expect(scheduler.pendingDelays()).toEqual([]);
+    expect(client.getQueryState(channelKey('a'))?.isInvalidated).toBe(false);
+    onEvent.resume();
+    onEvent.cancel();
     client.clear();
   });
 });
@@ -370,6 +494,7 @@ describe('the /home live refetch rows', () => {
       notification: homeInvalidations(entity('notification')),
       notificationNew: homeInvalidations({ kind: 'notification', id: 'x' }),
       channel: homeInvalidations(entity('channel')),
+      channelPin: homeInvalidations(entity('channel_pin')),
       lesson: homeInvalidations(entity('lesson')),
       issue: homeInvalidations(entity('issue')),
       submission: homeInvalidations(entity('submission')),
@@ -386,6 +511,7 @@ describe('the /home live refetch rows', () => {
       notification: neither,
       notificationNew: neither,
       channel: both,
+      channelPin: tutorOnly,
       lesson: both,
       issue: tutorOnly,
       submission: both,

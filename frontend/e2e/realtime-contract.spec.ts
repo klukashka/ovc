@@ -101,6 +101,20 @@ function realSubject(deployment: Deployment, tutor: TestAccount): RealtimeContra
     changeChannel: async (): Promise<void> => {
       await createGroup(deployment, tutor, 'Группа для контракта', []);
     },
+    pinMessage: async (): Promise<void> => {
+      const token = await accessToken(deployment, tutor);
+      const group = await createGroup(deployment, tutor, 'Группа для закрепления', []);
+      const channel = textField(await callApi(deployment, token, 'GET', `/groups/${group}`), 'channel_id');
+      const sent = await callApi(deployment, token, 'POST', `/channels/${channel}/messages`, {
+        body: 'Закрепите это',
+        attachment_ids: [],
+      });
+      expect(sent.status).toBe(201);
+      const pinned = await callApi(deployment, token, 'PUT', `/channels/${channel}/pin`, {
+        message_id: textField(sent, 'id'),
+      });
+      expect(pinned.status).toBe(204);
+    },
     issueAssignment: async (): Promise<void> => {
       await issueLinkedAssignment(deployment, tutor, 'Ученик для задания');
     },

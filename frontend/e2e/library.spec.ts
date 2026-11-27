@@ -8,6 +8,7 @@ import type { Deployment } from './deployment.ts';
 import { chooseFromPageMenu, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { createReadyTemplate } from './homework.ts';
 import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
+import { visibleLabelLines } from './textLines.ts';
 import { accessToken, callApi, inSeedBatches } from './tutoring.ts';
 
 const unknownFolderId = '00000000-0000-4000-8000-00000000f01d';
@@ -581,6 +582,28 @@ test.describe('library templates', () => {
     await expect(libraryRow(page, 'Grammar').getByRole('button')).toHaveCount(1);
     await expect(libraryRow(page, 'Chapter one').getByRole('button')).toHaveCount(2);
     await expect(libraryRow(page, 'Chapter one').getByRole('button').first()).toHaveAccessibleName('Chapter one');
+  });
+
+  test('at 800 px the row’s Issue and Open buttons keep their label on one line', async ({ page, deployment }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    await createReadyTemplate(deployment, tutor, 'Fractions with a rather long title for a narrow table');
+    await createTemplate(deployment, tutor, 'Essay with a rather long title for a narrow table');
+    await page.setViewportSize({ width: 800, height: 1000 });
+
+    await openLibrary(page, tutor);
+
+    const issue = items(page).getByRole('button', {
+      name: 'Issue Fractions with a rather long title for a narrow table',
+      exact: true,
+    });
+    const open = items(page).getByRole('button', {
+      name: 'Open Essay with a rather long title for a narrow table',
+      exact: true,
+    });
+    await expect(issue).toBeVisible();
+    await expect(open).toBeVisible();
+    expect(await visibleLabelLines(issue)).toBe(1);
+    expect(await visibleLabelLines(open)).toBe(1);
   });
 
   test('the row’s Issue opens the Issue page with the template and Back returns focus to it', async ({

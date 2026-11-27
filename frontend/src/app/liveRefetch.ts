@@ -32,6 +32,8 @@ function queriesOf(entity: EntityKind, id: string): readonly QueryKey[] {
       return [calendarKey, lessonKey(id), studentListsKey, studentCardsKey, groupsKey, homeKey];
     case 'channel':
       return [calendarKey, homeKey];
+    case 'channel_pin':
+      return [];
     case 'issue':
       return [tutorHomeKey];
     case 'submission':
@@ -102,6 +104,9 @@ export function liveRefetch(
         if (event.entity === 'channel') {
           evictChannel(queryClient, event.id, true);
           coalescer.changed(event.id);
+        }
+        if (event.entity === 'channel_pin') {
+          coalescer.pinChanged(event.id);
         }
         for (const queryKey of queriesOf(event.entity, event.id)) {
           void queryClient.invalidateQueries({ queryKey });

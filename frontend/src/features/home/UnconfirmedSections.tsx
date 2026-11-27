@@ -1,7 +1,7 @@
 import { type ReactElement, useId } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { LoadFailed } from '../../components/ui/LoadState.tsx';
+import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { asApiError } from '../../lib/api/client.ts';
 import type { Me } from '../../lib/api/session.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
@@ -23,7 +23,7 @@ export function UnconfirmedSections({
     return null;
   }
   if (!texts.ready) {
-    return texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : null;
+    return texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />;
   }
   return (
     <section aria-labelledby={headingId} className="flex max-w-running-text flex-col gap-2">

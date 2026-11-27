@@ -42,6 +42,10 @@ function fakeSubject(): RealtimeContractSubject {
       gateway.changed(tutor.id, 'channel', 'channel-1');
       await Promise.resolve();
     },
+    pinMessage: async (): Promise<void> => {
+      gateway.changed(tutor.id, 'channel_pin', 'channel-1');
+      await Promise.resolve();
+    },
     issueAssignment: async (): Promise<void> => {
       gateway.changed(tutor.id, 'issue', 'issue-1', { lesson_ids: ['lesson-1'] });
       gateway.changed(tutor.id, 'submission', 'submission-1');

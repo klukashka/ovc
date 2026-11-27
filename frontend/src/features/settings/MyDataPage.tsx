@@ -45,6 +45,7 @@ import {
   fetchCurrentExport,
 } from './exportApi.ts';
 import { myDataTextLoaders } from './myDataTexts.ts';
+import { settingsTextLoaders } from './settingsTexts.ts';
 import { RequestExportDialog } from './RequestExportDialog.tsx';
 import { SettingsNav } from './SettingsNav.tsx';
 import { SettingsSection } from './SettingsRow.tsx';
@@ -366,6 +367,10 @@ export function DeleteExportForm({
       }
     };
     deleteBound().then(settle, (thrown: unknown) => {
+      if (!mounted.current || thrown instanceof CancelledError) {
+        settle(idle);
+        return;
+      }
       console.error('export_delete_failed', thrown instanceof Error ? thrown.name : typeof thrown);
       settle({ kind: 'refused', message: refusalMessage(t, asApiError(thrown), null) });
     });
@@ -617,12 +622,23 @@ function ExportSection({ me }: { readonly me: Me }): ReactElement {
 export function MyDataPage(): ReactElement {
   const me = useSignedInAccount();
   const texts = useFeatureTexts('myData', myDataTextLoaders);
+  const settingsTexts = useFeatureTexts('settings', settingsTextLoaders);
 
-  if (!texts.ready) {
+  if (!texts.ready || !settingsTexts.ready) {
     return (
       <Page>
-        <SettingsNav />
-        {texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />}
+        {settingsTexts.ready ? <SettingsNav /> : null}
+        {texts.failed || settingsTexts.failed ? (
+          <LoadFailed
+            error={asApiError(undefined)}
+            onRetry={() => {
+              texts.retry();
+              settingsTexts.retry();
+            }}
+          />
+        ) : (
+          <DelayedLoading />
+        )}
       </Page>
     );
   }

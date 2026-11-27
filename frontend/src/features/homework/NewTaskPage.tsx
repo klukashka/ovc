@@ -21,6 +21,7 @@ import { Page } from '../../components/ui/Page.tsx';
 import { refusalText } from '../../components/ui/Refusal.tsx';
 import { type ApiClient, type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { useSession, useSignedInAccount } from '../../lib/api/session.ts';
+import { useFileDropGuard } from '../../lib/files/dropGuard.ts';
 import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { addDays, localDateOf } from '../../lib/time/localDates.ts';
 import type { QuestionBlock, TemplateBlockInput } from '../builder/blocks.ts';
@@ -364,6 +365,7 @@ function NewTaskForm({ onIssued }: { readonly onIssued: (issueId: string) => voi
   const policy = usePolicyState(clientCounts);
   const contentLocked = saved !== null || templateUncertain || action.busy;
   const issueLocked = lockedIssue !== null || templateUncertain || action.busy;
+  useFileDropGuard();
 
   useEffect(() => {
     attachments.resume();

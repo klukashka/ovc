@@ -21,12 +21,15 @@ import {
 } from '../../components/ui/Form.tsx';
 import { MoreIcon } from '../../components/ui/icons.tsx';
 import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
+import { DelayedLoading, LoadFailed } from '../../components/ui/LoadState.tsx';
 import { Page } from '../../components/ui/Page.tsx';
 import { type ApiError, apiErrorFrom, asApiError, useApiClient } from '../../lib/api/client.ts';
 import { type Me, useSession, useSignedInAccount } from '../../lib/api/session.ts';
+import { useFeatureTexts } from '../../lib/i18n/featureTexts.ts';
 import { isLanguage, languages } from '../../lib/i18n/resources.ts';
 import { SettingsNav } from './SettingsNav.tsx';
 import { SettingsRow, SettingsRows } from './SettingsRow.tsx';
+import { settingsTextLoaders } from './settingsTexts.ts';
 import { TimezoneField } from './TimezoneField.tsx';
 
 type Outcome =
@@ -510,9 +513,18 @@ export function AccountSettingsPage(): ReactElement {
   const [ending, setEnding] = useState(false);
   const [passwordNotice, setPasswordNotice] = useState(0);
   const securityHeading = useId();
+  const texts = useFeatureTexts('settings', settingsTextLoaders);
   const close = (): void => {
     setDialog(null);
   };
+
+  if (!texts.ready) {
+    return (
+      <Page>
+        {texts.failed ? <LoadFailed error={asApiError(undefined)} onRetry={texts.retry} /> : <DelayedLoading />}
+      </Page>
+    );
+  }
 
   return (
     <Page

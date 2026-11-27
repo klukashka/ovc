@@ -229,6 +229,8 @@ export const homeworkTexts: HomeworkTexts = {
     removeFile: 'Убрать {name}',
     attachedFiles: 'Прикреплённые файлы',
     fileTooLarge: 'Файл больше 100 МБ',
+    wrongType: 'Файлы этого типа здесь нельзя прикреплять',
+    folderRefused: 'Папку прикрепить нельзя. Выберите файлы из неё.',
     questions: 'Вопросы',
     counts: '{total} · автоматически {automatic} · проверяете вы {manual}',
     noQuestions: 'Вопросов пока нет.',

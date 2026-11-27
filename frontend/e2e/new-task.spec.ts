@@ -6,7 +6,7 @@ import { type TestAccount, newTestAccount, registerTutor, signInThroughTheApi } 
 import { pictureFile } from './assignment.ts';
 import type { Deployment } from './deployment.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
-import { accessToken, callApi, seedActiveStudent } from './tutoring.ts';
+import { accessToken, callApi, endRelationship, seedActiveStudent } from './tutoring.ts';
 
 interface UploadFile {
   readonly name: string;
@@ -75,6 +75,19 @@ async function attach(page: Page, files: readonly UploadFile[]): Promise<void> {
     .getByRole('button', { name: /^Choose files/ })
     .click();
   await (await chooser).setFiles([...files]);
+}
+
+async function dropFileOn(target: Locator, file: UploadFile): Promise<boolean> {
+  return target.evaluate(
+    (element, { bytes, fileName, mimeType }) => {
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([new Uint8Array(bytes)], fileName, { type: mimeType }));
+      const drop = new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer });
+      element.dispatchEvent(drop);
+      return drop.defaultPrevented;
+    },
+    { bytes: [...file.buffer], fileName: file.name, mimeType: file.mimeType },
+  );
 }
 
 function attachmentTile(page: Page, name: string): Locator {
@@ -253,6 +266,33 @@ async function tutorAutoPoints(
   );
 }
 
+async function makeSavedTaskAllAutomatic(deployment: Deployment, tutor: TestAccount, title: string): Promise<void> {
+  const root = listField(await tutorGet(deployment, tutor, '/library'), 'items');
+  const templateId = textField(
+    root.find((item) => textField(item, 'title') === title),
+    'id',
+  );
+  const template = await tutorGet(deployment, tutor, `/library/templates/${templateId}`);
+  const saved = await callApi(
+    deployment,
+    await accessToken(deployment, tutor),
+    'PUT',
+    `/library/templates/${templateId}`,
+    {
+      title,
+      version: field(template, 'version'),
+      save_id: randomUUID(),
+      blocks: [
+        { id: randomUUID(), type: 'instruction', text: 'Read the pages and answer the questions.' },
+        { id: randomUUID(), type: 'short_text', prompt: 'A synonym of “very”', points: 2, accepted_answers: ['quite'] },
+      ],
+    },
+  );
+  if (saved.status !== 200 || field(saved.body, 'ready') !== true) {
+    throw new Error(`saving the template answered ${String(saved.status)}`);
+  }
+}
+
 async function reviewQueueSubmissions(deployment: Deployment, tutor: TestAccount): Promise<string[]> {
   const queue = await tutorGet(deployment, tutor, '/review-queue');
   return listField(queue, 'items').map((item) => textField(item, 'submission_id'));
@@ -341,6 +381,24 @@ test.describe('new task', () => {
       await expect(tile.locator('img')).toHaveCount(0);
     }
     await expect(main(page).locator('img[src^="blob:"]')).toHaveCount(0);
+  });
+
+  test('a file dropped outside the drop zone is held by the page, which keeps its typed title and attaches nothing', async ({
+    page,
+    deployment,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    await openNewTask(page, tutor);
+    await writeTask(page, 'Kept title');
+    const address = page.url();
+
+    const held = await dropFileOn(page.getByRole('heading', { level: 1, name: 'New task' }), pageOne);
+
+    expect(held).toBe(true);
+    expect(page.url()).toBe(address);
+    await expect(page.getByRole('heading', { level: 1, name: 'New task' })).toBeVisible();
+    await expect(main(page).getByLabel('Title', { exact: true })).toHaveValue('Kept title');
+    await expect(main(page).getByRole('list', { name: 'Attached files' })).toHaveCount(0);
   });
 
   test('a question without a prompt is refused inline before issuing', async ({ page, deployment }) => {
@@ -490,6 +548,41 @@ test.describe('new task', () => {
     expect(listField(await tutorGet(deployment, tutor, `/issues?status=active&student=${cardId}`), 'items')).toEqual(
       [],
     );
+  });
+
+  test('Issue again on a saved task whose copy lost its last hand-checked question is held back with an alert that takes focus', async ({
+    page,
+    deployment,
+    diagnostics,
+  }) => {
+    const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+    const { cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+    await openNewTask(page, tutor);
+    await writeTask(page, 'Held back');
+    await addSingleChoice(page);
+    await addManual(page, 'Text answer', 'Explain your choice');
+    await chooseStudent(page, 'Anna');
+    await choosePolicy(page, 'After checking');
+    await endRelationship(deployment, tutor, cardId);
+    diagnostics.expectFailure({ method: 'POST', path: '/api/v1/issues', status: 409 });
+    await issue(page);
+    await main(page).getByRole('alert').filter({ hasText: 'This student can no longer get assignments.' }).waitFor();
+    await makeSavedTaskAllAutomatic(deployment, tutor, 'Held back');
+    const issueRequests: string[] = [];
+    page.on('request', (request) => {
+      if (new URL(request.url()).pathname === '/api/v1/issues' && request.method() === 'POST') {
+        issueRequests.push(request.url());
+      }
+    });
+
+    await issue(page);
+
+    const heldBack = main(page).getByRole('alert').filter({
+      hasText: 'The saved task now gives answer visibility “After checking”. Check it and press Issue again.',
+    });
+    await expect(heldBack).toContainText(noManualHint);
+    await expect(heldBack).toBeFocused();
+    expect(issueRequests).toEqual([]);
   });
 
   test('an unconfirmed tutor sees the confirmation notice instead of the page', async ({ page, deployment }) => {

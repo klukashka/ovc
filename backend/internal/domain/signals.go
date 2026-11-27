@@ -44,13 +44,14 @@ const (
 	EntityNotification EntityKind = "notification"
 	EntityLesson       EntityKind = "lesson"
 	EntityChannel      EntityKind = "channel"
+	EntityChannelPin   EntityKind = "channel_pin"
 	EntityIssue        EntityKind = "issue"
 	EntitySubmission   EntityKind = "submission"
 )
 
 func (k EntityKind) Valid() bool {
 	switch k {
-	case EntityRelationship, EntityJoinRequest, EntityNotification, EntityLesson, EntityChannel, EntityIssue, EntitySubmission:
+	case EntityRelationship, EntityJoinRequest, EntityNotification, EntityLesson, EntityChannel, EntityChannelPin, EntityIssue, EntitySubmission:
 		return true
 	}
 	return false

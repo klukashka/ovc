@@ -907,6 +907,85 @@ test.describe('replies and the pinned message', () => {
   });
 });
 
+interface PinnedChatWorld {
+  readonly tutorToken: string;
+  readonly student: TestAccount;
+  readonly channel: string;
+  readonly message: string;
+}
+
+const chatsBeyondTheFirstPage = 31;
+
+async function studentWithTwoListPages(deployment: Deployment): Promise<PinnedChatWorld> {
+  const tutor = await seedVerifiedUser(deployment, 'Pavel', 'en');
+  const { student, cardId } = await seedActiveStudent(deployment, tutor, 'Anna');
+  const channel = await channelOf(deployment, tutor, `/students/${cardId}`);
+  const tutorToken = await accessToken(deployment, tutor);
+  const seeded = await callApi(deployment, tutorToken, 'POST', `/channels/${channel}/messages`, {
+    body: 'Something to pin',
+    attachment_ids: [],
+  });
+  expect(seeded.status).toBe(201);
+  const message = (seeded.body as { readonly id?: unknown }).id;
+  if (typeof message !== 'string') throw new Error('the seeded message has no identifier');
+  for (let index = 1; index <= chatsBeyondTheFirstPage; index += 1) {
+    await createGroup(deployment, tutor, `Group ${String(index)}`, [cardId]);
+  }
+  return { tutorToken, student, channel, message };
+}
+
+async function openBothListPages(page: Page, world: PinnedChatWorld): Promise<Locator> {
+  await signInThroughTheApi(page, world.student);
+  await openSettledConversation(page, world.channel, 'with the chat list');
+  const list = page.getByRole('region', { name: 'Chats', exact: true });
+  const rows = list.getByRole('link');
+  await expect(rows).toHaveCount(30);
+  await list.getByRole('button', { name: 'Show more', exact: true }).click();
+  await expect(rows).toHaveCount(chatsBeyondTheFirstPage + 1);
+  return rows;
+}
+
+test.describe('pin changes and the chat list', () => {
+  test.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1280, height: 800 } });
+
+  test('a pin by the tutor shows the student the pinned bar and keeps the student’s second list page', async ({
+    page,
+    deployment,
+  }) => {
+    const world = await studentWithTwoListPages(deployment);
+    const rows = await openBothListPages(page, world);
+    const bar = page.getByRole('region', { name: 'Pinned message', exact: true });
+
+    const pinned = await callApi(deployment, world.tutorToken, 'PUT', `/channels/${world.channel}/pin`, {
+      message_id: world.message,
+    });
+
+    expect(pinned.status).toBe(204);
+    await expect(bar).toContainText('Something to pin');
+    await expect(rows).toHaveCount(chatsBeyondTheFirstPage + 1);
+  });
+
+  test('an unpin by the tutor removes the student’s pinned bar and keeps the student’s second list page', async ({
+    page,
+    deployment,
+  }) => {
+    const world = await studentWithTwoListPages(deployment);
+    const pinned = await callApi(deployment, world.tutorToken, 'PUT', `/channels/${world.channel}/pin`, {
+      message_id: world.message,
+    });
+    expect(pinned.status).toBe(204);
+    const rows = await openBothListPages(page, world);
+    const bar = page.getByRole('region', { name: 'Pinned message', exact: true });
+    await bar.waitFor();
+
+    const unpinned = await callApi(deployment, world.tutorToken, 'DELETE', `/channels/${world.channel}/pin`);
+
+    expect(unpinned.status).toBe(204);
+    await expect(bar).toHaveCount(0);
+    await expect(rows).toHaveCount(chatsBeyondTheFirstPage + 1);
+  });
+});
+
 test.describe('read ticks in a direct chat', () => {
   test.use({ locale: 'en-GB', timezoneId: 'Europe/Moscow', viewport: { width: 1280, height: 800 } });
 

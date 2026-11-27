@@ -96,21 +96,21 @@ async function openSettledToday(page: Page): Promise<void> {
   await expectSettledAfterTheSocketIsReady(page, traffic);
 }
 
-test('hiding the sidebar moves focus to the show button and is remembered', async ({ signedInPage: page }) => {
+test('hiding the sidebar moves focus to the show button', async ({ signedInPage: page }) => {
   await openSettledToday(page);
 
   await page.getByRole('button', { name: 'Скрыть боковую панель' }).click();
-  const focusedAfterHiding = await page
-    .waitForFunction(() => document.activeElement?.getAttribute('aria-label') === 'Показать боковую панель', null, {
-      timeout: 5_000,
-    })
-    .then(
-      () => true,
-      () => false,
-    );
+
+  await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeFocused();
+});
+
+test('a hidden sidebar is remembered across a reload', async ({ signedInPage: page }) => {
+  await openSettledToday(page);
+  await page.getByRole('button', { name: 'Скрыть боковую панель' }).click();
+  await page.getByRole('button', { name: 'Показать боковую панель' }).waitFor();
+
   await page.reload();
 
-  expect(focusedAfterHiding).toBe(true);
   await expect(page.getByRole('navigation', { name: 'Основная навигация' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeVisible();
 });
@@ -118,8 +118,9 @@ test('hiding the sidebar moves focus to the show button and is remembered', asyn
 test('showing the sidebar again is remembered', async ({ signedInPage: page }) => {
   await openSettledToday(page);
   await page.getByRole('button', { name: 'Скрыть боковую панель' }).click();
-
   await page.getByRole('button', { name: 'Показать боковую панель' }).click();
+  await page.getByRole('navigation', { name: 'Основная навигация' }).waitFor();
+
   await page.reload();
 
   await expect(page.getByRole('navigation', { name: 'Основная навигация' })).toBeVisible();
@@ -149,18 +150,27 @@ test.describe('from 768 to 1023 px', () => {
     await expect(page.getByRole('dialog').getByRole('link', { name: 'Сегодня' })).toBeFocused();
   });
 
-  test('Tab and Shift+Tab stay inside the overlay', async ({ signedInPage: page }) => {
+  test('Tab from the overlay’s last section stays inside the overlay on the account menu', async ({
+    signedInPage: page,
+  }) => {
     await openOverlay(page);
     const dialog = page.getByRole('dialog');
     await dialog.getByRole('link', { name: 'Настройки' }).focus();
 
     await page.keyboard.press('Tab');
-    const focusedAfterTab = await dialog
-      .getByRole('button', { name: /Меню аккаунта/ })
-      .evaluate((element) => element === document.activeElement);
+
+    await expect(dialog.getByRole('button', { name: /Меню аккаунта/ })).toBeFocused();
+  });
+
+  test('Shift+Tab from the overlay’s account menu stays inside the overlay on its last section', async ({
+    signedInPage: page,
+  }) => {
+    await openOverlay(page);
+    const dialog = page.getByRole('dialog');
+    await dialog.getByRole('button', { name: /Меню аккаунта/ }).focus();
+
     await page.keyboard.press('Shift+Tab');
 
-    expect(focusedAfterTab).toBe(true);
     await expect(dialog.getByRole('link', { name: 'Настройки' })).toBeFocused();
   });
 
@@ -304,16 +314,20 @@ test.describe('below 768 px', () => {
     await expect(groups).toHaveAttribute('aria-current', 'page');
   });
 
-  test('Shift+Tab and Tab stay inside the sheet', async ({ signedInPage: page }) => {
+  test('Shift+Tab from the sheet’s first row stays inside the sheet on Close', async ({ signedInPage: page }) => {
     await openSheetOnToday(page);
 
     await page.keyboard.press('Shift+Tab');
-    const closeFocusedAfterShiftTab = await moreSheet(page)
-      .getByRole('button', { name: 'Закрыть' })
-      .evaluate((element) => element === document.activeElement);
+
+    await expect(moreSheet(page).getByRole('button', { name: 'Закрыть' })).toBeFocused();
+  });
+
+  test('Tab from the sheet’s Close stays inside the sheet on its first row', async ({ signedInPage: page }) => {
+    await openSheetOnToday(page);
+    await moreSheet(page).getByRole('button', { name: 'Закрыть' }).focus();
+
     await page.keyboard.press('Tab');
 
-    expect(closeFocusedAfterShiftTab).toBe(true);
     await expect(moreSheet(page).getByRole('link', { name: 'Ученики' })).toBeFocused();
   });
 
@@ -508,26 +522,31 @@ test('the current sidebar item uses the primary text colour', async ({ signedInP
   );
 });
 
-test('controls on a computer follow the token sizes', async ({ page, tutor }) => {
+test('the public frame’s controls on a computer follow the token sizes', async ({ page }) => {
   await page.goto('/');
+
   const languageButtons = await boxSizes([page.getByRole('button', { name: 'Русский' })]);
   const logo = await boxSizes([page.getByRole('link', { name: 'OVC' })]);
+
+  expect(languageButtons[0]?.height).toBeGreaterThanOrEqual(40);
+  expect(logo[0]?.height).toBeGreaterThanOrEqual(44);
+});
+
+test('the sidebar items on a computer follow the token sizes', async ({ page, tutor }) => {
   await signInThroughTheApi(page, tutor);
+
   await page.goto('/today');
 
   const sidebarItems = await boxSizes([page.getByRole('navigation').getByRole('link', { name: 'Сегодня' })]);
-
   expect(sidebarItems[0]?.height).toBe(32);
-  expect(languageButtons[0]?.height).toBeGreaterThanOrEqual(40);
-  expect(logo[0]?.height).toBeGreaterThanOrEqual(44);
 });
 
 test('the account menu closes when focus leaves it', async ({ signedInPage: page }) => {
   await page.goto('/today');
   await page.getByRole('button', { name: /Меню аккаунта/ }).click();
   await page.getByRole('button', { name: 'Выйти' }).waitFor();
-
   await page.getByRole('button', { name: 'Выйти' }).focus();
+
   await page.keyboard.press('Tab');
 
   await expect(page.getByRole('button', { name: 'Выйти' })).toHaveCount(0);
@@ -536,22 +555,30 @@ test('the account menu closes when focus leaves it', async ({ signedInPage: page
 test.describe('at 900 px', () => {
   test.use({ viewport: { width: 900, height: 800 } });
 
-  test('every frame target is at least 44 px', async ({ page, tutor }) => {
+  test('every public frame target is at least 44 px', async ({ page }) => {
     await page.goto('/');
+
     const publicTargets = await boxSizes([
       page.getByRole('button', { name: 'Русский' }),
       page.getByRole('navigation').getByRole('link', { name: 'Войти' }),
     ]);
+
+    for (const size of publicTargets) {
+      expect(size.height).toBeGreaterThanOrEqual(44);
+    }
+  });
+
+  test('every target of the overlay is at least 44 px', async ({ page, tutor }) => {
     await signInThroughTheApi(page, tutor);
     await page.goto('/today');
+
     await page.getByRole('button', { name: 'Показать боковую панель' }).click();
 
     const overlayTargets = await boxSizes([
       page.getByRole('dialog').getByRole('link', { name: 'Сегодня' }),
       page.getByRole('dialog').getByRole('button', { name: /Меню аккаунта/ }),
     ]);
-
-    for (const size of [...publicTargets, ...overlayTargets]) {
+    for (const size of overlayTargets) {
       expect(size.height).toBeGreaterThanOrEqual(44);
     }
   });
@@ -562,9 +589,9 @@ test.describe('at 900 px', () => {
     await page.goto('/today');
     await page.getByRole('button', { name: 'Показать боковую панель' }).click();
     await page.getByRole('dialog', { name: 'Боковая панель' }).waitFor();
-
     await page.setViewportSize({ width: 1280, height: 800 });
     await page.getByRole('button', { name: 'Скрыть боковую панель' }).waitFor();
+
     await page.setViewportSize({ width: 900, height: 800 });
 
     await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeVisible();
@@ -587,32 +614,54 @@ test.describe('at 900 px', () => {
     await expect(page).toHaveURL('/today');
   });
 
-  test('Escape closes the overlay’s notifications panel with focus on its item, and a second Escape closes the overlay', async ({
+  test('Escape closes the overlay’s notifications panel with focus on its item and keeps the overlay open', async ({
     signedInPage: page,
   }) => {
-    await page.goto('/today');
-    await page.getByRole('button', { name: 'Показать боковую панель' }).click();
-    const overlay = page.getByRole('dialog', { name: 'Боковая панель' });
-    const item = overlay.getByRole('button', { name: /^Уведомления/ });
-    await item.click();
+    const { overlay, item } = await openOverlayNotifications(page);
+
+    await page.keyboard.press('Escape');
+
+    await expect(item).toBeFocused();
+    await expect(item).toHaveAttribute('aria-expanded', 'false');
+    await expect(overlay).toHaveJSProperty('open', true);
+  });
+
+  test('a second Escape after the notifications panel closed closes the overlay and returns focus to the show button', async ({
+    signedInPage: page,
+  }) => {
+    const { overlay } = await openOverlayNotifications(page);
+    await page.keyboard.press('Escape');
     await page.waitForFunction(
-      () => document.activeElement instanceof HTMLHeadingElement && document.activeElement.closest('dialog') !== null,
+      () =>
+        document.activeElement instanceof HTMLButtonElement &&
+        document.activeElement.closest('dialog') !== null &&
+        document.activeElement.getAttribute('aria-expanded') === 'false',
     );
 
     await page.keyboard.press('Escape');
-    const afterFirstEscape = await item.evaluate((element) => ({
-      focused: element === document.activeElement,
-      expanded: element.getAttribute('aria-expanded'),
-      overlayOpen: element.closest('dialog')?.open === true,
-    }));
-    await page.keyboard.press('Escape');
 
-    expect(afterFirstEscape).toEqual({ focused: true, expanded: 'false', overlayOpen: true });
     await expect(overlay).toBeHidden();
     await expect(page.getByRole('region', { name: 'Уведомления' })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Показать боковую панель' })).toBeFocused();
   });
 });
+
+interface OverlayNotifications {
+  readonly overlay: Locator;
+  readonly item: Locator;
+}
+
+async function openOverlayNotifications(page: Page): Promise<OverlayNotifications> {
+  await page.goto('/today');
+  await page.getByRole('button', { name: 'Показать боковую панель' }).click();
+  const overlay = page.getByRole('dialog', { name: 'Боковая панель' });
+  const item = overlay.getByRole('button', { name: /^Уведомления/ });
+  await item.click();
+  await page.waitForFunction(
+    () => document.activeElement instanceof HTMLHeadingElement && document.activeElement.closest('dialog') !== null,
+  );
+  return { overlay, item };
+}
 
 interface HoldingServer {
   readonly origin: string;

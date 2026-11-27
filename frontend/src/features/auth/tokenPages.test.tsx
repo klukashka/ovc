@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import type { i18n as I18n } from 'i18next';
 import type { ReactElement } from 'react';
 import { I18nextProvider } from 'react-i18next';
 import { RouterProvider, createMemoryRouter } from 'react-router';
@@ -17,6 +18,8 @@ import { lazyPage } from '../../routes/LazyPage.tsx';
 import { routes } from '../../routes/router.tsx';
 import { AddressTokenHolder } from './AddressToken.tsx';
 import { InvitationPage } from './InvitationPage.tsx';
+import { invitationPageTexts as englishInvitationTexts } from './invitationTexts.en.ts';
+import { invitationPageTexts as russianInvitationTexts } from './invitationTexts.ru.ts';
 import { InvitationTokenHolder } from './InvitationToken.tsx';
 import { ResetPasswordPage } from './PasswordPages.tsx';
 import { VerifyEmailPage } from './VerifyEmailPage.tsx';
@@ -51,8 +54,15 @@ function invitationRouterAt(address: string): ReturnType<typeof createMemoryRout
   );
 }
 
-async function show(router: ReturnType<typeof createMemoryRouter>): Promise<void> {
+async function russian(): Promise<I18n> {
   const i18n = await createI18n('ru');
+  i18n.addResourceBundle('en', 'translation', { invitationPage: englishInvitationTexts }, true, true);
+  i18n.addResourceBundle('ru', 'translation', { invitationPage: russianInvitationTexts }, true, true);
+  return i18n;
+}
+
+async function show(router: ReturnType<typeof createMemoryRouter>): Promise<void> {
+  const i18n = await russian();
   await act(async () => {
     render(
       <SessionContext value={unstartedSession()}>
@@ -71,7 +81,7 @@ async function show(router: ReturnType<typeof createMemoryRouter>): Promise<void
 
 async function renderApp(session: Session, address: string): Promise<ReturnType<typeof createMemoryRouter>> {
   const router = createMemoryRouter(routes, { initialEntries: [address] });
-  const i18n = await createI18n('ru');
+  const i18n = await russian();
   await act(async () => {
     render(
       <MediaQueriesContext value={fixedMediaQueries([])}>

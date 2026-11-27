@@ -8,7 +8,7 @@ import { useScheduler } from '../../app/clock.ts';
 import { useAction } from '../../components/ui/action.ts';
 import { ActionMenu, type MenuItem } from '../../components/ui/ActionMenu.tsx';
 import { linkClass, quietButtonClass } from '../../components/ui/Form.tsx';
-import { CalendarIcon, CheckIcon, CrossIcon, DashIcon, DoorIcon, MoreIcon } from '../../components/ui/icons.tsx';
+import { CalendarIcon, CheckIcon, ClockIcon, CrossIcon, DashIcon, MoreIcon } from '../../components/ui/icons.tsx';
 import { useFormResult, useFormReturned, useOpenFormRoute, useReturnFocus } from '../../components/ui/formRoute.ts';
 import { FocusedNotice, LiveNotice } from '../../components/ui/LiveNotice.tsx';
 import { ReturnedNotice } from '../../components/ui/ReturnedNotice.tsx';
@@ -88,7 +88,7 @@ function PhaseWord({
     case 'window':
       return (
         <span className="inline-flex items-center gap-1.5 text-accent-text">
-          <DoorIcon size={14} />
+          <ClockIcon size={14} />
           {t('lesson.startingSoon')}
         </span>
       );

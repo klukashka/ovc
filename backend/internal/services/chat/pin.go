@@ -46,7 +46,7 @@ func (s *Service) Pin(ctx context.Context, author Author, channel domain.Channel
 		if err := repos.Channels.SetPin(ctx, channel, message, now); err != nil {
 			return err
 		}
-		return signalMembers(ctx, repos, []domain.ChannelID{channel}, everyMember)
+		return signalPinChanged(ctx, repos, []domain.ChannelID{channel})
 	})
 	if err != nil {
 		release()
@@ -79,7 +79,7 @@ func (s *Service) Unpin(ctx context.Context, author Author, channel domain.Chann
 			return err
 		}
 		unpinned = pinned
-		return signalMembers(ctx, repos, []domain.ChannelID{channel}, everyMember)
+		return signalPinChanged(ctx, repos, []domain.ChannelID{channel})
 	})
 	if err != nil {
 		release()

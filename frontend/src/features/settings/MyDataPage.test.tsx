@@ -30,6 +30,8 @@ import { DeleteExportForm, MyDataPage } from './MyDataPage.tsx';
 import { myDataTexts as englishTexts } from './myDataTexts.en.ts';
 import { myDataTexts as russianTexts } from './myDataTexts.ru.ts';
 import { RequestExportForm } from './RequestExportDialog.tsx';
+import { settingsTexts as englishSettingsTexts } from './settingsTexts.en.ts';
+import { settingsTexts as russianSettingsTexts } from './settingsTexts.ru.ts';
 
 const origin = 'https://ovc.example';
 const email = 'person@example.org';
@@ -92,6 +94,8 @@ async function english(): Promise<I18n> {
   const i18n = await createI18n('en');
   i18n.addResourceBundle('en', 'translation', { myData: englishTexts }, true, true);
   i18n.addResourceBundle('ru', 'translation', { myData: russianTexts }, true, true);
+  i18n.addResourceBundle('en', 'translation', { settings: englishSettingsTexts }, true, true);
+  i18n.addResourceBundle('ru', 'translation', { settings: russianSettingsTexts }, true, true);
   return i18n;
 }
 

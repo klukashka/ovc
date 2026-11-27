@@ -172,7 +172,7 @@ func (r Release) clearPinsOfErased(ctx context.Context, repos repositories.Repos
 	for _, pin := range cleared {
 		channels = append(channels, pin.Channel)
 	}
-	if err := signalMembers(ctx, repos, channels, everyMember); err != nil {
+	if err := signalPinChanged(ctx, repos, channels); err != nil {
 		return err
 	}
 	for _, pin := range cleared {

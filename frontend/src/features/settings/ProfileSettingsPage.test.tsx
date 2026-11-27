@@ -9,6 +9,8 @@ import { FakeAuthServer, manualScheduler, memoryLocks } from '../../lib/api/fake
 import { type Me, Session, SessionContext } from '../../lib/api/session.ts';
 import { createI18n } from '../../lib/i18n/i18n.ts';
 import { ProfileSettingsPage } from './ProfileSettingsPage.tsx';
+import { settingsTexts as englishSettingsTexts } from './settingsTexts.en.ts';
+import { settingsTexts as russianSettingsTexts } from './settingsTexts.ru.ts';
 
 const origin = 'https://ovc.example';
 
@@ -33,6 +35,8 @@ async function signedInAs(role: Me['role']): Promise<Session> {
 
 async function show(session: Session): Promise<void> {
   const i18n = await createI18n('ru');
+  i18n.addResourceBundle('en', 'translation', { settings: englishSettingsTexts }, true, true);
+  i18n.addResourceBundle('ru', 'translation', { settings: russianSettingsTexts }, true, true);
   const router = createMemoryRouter([{ path: '*', element: <ProfileSettingsPage /> }], {
     initialEntries: ['/settings/profile'],
   });

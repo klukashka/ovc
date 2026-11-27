@@ -73,6 +73,22 @@ describe('frames', () => {
     expect(refusals).toEqual(refused.map(() => null));
   });
 
+  test('accepts the channel_pin kind with only its identifier and still refuses an unknown kind', () => {
+    const accepted = '{"type":"entity.changed","payload":{"kind":"channel_pin","id":"channel-1"}}';
+    const refused = [
+      '{"type":"entity.changed","payload":{"kind":"channel_pin","id":"channel-1","lesson_ids":["lesson-1"]}}',
+      '{"type":"entity.changed","payload":{"kind":"channel_pin","id":""}}',
+      '{"type":"entity.changed","payload":{"kind":"channel_pins","id":"channel-1"}}',
+      '{"type":"entity.changed","payload":{"kind":"pin","id":"channel-1"}}',
+    ];
+
+    const parsed = parseServerFrame(accepted);
+    const refusals = refused.map((text) => parseServerFrame(text));
+
+    expect(parsed).toEqual({ type: 'entity.changed', kind: 'channel_pin', id: 'channel-1' });
+    expect(refusals).toEqual(refused.map(() => null));
+  });
+
   test('parses typing and presence strictly', () => {
     const accepted = [
       '{"type":"typing","payload":{"channel_id":"channel-1","user_id":"user-1"}}',
