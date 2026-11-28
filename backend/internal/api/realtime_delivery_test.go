@@ -102,6 +102,17 @@ func TestAFailedRecheckClosesWith1012(t *testing.T) {
 	h.awaitLogs(t, 1, `"realtime.recheck.failed"`)
 }
 
+func (h *liveHarness) floodUntilBackpressure(t *testing.T, user domain.UserID) {
+	t.Helper()
+	h.waitFor(t, "a socket closed for backpressure", func() bool {
+		if h.countLogs(`"ws.backpressure.closed"`) > 0 {
+			return true
+		}
+		h.floodEntities(t, user, 100)
+		return false
+	})
+}
+
 func TestSlowConsumerIsClosedWith4429(t *testing.T) {
 	t.Parallel()
 	h := newLiveHarness(t, liveTuning{gateway: func(deps *realtime.Dependencies) { deps.Timing.WriteTimeout = 200 * time.Millisecond }})
@@ -118,11 +129,8 @@ func TestSlowConsumerIsClosedWith4429(t *testing.T) {
 		t.Fatalf("no ready frame: %s %v", ready, err)
 	}
 
-	for range 100 {
-		h.floodEntities(t, user, 100)
-	}
+	h.floodUntilBackpressure(t, user)
 
-	h.awaitLogs(t, 1, `"ws.backpressure.closed"`)
 	h.awaitLogs(t, 1, `"ws.connection.closed"`, `"code":4429`)
 	slowConsumer := h.countLogs(`"ws.connection.closed"`, `"code":4429`, `"reason":"write_timeout"`) +
 		h.countLogs(`"ws.connection.closed"`, `"code":4429`, `"reason":"backpressure"`)
