@@ -128,6 +128,9 @@ export function frontendConfiguration(mode: string, environment: Readonly<Record
     plugins: [react(), tailwindcss(), languageChunksHoldOnlyTexts(), moveBuildManifest(), writeModuleGraph()],
     build: {
       assetsInlineLimit: 0,
+      modulePreload: {
+        resolveDependencies: (_filename, dependencies, { hostType }) => (hostType === 'html' ? dependencies : []),
+      },
       sourcemap: false,
       manifest: true,
       rolldownOptions: {

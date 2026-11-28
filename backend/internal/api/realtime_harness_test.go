@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"strings"
 	"sync"
@@ -53,10 +54,11 @@ func (m *manualNow) advance(by time.Duration) {
 }
 
 type liveTuning struct {
-	gateway        func(*realtime.Dependencies)
-	listener       func(*listener.Timing)
-	testControl    bool
-	lockContention bool
+	gateway         func(*realtime.Dependencies)
+	listener        func(*listener.Timing)
+	testControl     bool
+	lockContention  bool
+	smallSendBuffer bool
 }
 
 func (tuning liveTuning) database(t *testing.T) *testdb.Database {
@@ -106,6 +108,9 @@ func newLiveHarness(t *testing.T, tuning liveTuning) *liveHarness {
 				options.Mount = testcontrol.New(testcontrol.Dependencies{Logger: logger, Clock: shared, Realtime: created}).Mount
 			}
 		})
+	if tuning.smallSendBuffer {
+		h.server = smallSendBufferServer(t, h.server.Config.Handler)
+	}
 	instance, err := core.NewID[domain.InstanceID](core.CryptoRandom())
 	if err != nil {
 		t.Fatal(err)
@@ -533,6 +538,31 @@ func (b *authBarrier) awaitHeld(t *testing.T) {
 	case <-time.After(socketDeadline):
 		t.Fatal("authentication never reached the barrier")
 	}
+}
+
+func smallSendBufferServer(t *testing.T, handler http.Handler) *httptest.Server {
+	t.Helper()
+	config := net.ListenConfig{Control: func(_ string, _ string, raw syscall.RawConn) error {
+		var setErr error
+		if err := raw.Control(func(descriptor uintptr) {
+			setErr = syscall.SetsockoptInt(int(descriptor), syscall.SOL_SOCKET, syscall.SO_SNDBUF, 4096)
+		}); err != nil {
+			return err
+		}
+		return setErr
+	}}
+	bound, err := config.Listen(t.Context(), "tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewUnstartedServer(handler)
+	if err := server.Listener.Close(); err != nil {
+		t.Fatal(err)
+	}
+	server.Listener = bound
+	server.Start()
+	t.Cleanup(server.Close)
+	return server
 }
 
 func smallReceiveBuffer() *net.Dialer {

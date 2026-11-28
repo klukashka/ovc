@@ -2,7 +2,14 @@ import { randomUUID } from 'node:crypto';
 
 import type { Locator, Page, Response } from '@playwright/test';
 
-import { type TestAccount, newTestAccount, registerTutor, signInThroughTheApi, testNetAddress } from './accounts.ts';
+import {
+  type TestAccount,
+  newTestAccount,
+  pageSettled,
+  registerTutor,
+  signInThroughTheApi,
+  testNetAddress,
+} from './accounts.ts';
 import type { Deployment } from './deployment.ts';
 import {
   chooseFromPageMenu,
@@ -1057,6 +1064,7 @@ test.describe('builder preview on a phone', () => {
     const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
     const template = await createTemplate(deployment, tutor, 'Frames', [instruction('Read it.')]);
     await openBuilder(page, tutor, template.id);
+    await pageSettled(page);
     const preview = await layoutBox(page.getByRole('button', { name: 'Preview', exact: true }));
     const scrollBeforePress = await page.evaluate(() => window.scrollY);
 

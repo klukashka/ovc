@@ -8,7 +8,12 @@ import { bellIn, panelRowsIn } from './notifications.ts';
 import { diagnosedTest as test, expect, seedVerifiedUser, signUpAndConfirmTutor, tableRows } from './fixtures.ts';
 import { busyControls, offsetsBelowHeading, recordBusyControls, recordFirstOffsets } from './observers.ts';
 import { expectDangerConfirmation, expectLastDangerItem, openedMenu } from './dangerActions.ts';
-import { expectReadyForNavigation, todayQueryPaths, trafficAfterReady } from './realtime.ts';
+import {
+  expectReadyForNavigation,
+  expectSettledAfterTheSocketIsReady,
+  todayQueryPaths,
+  trafficAfterReady,
+} from './realtime.ts';
 import {
   acceptSignedIn,
   createCard,
@@ -306,7 +311,9 @@ test.describe('Olga in Russian', () => {
     const { anna, olga } = await seedRequestToOlga(deployment);
     await recordBusyControls(page);
     await signInThroughTheApi(page, olga);
+    const traffic = trafficAfterReady(page, ['/api/v1/join-requests']);
     await page.goto('/students');
+    await expectSettledAfterTheSocketIsReady(page, traffic);
     const request = joinRequests(page).getByRole('listitem').filter({ hasText: anna.email });
     await request.getByRole('button', { name: 'Другие действия: Анна' }).click();
     await joinRequests(page).getByRole('button', { name: 'Отклонить и заблокировать' }).click();
