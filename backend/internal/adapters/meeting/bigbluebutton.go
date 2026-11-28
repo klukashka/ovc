@@ -280,7 +280,7 @@ func (b *BigBlueButton) send(ctx context.Context, name string, values url.Values
 		return bbbResponse{}, FailureUnavailable
 	}
 	answered, err := io.ReadAll(io.LimitReader(answer.Body, bbbMaxResponseBytes+1))
-	if err != nil {
+	if err != nil || ctx.Err() != nil {
 		return bbbResponse{}, FailureUnavailable
 	}
 	if len(answered) > bbbMaxResponseBytes {
