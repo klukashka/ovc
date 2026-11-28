@@ -1636,12 +1636,12 @@ def bash_decision(command: str, cwd: str, lock_dir: str) -> tuple[str, str] | No
     local_check = local_check_reason(command)
     if relevant_command(command, cwd):
         if split_heredocs(command)[1]:
-            return "ask", "a git push-family or gh call with a heredoc"
+            return "refuse", "a git push-family or gh call with a heredoc"
         refusal = allowed_form_refusal(command, cwd, lock_dir)
         if refusal is not None:
-            return "ask", refusal
+            return "refuse", refusal
     if local_check is not None:
-        return "ask", f"{local_check}, which runs in CI rather than on the laptop"
+        return "refuse", f"{local_check}, which runs in CI rather than on the laptop"
     return None
 
 
@@ -1658,7 +1658,7 @@ def github_decision(payload: dict[str, object], lock_dir: str) -> tuple[str, str
     tool = payload.get("tool_name")
     tool_input = payload.get("tool_input")
     if not isinstance(tool, str) or not isinstance(tool_input, dict):
-        return "ask", "the guard could not read the hook payload"
+        return "refuse", "the guard could not read the hook payload"
     if tool in FILE_TOOLS or tool in SEARCH_TOOLS:
         for key in ("file_path", "notebook_path", "path"):
             value = tool_input.get(key)
@@ -1670,23 +1670,19 @@ def github_decision(payload: dict[str, object], lock_dir: str) -> tuple[str, str
     command = tool_input.get("command")
     cwd = payload.get("cwd")
     if not isinstance(command, str):
-        return "ask", "the guard could not read the command"
+        return "refuse", "the guard could not read the command"
     return bash_decision(command, cwd if isinstance(cwd, str) and os.path.isdir(cwd) else os.getcwd(), lock_dir)
 
 
-def ask_owner(reason: str) -> int:
+def unallowed_form_refusal(reason: str) -> int:
     print(
-        json.dumps(
-            {
-                "hookSpecificOutput": {
-                    "hookEventName": "PreToolUse",
-                    "permissionDecision": "ask",
-                    "permissionDecisionReason": f"The guard asks the owner: {reason}. Only the exact allowed push, dispatch and read forms pass without asking.",
-                }
-            }
-        )
+        f"Refused: {reason}. Only the exact allowed push, dispatch and read forms run, and the guard never asks the owner. "
+        "Rewrite the call in an allowed form: a gh or git push call as the whole command, without --repo, ;, |, &&, "
+        "redirection or $(...); read-only git loops in a script file; no local checks, which run in CI. "
+        "If the action really needs the owner, give the owner the exact command to run himself.",
+        file=sys.stderr,
     )
-    return 0
+    return 2
 
 
 def credential_refusal(reason: str) -> int:
@@ -1698,7 +1694,7 @@ def credential_refusal(reason: str) -> int:
     return 2
 
 
-def main() -> int:
+def checked_main() -> int:
     try:
         payload = json.load(sys.stdin)
         target = blocked_target(payload) if isinstance(payload, dict) else "malformed hook payload"
@@ -1708,11 +1704,11 @@ def main() -> int:
         try:
             decision = github_decision(payload, lock_folder(sys.argv[1:]))
         except Exception as error:
-            decision = ("ask", f"the guard could not check the call ({type(error).__name__})")
+            decision = ("refuse", f"the guard could not check the call ({type(error).__name__})")
         if decision is None:
             return 0
         kind, reason = decision
-        return credential_refusal(reason) if kind == "deny" else ask_owner(reason)
+        return credential_refusal(reason) if kind == "deny" else unallowed_form_refusal(reason)
     if target.startswith(("a command", "a container", "a read", "an interpreter", "a traced", "a shell")):
         print(
             f"Blocked: {target}. Agents never print the environment or credentials in this repository; "
@@ -1726,6 +1722,13 @@ def main() -> int:
         file=sys.stderr,
     )
     return 2
+
+
+def main() -> int:
+    try:
+        return checked_main()
+    except Exception:
+        return 2
 
 
 if __name__ == "__main__":
