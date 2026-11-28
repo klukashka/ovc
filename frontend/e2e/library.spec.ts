@@ -7,7 +7,13 @@ import { type TestAccount, newTestAccount, registerTutor, signInThroughTheApi, t
 import type { Deployment } from './deployment.ts';
 import { chooseFromPageMenu, diagnosedTest as test, expect, seedVerifiedUser } from './fixtures.ts';
 import { createReadyTemplate } from './homework.ts';
-import { expectRefetchedAfterTheSocketIsReady, trafficAfterReady } from './realtime.ts';
+import {
+  accountId,
+  closeSockets,
+  expectLinuxWebKitToRefuseServiceRestart,
+  expectRefetchedAfterTheSocketIsReady,
+  trafficAfterReady,
+} from './realtime.ts';
 import { visibleLabelLines } from './textLines.ts';
 import { accessToken, callApi, inSeedBatches } from './tutoring.ts';
 
@@ -48,6 +54,13 @@ async function createFolder(
     throw new Error(`creating a folder answered ${String(answer.status)}`);
   }
   return identifierOf(answer.body);
+}
+
+async function deleteFolderThroughTheApi(deployment: Deployment, tutor: TestAccount, id: string): Promise<void> {
+  const answer = await callApi(deployment, await accessToken(deployment, tutor), 'DELETE', `/library/folders/${id}`);
+  if (answer.status !== 204) {
+    throw new Error(`deleting a folder answered ${String(answer.status)}`);
+  }
 }
 
 async function createTemplate(
@@ -365,6 +378,27 @@ test.describe('library folders', () => {
 
     await expect(items(page).getByRole('link', { name: 'Beta', exact: true })).toBeFocused();
     await expect(items(page).getByRole('link')).toHaveText(['Beta']);
+  });
+
+  test('a folder that a refetch removes while its delete dialog is open hands focus to the row that took its place when the dialog closes', async ({
+    page,
+    deployment,
+    diagnostics,
+    browserName,
+  }) => {
+    expectLinuxWebKitToRefuseServiceRestart(diagnostics, browserName, deployment.origin);
+    const tutor = await seedVerifiedUser(deployment, 'Maria', 'en');
+    const alpha = await createFolder(deployment, tutor, 'Alpha');
+    await createFolder(deployment, tutor, 'Beta');
+    await openLibrary(page, tutor);
+    await chooseRowAction(page, 'Alpha', 'Delete');
+    await deleteFolderThroughTheApi(deployment, tutor, alpha);
+    await closeSockets(deployment, await accountId(deployment, tutor), 1012);
+    await items(page).getByRole('link', { name: 'Alpha', exact: true }).waitFor({ state: 'detached' });
+
+    await dialog(page).getByRole('button', { name: 'Cancel', exact: true }).click();
+
+    await expect(items(page).getByRole('link', { name: 'Beta', exact: true })).toBeFocused();
   });
 
   test('opening a folder from its row moves focus to the page heading', async ({ page, deployment }) => {
