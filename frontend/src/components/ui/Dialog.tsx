@@ -1,6 +1,7 @@
 import { type ReactElement, type ReactNode, type RefObject, useEffect, useLayoutEffect, useRef } from 'react';
 
-import { focusHeadingIfLost } from './LoadState.tsx';
+import { focusHeadingIfLost, focusIsLost } from './LoadState.tsx';
+import { replacementOfRemovedRow } from './liveRows.ts';
 
 const phoneDialogClass =
   'max-tablet:h-dvh max-tablet:max-h-none max-tablet:w-full max-tablet:max-w-none max-tablet:rounded-none max-tablet:border-0 max-tablet:p-4';
@@ -12,6 +13,11 @@ const wideDialogClass = `m-auto w-full max-w-5xl rounded-lg border border-border
 export function returnFocusTo(target: HTMLElement | null): void {
   if (target?.isConnected === true) {
     target.focus();
+    return;
+  }
+  const replacement = target === null ? null : replacementOfRemovedRow(target);
+  if (replacement !== null && focusIsLost()) {
+    replacement.focus();
     return;
   }
   focusHeadingIfLost();
